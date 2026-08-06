@@ -163,11 +163,14 @@ public final class TenantConfigRegistry {
             profileYaml = TenantProfile.emptyYaml();
         }
 
-        // discover every section folder (channels/<concept>, pipelines, …) with .yml files
+        // discover every section folder (channels/<concept>, pipelines, …) with .yml
+        // files — same walk whether the tree is a directory, on the classpath, or
+        // packed inside the application jar
         Map<String, Map<String, Map<String, Object>>> sections = new LinkedHashMap<>();
-        Path root = resolveDir(externalDir, base);
-        if (root != null) {
-            try (Stream<Path> walk = Files.walk(root)) {
+        WalkableDir dir = resolveDir(externalDir, base);
+        if (dir != null) {
+            Path root = dir.root();
+            try (dir; Stream<Path> walk = Files.walk(root)) {
                 walk.filter(p -> p.toString().endsWith(".yml"))
                     .filter(p -> !p.getFileName().toString().equals("profile-" + profile + ".yml"))
                     .forEach(p -> {
@@ -190,22 +193,48 @@ public final class TenantConfigRegistry {
             Collections.unmodifiableMap(sections));
     }
 
-    /** External dir wins per-file; falls back to a classpath-extracted view. */
-    private static Path resolveDir(Path externalDir, String relative) {
+    /**
+     * External dir wins; otherwise the classpath — including config packed
+     * INSIDE a jar (a zip filesystem is mounted over the jar so the same
+     * Files.walk works everywhere). Returns null when the tree is absent.
+     * The returned closer releases the jar filesystem (no-op elsewhere).
+     */
+    private static WalkableDir resolveDir(Path externalDir, String relative) {
         if (externalDir != null) {
             Path p = externalDir.resolve(relative);
-            if (Files.isDirectory(p)) return p;
+            if (Files.isDirectory(p)) return new WalkableDir(p, null);
         }
         var url = TenantConfigRegistry.class.getClassLoader().getResource(relative);
-        if (url != null && "file".equals(url.getProtocol())) {
+        if (url == null) return null;
+        if ("file".equals(url.getProtocol())) {
             try {
-                return Path.of(url.toURI());
+                return new WalkableDir(Path.of(url.toURI()), null);
             } catch (Exception ignored) { }
         }
-        // inside a jar: sections are enumerated via the filesystem only. Services
-        // that jar their config should list channels explicitly in profile yml,
-        // or ship an external config dir (the deployed norm).
+        if ("jar".equals(url.getProtocol())) {
+            try {
+                var uri = url.toURI();
+                java.nio.file.FileSystem fs;
+                try {
+                    fs = java.nio.file.FileSystems.newFileSystem(uri, Map.of());
+                } catch (java.nio.file.FileSystemAlreadyExistsException e) {
+                    return new WalkableDir(java.nio.file.Path.of(uri), null); // shared, do not close
+                }
+                return new WalkableDir(fs.provider().getPath(uri), fs);
+            } catch (Exception e) {
+                LOG.warn("seed-config: cannot mount jar for {}: {}", relative, e.toString());
+            }
+        }
         return null;
+    }
+
+    /** A walkable config root plus the filesystem to close afterwards (jar case). */
+    private record WalkableDir(Path root, java.nio.file.FileSystem toClose) implements AutoCloseable {
+        @Override public void close() {
+            if (toClose != null) {
+                try { toClose.close(); } catch (IOException ignored) { }
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
