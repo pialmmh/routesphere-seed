@@ -14,20 +14,28 @@ from — first consumer: **wifi-sphere**.
 | Session **state machines** | `statewalk-v2` via `seed-bom` | existing; wifi machines already ride it |
 | mem-ledger (predecessor cache, still used) | `mem-ledger` via `seed-bom` | existing |
 
+## The hosting model (ratified 2026-08-07): ONE Quarkus instance per product
+
+A product — wifi-sphere on a server, or the shipped box — is **one Quarkus
+build**: a single instance hosting the pillars as **CDI beans** (the session
+registry bean, the bridge bean, the sweeper, the cache, the queue), exactly the
+`EslCallRegistry` / `SmsV2Registry` pattern routesphere already uses. Shipping
+to a box = building that same project (JVM or Quarkus native), not composing
+separate daemons. Standalone runners (like the wifi pilot's shaded jar) are
+dev/pilot conveniences, not the product form.
+
 ## The decision: plain libraries, NOT Quarkus extensions (for now)
 
-Considered and rejected for this stage. Reasons:
+The single-Quarkus-host model makes this cleaner, not weaker:
 
-1. **Our services are not all Quarkus.** The wifi session runner is a plain-JVM
-   shaded jar (and its box future is native-image). A Quarkus extension locks
-   the seed to one host framework; a plain library serves every host.
-2. **Extensions buy build-time processing we don't need yet** (config at build
-   time, native-image hints, dev-mode integration). None of that blocks
-   wifi-sphere today.
-3. **Cost:** an extension = deployment module + runtime module + build steps
-   per lib. That tax is worth paying once native-image builds of Quarkus
-   services become real — the library API stays the same, so extensions can be
-   ADDED later without breaking consumers.
+1. **A plain library slots into the one Quarkus host as a bean** with a 5-line
+   producer — no extension machinery needed for that.
+2. **Extensions buy build-time processing we don't need yet** (build-time
+   config, native-image hints, dev-mode). The day the box uses a Quarkus
+   NATIVE build, extension wrappers earn their keep — and can be ADDED then
+   without changing the library APIs.
+3. **Cost:** an extension = deployment + runtime module + build steps per lib;
+   pay it when native demands it, not before.
 
 A Quarkus host wires seed-config with a 5-line producer:
 
@@ -81,4 +89,4 @@ reload — the client for it is the seed's next planned module
 - [ ] wifi-sphere scaffold (user creates; seed-config + statewalk-v2-wifi move in)
 - [ ] seed-config-client — config-manager doorbell client (reload trigger)
 - [ ] chronicle-db-cache source located + repo-homed under the seed umbrella
-- [ ] Quarkus extension wrappers — only when native-image demands them
+- [ ] Quarkus extension wrappers — only when the box's Quarkus NATIVE build demands them
