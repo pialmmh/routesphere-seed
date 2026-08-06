@@ -20,8 +20,10 @@ A product — wifi-sphere on a server, or the shipped box — is **one Quarkus
 build**: a single instance hosting the pillars as **CDI beans** (the session
 registry bean, the bridge bean, the sweeper, the cache, the queue), exactly the
 `EslCallRegistry` / `SmsV2Registry` pattern routesphere already uses. Shipping
-to a box = building that same project (JVM or Quarkus native), not composing
-separate daemons. Standalone runners (like the wifi pilot's shaded jar) are
+to a box = building that SAME project, in either of Quarkus's two output modes:
+JVM jar, or **native binary via GraalVM** (Quarkus native-image) when footprint
+demands it — one codebase, one build definition, two compile targets. Never
+composing separate daemons. Standalone runners (like the wifi pilot's shaded jar) are
 dev/pilot conveniences, not the product form.
 
 ## The decision: plain libraries, NOT Quarkus extensions (for now)
