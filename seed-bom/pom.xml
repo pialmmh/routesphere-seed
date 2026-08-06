@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-bom</artifactId>
+    <packaging>pom</packaging>
+    <name>seed-bom</name>
+    <description>The blessed platform set. A product (wifi-sphere, …) imports this BOM and picks
+        à la carte — it never inherits another product's machinery, and it never pins its own
+        versions of platform libs. Promote-don't-copy: anything two products need moves HERE.</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- the seed's own libs -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-config</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+
+            <!-- session state machines (flat model; call/SMS/WiFi all ride it) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>statewalk-v2</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+
+            <!-- the entity cache: in-memory + chronicle-queue WAL + gRPC API
+                 ("neymar cache"). NOTE: consumed as a binary artifact for now —
+                 the SOURCE TREE IS NOT ON THIS MACHINE (jar built 2025-09-01).
+                 Locate and repo-home the source before depending on it for
+                 anything new. -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>chronicle-db-cache</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+
+            <!-- durable queue abstraction -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>omni-queue</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+
+            <!-- in-memory ledger cache (predecessor of chronicle-db-cache; still used) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>mem-ledger</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

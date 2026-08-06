@@ -1,0 +1,4 @@
+queue:
+  name: wifi-main
+  segmentDir: /var/lib/wifi/queue
+  maxSegmentMb: 128
