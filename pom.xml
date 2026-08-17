@@ -17,6 +17,7 @@
     <modules>
         <module>seed-bom</module>
         <module>seed-config</module>
+        <module>seed-config-client</module>
     </modules>
 
     <properties>

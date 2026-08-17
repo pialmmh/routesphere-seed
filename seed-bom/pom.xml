@@ -25,6 +25,12 @@
                 <artifactId>seed-config</artifactId>
                 <version>1.0-SNAPSHOT</version>
             </dependency>
+            <!-- the config doorbell: kafka/redis change notification -> debounced re-fetch -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-config-client</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
 
             <!-- session state machines (flat model; call/SMS/WiFi all ride it) -->
             <dependency>
