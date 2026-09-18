@@ -18,6 +18,7 @@
         <module>seed-bom</module>
         <module>seed-config</module>
         <module>seed-config-client</module>
+        <module>seed-routing</module>
     </modules>
 
     <properties>
