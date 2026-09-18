@@ -2,7 +2,6 @@ package com.telcobright.seed.routing.group;
 
 import com.telcobright.seed.routing.api.RoutingRequest;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -19,7 +18,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * listed: plain failover).
  */
 public final class RouteGroupSelectors {
-    private static final Map<String, RouteGroupSelector> KNOWN = java.util.Collections.synchronizedMap(new LinkedHashMap<>());
+    /** Read on every decision: lock-free. The key list keeps the order the strategies were registered in (for a screen). */
+    private static final Map<String, RouteGroupSelector> KNOWN = new ConcurrentHashMap<>();
+    private static final java.util.List<String> ORDER = new java.util.concurrent.CopyOnWriteArrayList<>();
     static {
         register(new Weighted());
         register(new Hashed());
@@ -29,7 +30,7 @@ public final class RouteGroupSelectors {
 
     private RouteGroupSelectors() {}
 
-    public static void register(RouteGroupSelector s) { KNOWN.put(s.key(), s); }
+    public static void register(RouteGroupSelector s) { if (KNOWN.put(s.key(), s) == null) ORDER.add(s.key()); }
 
     public static RouteGroupSelector of(String key) {
         RouteGroupSelector s = KNOWN.get(key == null ? "weighted" : key.trim().toLowerCase(Locale.ROOT));
@@ -37,7 +38,7 @@ public final class RouteGroupSelectors {
         return s;
     }
 
-    public static Set<String> known() { synchronized (KNOWN) { return new java.util.LinkedHashSet<>(KNOWN.keySet()); } }
+    public static Set<String> known() { return new java.util.LinkedHashSet<>(ORDER); }
 
     static final class Weighted extends RouteGroupSelector {
         @Override public String key() { return "weighted"; }
