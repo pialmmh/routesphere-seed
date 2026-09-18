@@ -8,6 +8,10 @@ small and stays small. First consumer: **wifi-sphere**.
 - `seed-bom` — import this, pick à la carte.
 - `seed-config` — the routesphere tenant/profile/channel config convention as a
   dependency-light library (snakeyaml + slf4j only; Quarkus or plain JVM).
+- `seed-config-client` — the config doorbell (Kafka + Redis notifications → one debounced re-fetch).
+- `seed-routing` — the common REQUEST ROUTING of every switch (call, SMS, payment, later ad): dialplan by
+  default, or a named ROUTING POLICY — a DB entity with one JSON document — picked in config. See
+  `seed-routing/README.md`.
 
 Read `docs/DESIGN.md` for the decisions (why plain libs, not Quarkus
 extensions), the rules (dependency direction, promote-don't-copy), and the
