@@ -16,6 +16,11 @@ public record RoutingDecision(boolean routed, List<RouteChoice> candidates, Stri
     public RoutingDecision {
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
         trace = trace == null ? List.of() : List.copyOf(trace);
+        // THE INVARIANT a product relies on: routed = there IS a pick; refused = there is a reason and no route
+        if (routed && candidates.isEmpty()) throw new IllegalArgumentException("a routed decision needs at least one candidate (the pick)");
+        if (routed && refusal != null) throw new IllegalArgumentException("a routed decision carries no refusal");
+        if (!routed && !candidates.isEmpty()) throw new IllegalArgumentException("a refused decision carries no candidates");
+        if (!routed && refusal == null) throw new IllegalArgumentException("a refused decision needs its refusal");
     }
 
     /** The pick, or null when nothing was routed. */

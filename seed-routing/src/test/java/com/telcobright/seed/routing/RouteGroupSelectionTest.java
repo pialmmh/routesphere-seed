@@ -111,4 +111,39 @@ class RouteGroupSelectionTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> RouteGroupSelectors.of("cheapest"));
         assertTrue(e.getMessage().contains("weighted"), e.getMessage());
     }
+
+    // ── the invariant of a decision (architect's merge note 2026-09-19) ──
+
+    @Test
+    void aRoutedDecisionAlwaysHasItsPick_aRefusedOneItsReason_andEveryRouterKeepsIt() {
+        assertThrows(IllegalArgumentException.class, () -> com.telcobright.seed.routing.api.RoutingDecision.routed(List.of(), "policy", "p", 1, "r", null));
+        assertThrows(IllegalArgumentException.class, () -> new com.telcobright.seed.routing.api.RoutingDecision(false, List.of(), "policy", "p", 1, "r", null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> new com.telcobright.seed.routing.api.RoutingDecision(false,
+            List.of(new RouteChoice("x", 1, 1, 100, Map.of())), "policy", "p", 1, "r", com.telcobright.seed.routing.api.RoutingRefusal.NO_ROUTE_UP, null, null));
+
+        // both routers, over every mix of UP / DOWN / unknown routes: routed <=> a pick exists, and the pick is an UP route
+        var types = com.telcobright.seed.routing.policy.PolicyTypes.defaults();
+        var policy = types.compile(new com.telcobright.seed.routing.policy.RoutingPolicy("payment", "inv", "match-loadbalance", true, 1, null,
+            "{ \"rules\": [ { \"name\": \"r\", \"match\": { \"partner\": \"btcl\" }, \"routes\": [ {\"route\":\"a\",\"weight\":60}, {\"route\":\"b\",\"weight\":40}, {\"route\":\"c\",\"tier\":2} ] } ], \"default\": { \"routes\": [\"d\"] } }", null, null));
+        com.telcobright.seed.routing.spi.DialplanSource plan = new com.telcobright.seed.routing.spi.DialplanSource() {
+            @Override public List<Prefix> prefixesOf(RoutingRequest r) { return List.of(new Prefix("p", "880", "")); }
+            @Override public List<DialplanShare> dialplansOf(Prefix p) { return List.of(new DialplanShare("dp", 100)); }
+            @Override public List<RouteEntry> routesOf(String d) { return List.of(RouteEntry.of("a", 1), RouteEntry.of("b", 1), RouteEntry.of("c", 2)); }
+        };
+        for (int mask = 0; mask < 16; mask++) {
+            Map<String, Boolean> up = new HashMap<>();
+            String[] names = {"a", "b", "c", "d"};
+            for (int i = 0; i < 4; i++) if ((mask & (1 << i)) != 0) up.put(names[i], true); else if (i % 2 == 0) up.put(names[i], false);   // else: unknown
+            RouteDirectory dir = directory(up);
+            for (String partner : List.of("btcl", "someone-else")) {
+                var d = policy.evaluate(RoutingRequest.of("payment").with("partner", partner).build(), dir, "policy", false);
+                assertEquals(d.routed(), d.pick() != null, "mask " + mask);
+                if (d.routed()) assertTrue(dir.isUp(d.pick().route()) && d.candidates().stream().allMatch(c -> dir.isUp(c.route())), "mask " + mask);
+                else assertTrue(d.refusal() != null && d.candidates().isEmpty(), "mask " + mask);
+            }
+            var viaDialplan = new com.telcobright.seed.routing.routers.dialplan.DialplanRouter(plan, dir).route(RoutingRequest.of("sms").with("called", "8801711").build());
+            assertEquals(viaDialplan.routed(), viaDialplan.pick() != null, "dialplan, mask " + mask);
+            if (!viaDialplan.routed()) assertTrue(viaDialplan.refusal() != null, "dialplan, mask " + mask);
+        }
+    }
 }

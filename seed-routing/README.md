@@ -47,6 +47,40 @@ tables (idempotent). The version rides on every decision, so a record can say *w
 
 A new way of routing = a new `PolicyType` in its own package + `PolicyTypes.register(...)`. No table changes.
 
+### The document of `match-loadbalance` — **schema 1, FROZEN** (architect 2026-09-19)
+
+Additive changes only; anything else is `schema: 2` with its own reader. Unknown keys are errors.
+
+```
+document  { schema: 1, description?, rules: [ rule… ], default?: { routes | reject } }      rules or default: at least one
+rule      { name            text, unique in the policy (case-blind) — it goes on every routed record
+            priority        whole number, high first (default 0); then the more specific rule; then the name
+            enabled         true | false (default true)
+            description     text
+            match           { attribute: form, … }   every entry must hold; an attribute left out is not looked at
+            routes          [ "route-name" | { route, weight = 100 (>0), tier = 1 (>=1), params? { k: v } } ]   ┐ exactly
+            reject          "cause-word"                                                                       ┘ one of the two
+            strategy        weighted (default) | hashed | round-robin | ordered
+            hash-by         attribute name — required by (and only read for) strategy hashed }
+default   a rule without name / priority / match
+```
+
+One example per match form (an attribute the request does not carry matches only `"*"`, `present:false` and a `not`):
+
+| form | JSON | matches |
+|---|---|---|
+| equals | `"partner": "btcl"` | the value, compared without case |
+| anything | `"zone": "*"` | any value, and no value |
+| one of | `"zone": ["uttara", "zone0"]` | one of the listed values (a list holding `"*"` = anything) |
+| prefix | `"called": { "prefix": ["88017", "88013"] }` | starts with one of — a dialplan prefix, as a rule; the longer prefix is the more specific rule |
+| range | `"amount": { "range": [10, 500] }` · `{ "range": [500, null] }` | a number within, both ends included; `null` = open end; not a number = no match |
+| present | `"msisdn": { "present": true }` · `{ "present": false }` | the request carries / does not carry the attribute |
+| not | `"env": { "not": "sandbox" }` · `{ "not": ["a", "b"] }` · `{ "not": { "prefix": ["8801"] } }` | the opposite of any form above |
+
+Refusals a decision may carry: `no-policy` · `policy-disabled` · `no-rule-matched` (also the default's `reject`, with
+the policy's own cause word in `detail`) · `no-route-up` · `rejected-by-rule`. **Invariant:** `routed` ⇔ `candidates`
+is not empty (the first is the pick, every candidate is an UP route); refused ⇔ `refusal` is set and there is no candidate.
+
 ## Config (flat keys under `routing.` — any config system)
 
 ```yaml
