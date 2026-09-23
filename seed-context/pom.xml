@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>seed-context</artifactId>
+    <name>seed-context</name>
+    <description>The per-tenant DynamicContext cache of the routesphere shape, for sibling-level
+        multi-tenancy: Map&lt;tenantId, Snapshot&lt;T&gt;&gt; — every tenant loaded alone by the product's
+        ContextLoader, swapped whole and immutable, versioned, woken per tenant by the config doorbell
+        (Kafka) and by a backstop, with one tenant's failure invisible to its siblings. Secrets reach a
+        loader only as env: pointers (the secreteer contract). Plain Java 21 — no Spring, no Quarkus.</description>
+    <dependencies>
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-config-client</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- the *IT classes need the local Kafka on 127.0.0.1:9092 and self-skip without -Dseed.it=true -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
