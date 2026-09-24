@@ -40,6 +40,14 @@ public record Targeting(Map<String, Set<String>> allow) {
 
     public boolean constrains(String dimension) { return allow.containsKey(dimension.toLowerCase(Locale.ROOT)); }
 
+    /** ONE dimension alone: -1 = constrained and not matched, 0 = not constrained (or matched by "*"), 1 = matched by name. */
+    public int specificityOf(String dimension, String value) {
+        Set<String> allowed = allow.get(dimension.toLowerCase(Locale.ROOT));
+        if (allowed == null) return 0;
+        String v = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return match(allowed, v);
+    }
+
     /** -1 = not targeted; else the number of constrained dimensions the view matched by name (not by wildcard). */
     public int specificity(Map<String, String> facts) {
         int score = 0;
