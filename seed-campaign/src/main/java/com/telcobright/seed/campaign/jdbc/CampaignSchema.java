@@ -12,7 +12,7 @@ import java.util.List;
  * needs. On a routesphere MySQL tenant only the ad tables are created; on the wifi tenant's PostgreSQL the whole
  * subset goes into its own schema beside Odoo ({@link #postgresScript}).
  *
- * <p>{@code enumjobstatus} ids as found on the tenants (link3, 2026-09-25): 1 Complete, 2 Prepared, 3 Paused,
+ * <p>{@code enumjobstatus} ids as found on the tenants (link3, 2026-09-24): 1 Complete, 2 Prepared, 3 Paused,
  * 4 Scheduled, 5 Failed, 6 Created, 7 Downloaded, 8 Canceled, 9 ReadyForPosting, 10 Running, 11 Sent, 12 Pending,
  * 13 Delivered, 15 Processing.
  */
@@ -87,7 +87,7 @@ public final class CampaignSchema {
     public static String postgresScript(String schema, String role, List<String> more) {
         StringBuilder sb = new StringBuilder();
         sb.append("-- routesphere's campaign schema for a PostgreSQL tenant — GENERATED from seed-campaign CampaignSchema; edit the Java, not this file.\n");
-        sb.append("-- One schema beside Odoo's public in the SAME database (owner, 2026-09-25): one connection, one transaction, one backup.\n");
+        sb.append("-- One schema beside Odoo's public in the SAME database (owner, 2026-09-24): one connection, one transaction, one backup.\n");
         sb.append("-- Apply once as the database owner:  psql -d <odoo db> -v ON_ERROR_STOP=1 -f routesphere-ad-schema.sql\n\n");
         sb.append("CREATE SCHEMA IF NOT EXISTS ").append(schema).append(";\n");
         sb.append("SET search_path TO ").append(schema).append(";\n\n");

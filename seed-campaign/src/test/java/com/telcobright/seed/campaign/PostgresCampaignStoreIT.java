@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The same two checks as {@link JdbcCampaignStoreTest}, on a REAL PostgreSQL, in a schema of its own beside
- * {@code public} — the wifi tenant's shape (owner, 2026-09-25: the tables live in the Odoo database). Runs only when
+ * {@code public} — the wifi tenant's shape (owner, 2026-09-24: the tables live in the Odoo database). Runs only when
  * {@code -Dseed.pg.url=jdbc:postgresql://host:port/db} names a throwaway database (trust auth or a user in the URL);
  * it creates and drops a schema {@code seed_it_<nanos>} there.
  */

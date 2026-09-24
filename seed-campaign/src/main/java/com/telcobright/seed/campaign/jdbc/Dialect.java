@@ -7,7 +7,7 @@ import java.util.Locale;
 
 /**
  * The two databases the routesphere schema lives on: MySQL (the routesphere tenants) and PostgreSQL (the wifi
- * tenant, whose tables sit in a schema beside Odoo's {@code public} — owner, 2026-09-25). The SQL is the same but
+ * tenant, whose tables sit in a schema beside Odoo's {@code public} — owner, 2026-09-24). The SQL is the same but
  * for the identifier quote and the DDL types; unquoted identifiers fold the same way on both once the DDL is
  * written unquoted (MySQL keeps the case but ignores it, PostgreSQL lowers it).
  */
