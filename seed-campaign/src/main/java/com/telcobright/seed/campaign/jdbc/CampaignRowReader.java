@@ -30,6 +30,14 @@ import java.util.Set;
  */
 final class CampaignRowReader {
 
+    private final Dialect dialect;
+    private final String timeBands;
+
+    CampaignRowReader(Dialect dialect) {
+        this.dialect = dialect;
+        this.timeBands = "SELECT policy_id, " + dialect.quote("day") + " AS band_day, specific_date_only, start_time, end_time, allow_or_restrict FROM time_band";
+    }
+
     private static final String CAMPAIGNS = """
         SELECT c.CAMPAIGN_ID, c.CAMPAIGN_NAME, c.CAMPAIGN_TYPE, s.Type AS status_name, c.ID_PARTNER, c.EXPIRE_AT, c.PRIORITY,
                c.TOTAL_TASK_COUNT, c.SENT_TASK_COUNT, c.FAILED_TASK_COUNT, c.PENDING_TASK_COUNT, c.POLICY_ID, c.MESSAGE,
@@ -40,12 +48,11 @@ final class CampaignRowReader {
         LEFT JOIN schedule_policy sp ON sp.ID = c.SCHEDULE_POLICY_ID
         WHERE c.CAMPAIGN_TYPE = ?
         ORDER BY c.CAMPAIGN_ID""";
-    private static final String TIME_BANDS = "SELECT policy_id, `day`, specific_date_only, start_time, end_time, allow_or_restrict FROM time_band";
-    private static final String TARGETS = "SELECT campaign_id, dimension, `value` FROM campaign_target";
+    private static final String TARGETS = "SELECT campaign_id, dimension, target_value FROM campaign_target";
     private static final String CREATIVES = "SELECT campaign_id, creative_id, kind, media_ref, duration_sec, click_url, caption FROM campaign_creative WHERE active = 1 ORDER BY id";
 
     List<Campaign> read(Connection c, String tenantId, CampaignKind kind) throws SQLException {
-        Map<Integer, List<TimeBand>> bands = timeBands(c);
+        Map<Integer, List<TimeBand>> bands = timeBands(c, timeBands);
         Map<Integer, Targeting> targets = targets(c);
         Map<Integer, List<Creative>> creatives = creatives(c);
         List<Campaign> out = new ArrayList<>();
@@ -87,14 +94,14 @@ final class CampaignRowReader {
             targets.getOrDefault(id, Targeting.ANY), cr, fields);
     }
 
-    private static Map<Integer, List<TimeBand>> timeBands(Connection c) throws SQLException {
+    private static Map<Integer, List<TimeBand>> timeBands(Connection c, String sql) throws SQLException {
         Map<Integer, List<TimeBand>> out = new HashMap<>();
-        try (PreparedStatement ps = c.prepareStatement(TIME_BANDS); ResultSet rs = ps.executeQuery()) {
+        try (PreparedStatement ps = c.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Timestamp specific = rs.getTimestamp("specific_date_only");
                 Time start = rs.getTime("start_time");
                 Time end = rs.getTime("end_time");
-                out.computeIfAbsent(rs.getInt("policy_id"), k -> new ArrayList<>()).add(new TimeBand(rs.getString("day"),
+                out.computeIfAbsent(rs.getInt("policy_id"), k -> new ArrayList<>()).add(new TimeBand(rs.getString("band_day"),
                     specific == null ? null : specific.toLocalDateTime().toLocalDate(),
                     start == null ? java.time.LocalTime.MIN : start.toLocalTime(),
                     end == null ? java.time.LocalTime.MAX : end.toLocalTime(),
@@ -108,7 +115,7 @@ final class CampaignRowReader {
         Map<Integer, Map<String, Set<String>>> raw = new HashMap<>();
         try (PreparedStatement ps = c.prepareStatement(TARGETS); ResultSet rs = ps.executeQuery()) {
             while (rs.next()) raw.computeIfAbsent(rs.getInt("campaign_id"), k -> new HashMap<>())
-                .computeIfAbsent(rs.getString("dimension"), k -> new HashSet<>()).add(rs.getString("value"));
+                .computeIfAbsent(rs.getString("dimension"), k -> new HashSet<>()).add(rs.getString("target_value"));
         }
         Map<Integer, Targeting> out = new HashMap<>();
         raw.forEach((id, m) -> out.put(id, new Targeting(m)));

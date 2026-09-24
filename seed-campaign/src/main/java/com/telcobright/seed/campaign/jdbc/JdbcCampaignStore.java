@@ -46,13 +46,23 @@ public final class JdbcCampaignStore implements CampaignStore {
     private final DataSource ds;
     private final CampaignKind kind;
     private final Function<Map<String, Object>, String> json;
-    private final CampaignRowReader reader = new CampaignRowReader();
+    private final Dialect dialect;
+    private final CampaignRowReader reader;
 
+    /** The dialect read from the pool's URL ({@code jdbc:postgresql:} → PostgreSQL, else MySQL). */
     public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json) {
+        this(ds, kind, json, Dialect.of(ds));
+    }
+
+    public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect) {
         this.ds = ds;
         this.kind = kind;
         this.json = json;
+        this.dialect = dialect;
+        this.reader = new CampaignRowReader(dialect);
     }
+
+    public Dialect dialect() { return dialect; }
 
     @Override
     public List<Campaign> campaigns(String tenantId) {
@@ -97,7 +107,7 @@ public final class JdbcCampaignStore implements CampaignStore {
             ps.setInt(i++, t.state().code());
             ps.setInt(i++, statusOf(t));
             ps.setTimestamp(i++, Timestamp.from(Instant.now()));
-            ps.setBoolean(i++, t.answered());
+            ps.setInt(i++, t.answered() ? 1 : 0);
             setLong(ps, i++, t.answeredAt() == null ? null : t.answeredAt().toEpochMilli());
             setLong(ps, i++, t.endedAt() == null ? null : t.endedAt().toEpochMilli());
             ps.setInt(i++, t.billsec());
