@@ -37,6 +37,15 @@ public final class TenantProfile {
         this.sections = sections;
     }
 
+    /**
+     * A profile handed in as a map rather than read from the seed tree — the shape a config facade serves
+     * (prime-context's merged {@code common ∪ app} document, one per tenant). Sections are empty: such a document
+     * carries everything at its top level. {@code yaml} null = an empty profile.
+     */
+    public static TenantProfile of(String tenant, String profileName, Map<String, Object> yaml) {
+        return new TenantProfile(tenant, profileName, yaml == null ? Map.of() : yaml, Map.of());
+    }
+
     public String tenant() { return tenant; }
     public String profileName() { return profileName; }
 
