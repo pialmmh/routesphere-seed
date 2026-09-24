@@ -12,4 +12,9 @@ public record TaskCharge(Long packageAccountId, String uom, BigDecimal packageAm
     public static final TaskCharge FREE = new TaskCharge(null, null, BigDecimal.ZERO, BigDecimal.ZERO, null);
 
     public boolean free() { return packageAccountId == null; }
+
+    /** No account, or an account that kept nothing (a refunded hold): nothing was charged. */
+    public boolean nothing() {
+        return free() || ((packageAmount == null || packageAmount.signum() == 0) && (cost == null || cost.signum() == 0));
+    }
 }
