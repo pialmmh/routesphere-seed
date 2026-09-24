@@ -40,6 +40,14 @@
                 <version>1.0-SNAPSHOT</version>
             </dependency>
 
+            <!-- the generic campaign service: campaign + campaign_task, runnable/targeting/quota rules,
+                 the task ladder and counters, behind a store SPI (routesphere MySQL schema or in memory) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-campaign</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+
             <!-- the common request routing: dialplan (default of call + SMS) or a named ROUTING POLICY
                  (a DB entity with a JSON document) — for call, SMS, payment, later ad -->
             <dependency>

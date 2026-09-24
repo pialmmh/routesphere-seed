@@ -19,6 +19,7 @@
         <module>seed-config</module>
         <module>seed-config-client</module>
         <module>seed-context</module>
+        <module>seed-campaign</module>
         <module>seed-routing</module>
     </modules>
 
