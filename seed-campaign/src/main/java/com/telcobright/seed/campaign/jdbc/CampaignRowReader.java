@@ -32,9 +32,18 @@ final class CampaignRowReader {
 
     private final Dialect dialect;
     private final String timeBands;
+    private final String creativesSql;
 
-    CampaignRowReader(Dialect dialect) {
+    CampaignRowReader(Dialect dialect) { this(dialect, CREATIVES); }
+
+    /**
+     * @param creativesSql the query of the campaigns' creatives, returning {@code campaign_id, creative_id, kind, media_ref,
+     *                     duration_sec, click_url, caption, partner_id, share_percent} — the default reads the legacy
+     *                     {@code campaign_creative} rows (owner 0, share 0); a product may read its own member table
+     */
+    CampaignRowReader(Dialect dialect, String creativesSql) {
         this.dialect = dialect;
+        this.creativesSql = creativesSql == null || creativesSql.isBlank() ? CREATIVES : creativesSql;
         this.timeBands = "SELECT policy_id, " + dialect.quote("day") + " AS band_day, specific_date_only, start_time, end_time, allow_or_restrict FROM time_band";
     }
 
@@ -49,7 +58,8 @@ final class CampaignRowReader {
         WHERE c.CAMPAIGN_TYPE = ?
         ORDER BY c.CAMPAIGN_ID""";
     private static final String TARGETS = "SELECT campaign_id, dimension, target_value FROM campaign_target";
-    private static final String CREATIVES = "SELECT campaign_id, creative_id, kind, media_ref, duration_sec, click_url, caption FROM campaign_creative WHERE active = 1 ORDER BY id";
+    static final String CREATIVES = "SELECT campaign_id, creative_id, kind, media_ref, duration_sec, click_url, caption, 0 AS partner_id, 0 AS share_percent"
+        + " FROM campaign_creative WHERE active = 1 ORDER BY id";
 
     List<Campaign> read(Connection c, String tenantId, CampaignKind kind) throws SQLException {
         Map<Integer, List<TimeBand>> bands = timeBands(c, timeBands);
@@ -122,12 +132,13 @@ final class CampaignRowReader {
         return out;
     }
 
-    private static Map<Integer, List<Creative>> creatives(Connection c) throws SQLException {
+    private Map<Integer, List<Creative>> creatives(Connection c) throws SQLException {
         Map<Integer, List<Creative>> out = new HashMap<>();
-        try (PreparedStatement ps = c.prepareStatement(CREATIVES); ResultSet rs = ps.executeQuery()) {
+        try (PreparedStatement ps = c.prepareStatement(creativesSql); ResultSet rs = ps.executeQuery()) {
             while (rs.next()) out.computeIfAbsent(rs.getInt("campaign_id"), k -> new ArrayList<>()).add(new Creative(
                 rs.getString("creative_id"), MediaKind.of(rs.getString("kind")), rs.getString("media_ref"),
-                rs.getInt("duration_sec"), rs.getString("click_url"), rs.getString("caption")));
+                rs.getInt("duration_sec"), rs.getString("click_url"), rs.getString("caption"),
+                rs.getInt("partner_id"), rs.getDouble("share_percent")));
         }
         return out;
     }

@@ -55,11 +55,16 @@ public final class JdbcCampaignStore implements CampaignStore {
     }
 
     public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect) {
+        this(ds, kind, json, dialect, null);
+    }
+
+    /** @param creativesSql the product's own creatives query (see {@code CampaignRowReader}); null = the legacy {@code campaign_creative} rows */
+    public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect, String creativesSql) {
         this.ds = ds;
         this.kind = kind;
         this.json = json;
         this.dialect = dialect;
-        this.reader = new CampaignRowReader(dialect);
+        this.reader = new CampaignRowReader(dialect, creativesSql);
     }
 
     public Dialect dialect() { return dialect; }
