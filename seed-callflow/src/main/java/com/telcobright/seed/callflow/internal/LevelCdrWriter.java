@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * The terminal write of an ad call (design §2.5, decision D10), in ONE JDBC transaction on the ROOT tenant database:
  * <ol>
  *   <li>one {@code ad_cdr} row per tier — routesphere's {@code CallDetailRecord} columns (the 38 of the CSV) + {@code tenant},
+ *       and (ARCH-0001 §3.2) the report filters' columns {@code zone, site, app, ruleCode, fallback};
  *       {@code resellerHierarchy}, {@code serviceGroup 30}: {@code partnerId} = the tier's partner, {@code tenant} = the
  *       tier's db, {@code inPartnerCost} = the tier's charge, {@code idPackageAccount / uom / packageAmount / balanceBefore},
  *       {@code matchPrefixCustomer} = the rate prefix, {@code outPartnerId} = the network division, {@code callId} = the
@@ -55,8 +56,8 @@ public final class LevelCdrWriter implements AdCdrPort {
         + " startTime, answerTime, endTime, durationSec, channelCallUuid, hangupCause, callerIp, receiverIp, tenant, supplierPrefix, supplierCost, isPrepaid,"
         + " inPartnerCost, inPartnerUom, costIcxIn, costAnsIn, revenueAnsOut, revenueIgwOut, packageAmount, inPartnerId, outPartnerId, ansIdTerm, ansPrefixTerm,"
         + " ansIdOrig, ansPrefixOrig, matchPrefixCustomer, callRatePerMinBdt, idPackageAccount, resellerHierarchy, channelReadCodecName, callId, pdd, serviceGroup,"
-        + " balanceBefore, balanceAfter, levelIndex, partnerName, answered, credited, createdAt)"
-        + " VALUES (?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?)";
+        + " balanceBefore, balanceAfter, levelIndex, partnerName, answered, credited, zone, site, app, ruleCode, fallback, createdAt)"
+        + " VALUES (?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?, ?)";
 
     private final DataSource rootDb;
     private final Runnable ping;
@@ -98,6 +99,8 @@ public final class LevelCdrWriter implements AdCdrPort {
                 + " ansIdTerm BIGINT, ansPrefixTerm VARCHAR(20), ansIdOrig BIGINT, ansPrefixOrig VARCHAR(20), matchPrefixCustomer VARCHAR(50), callRatePerMinBdt DECIMAL(20,8),"
                 + " idPackageAccount BIGINT, resellerHierarchy VARCHAR(255), channelReadCodecName VARCHAR(20), callId VARCHAR(64), pdd DOUBLE, serviceGroup INT NOT NULL DEFAULT 30,"
                 + " balanceBefore DECIMAL(20,8), balanceAfter DECIMAL(20,8), levelIndex INT NOT NULL DEFAULT 0, partnerName VARCHAR(200), answered TINYINT NOT NULL DEFAULT 0, credited TINYINT NOT NULL DEFAULT 0,"
+                // ARCH-0001 §3.2: the filters of the report roads (campaign = callId, cause = hangupCause; these are the rest)
+                + " zone VARCHAR(64), site VARCHAR(64), app VARCHAR(64), ruleCode VARCHAR(64), fallback TINYINT NOT NULL DEFAULT 0,"
                 + " createdAt DATETIME(3) NOT NULL, INDEX ix_ad_cdr_tenant_time (tenant, startTime), INDEX ix_ad_cdr_uuid (channelCallUuid))",
             "CREATE TABLE IF NOT EXISTS " + TASK_TABLE + " (CAMPAIGN_TASK_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, uniqueId VARCHAR(50) NOT NULL, CAMPAIGN_ID INT NOT NULL,"
                 + " ORIGINATING_CALLING_NUMBER VARCHAR(60), TERMINATING_CALLED_NUMBER VARCHAR(60), ID_PARTNER INT NOT NULL, PHONE_NUMBER VARCHAR(60) NOT NULL, MESSAGE VARCHAR(2000),"
@@ -180,6 +183,11 @@ public final class LevelCdrWriter implements AdCdrPort {
             ps.setString(i++, level == null ? null : level.getPartnerName());
             ps.setInt(i++, answered ? 1 : 0);
             ps.setInt(i++, p.credited() ? 1 : 0);
+            ps.setString(i++, p.zone());
+            ps.setString(i++, p.site());
+            ps.setString(i++, p.app());
+            ps.setString(i++, p.ruleCode());
+            ps.setInt(i++, p.fallback() ? 1 : 0);
             ps.setTimestamp(i++, new Timestamp(System.currentTimeMillis()));
             ps.executeUpdate();
         }

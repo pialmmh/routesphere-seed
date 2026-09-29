@@ -118,6 +118,10 @@ class LevelCdrWriterTest {
         assertThat(((Number) leaf.get("balancebefore")).doubleValue()).isEqualTo(10.0);
         assertThat(((Number) leaf.get("balanceafter")).doubleValue()).isEqualTo(9.5);
         assertThat(((Number) leaf.get("pdd")).doubleValue()).isEqualTo(1.5);
+        assertThat(leaf.get("zone")).as("ARCH-0001 §3.2: the report filters' columns").isEqualTo("dhaka-01");
+        assertThat(leaf.get("app")).isEqualTo("wifi");
+        assertThat(leaf.get("rulecode")).isEqualTo("1001");
+        assertThat(leaf.get("fallback")).isEqualTo(0);
         assertThat(root.get("tenant")).isEqualTo("btcl");
         assertThat(root.get("inpartnerid")).isEqualTo(44);
         assertThat(((Number) root.get("inpartnercost")).doubleValue()).isEqualTo(0.40);
