@@ -15,4 +15,7 @@ public interface AdAdmissionPort {
 
     /** Credit every tier of an admitted candidate back (reason {@code compensation:<why>}) — the one automatic refund. */
     void compensate(AdAdmission admission, String requestId, String why);
+
+    /** The session ended: whatever the admission held for its lifetime (the advertiser's concurrent slot) is free again. */
+    default void release(AdAdmission admission) { }
 }
