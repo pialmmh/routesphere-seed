@@ -19,7 +19,8 @@ import java.util.List;
  * </pre>
  *
  * {@code answerTimeMillis} = the ad reached the screen (shown), {@code billsec} = watched seconds, {@code hangupCause} = the
- * cause code ({@link AdCause}). {@code levels} is filled by admission (one {@link LevelAdmission} per tier, leaf first).
+ * cause code ({@link AdCause}); {@code credited} = the free session followed the view (ARCH-0001 ruling 5.5, 2026-09-30).
+ * {@code levels} is filled by admission (one {@link LevelAdmission} per tier, leaf first).
  */
 public record AdCallPayload(
     String uniqueId,                 // the ad session id = the CDR's channel uuid
@@ -39,7 +40,7 @@ public record AdCallPayload(
     Integer outPartnerId,            // the tenant's network-division partner (ad_setting out-partner)
     Integer dialplanId, String dialplanName, String matchedDialplanPrefix, int routePriority, boolean fallback,
     String zone, String site, String district, String gw, String mac, String ip, String msisdn, String uaFamily, String wifiSessionId,
-    long startTimeMillis, long answerTimeMillis, long endTimeMillis, int billsec, boolean answered, String hangupCause,
+    long startTimeMillis, long answerTimeMillis, long endTimeMillis, int billsec, boolean answered, boolean credited, String hangupCause,
     List<LevelAdmission> levels)     // filled by admission
 {
     public static final String TASK_TYPE_AD = "AD";
@@ -54,16 +55,21 @@ public record AdCallPayload(
             terminatingCallingNumber, terminatingCalledNumber, ruleId, ruleCode, ruleName, inPartnerId, incomingRouteId, incomingRouteName,
             campaignId, campaignName, contentId, contentPartnerId, mediaKind, mediaRef, requiredSeconds, outgoingRouteName, outPartnerId,
             dialplanId, dialplanName, matchedDialplanPrefix, routePriority, fallback, zone, site, district, gw, mac, ip, msisdn, uaFamily, wifiSessionId,
-            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, hangupCause, newLevels);
+            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, credited, hangupCause, newLevels);
     }
 
-    /** The same payload with the lifecycle facts the terminal write needs. */
-    public AdCallPayload withLifecycle(long answerTimeMillis, long endTimeMillis, int billsec, boolean answered, String hangupCause) {
+    /** The same payload with the lifecycle facts the terminal write needs ({@code credited}: the free session followed). */
+    public AdCallPayload withLifecycle(long answerTimeMillis, long endTimeMillis, int billsec, boolean answered, boolean credited, String hangupCause) {
         return new AdCallPayload(uniqueId, taskType, tenantName, app, callSrcId, callSrcName, originatingCallingNumber, originatingCalledNumber,
             terminatingCallingNumber, terminatingCalledNumber, ruleId, ruleCode, ruleName, inPartnerId, incomingRouteId, incomingRouteName,
             campaignId, campaignName, contentId, contentPartnerId, mediaKind, mediaRef, requiredSeconds, outgoingRouteName, outPartnerId,
             dialplanId, dialplanName, matchedDialplanPrefix, routePriority, fallback, zone, site, district, gw, mac, ip, msisdn, uaFamily, wifiSessionId,
-            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, hangupCause, levels);
+            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, credited, hangupCause, levels);
+    }
+
+    /** The lifecycle without a grant (a failed call, a test). */
+    public AdCallPayload withLifecycle(long answerTimeMillis, long endTimeMillis, int billsec, boolean answered, String hangupCause) {
+        return withLifecycle(answerTimeMillis, endTimeMillis, billsec, answered, false, hangupCause);
     }
 
     /**
@@ -76,13 +82,13 @@ public record AdCallPayload(
             terminatingCallingNumber, terminatingCalledNumber, ruleId, ruleCode, ruleName, inPartnerId, incomingRouteId, incomingRouteName,
             campaignId, campaignName, contentId, contentPartnerId, mediaKind, mediaRef, requiredSeconds, outgoingRouteName, outPartnerId,
             dialplanId, dialplanName, matchedDialplanPrefix, routePriority, fallback, zone, site, district, gw, mac, ip, msisdn, uaFamily, wifiSessionId,
-            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, hangupCause, List.of());
+            startTimeMillis, answerTimeMillis, endTimeMillis, billsec, answered, credited, hangupCause, List.of());
     }
 
     /** A payload for a view that never reached a candidate (a failed CDR: the entry tenant, the advertiser when known). */
     public static AdCallPayload minimal(String uniqueId, String tenantName, String app, String calling, String called, long startTimeMillis) {
         return new AdCallPayload(uniqueId, TASK_TYPE_AD, tenantName, app, null, null, calling, called, calling, called,
             null, null, null, null, null, null, null, null, null, null, null, null, 0, null, null, null, null, null, 0, false,
-            null, null, null, null, null, null, null, null, null, startTimeMillis, 0, 0, 0, false, null, List.of());
+            null, null, null, null, null, null, null, null, null, startTimeMillis, 0, 0, 0, false, false, null, List.of());
     }
 }

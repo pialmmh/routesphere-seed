@@ -69,7 +69,7 @@ class LevelCdrWriterTest {
         return new AdCallPayload(id, "AD", "btcl", "wifi", 1, "wifi-captive", "8801711111111", "1001", "8801711111111", "1001",
             1L, "1001", "dhaka", payer, 12, "lux-soap", 5, "lux-soap", "lux-1", payer, "video", "http://media.local/lux-1.mp4", 15,
             "dhaka-01", 9, 3, "dp-dhaka", "1001", 1, false, "dhaka-01", "site-7", "dhaka", "bras-1", "aa:bb:cc:dd:ee:01", "10.0.0.1", "8801711111111", "ios", "wifi-9",
-            start, start + 1500, start + 17000, 15, true, AdCause.NORMAL_CLEARING.name(), List.of());
+            start, start + 1500, start + 17000, 15, true, true, AdCause.NORMAL_CLEARING.name(), List.of());
     }
 
     List<Map<String, Object>> rows(String sql) throws Exception {
@@ -129,6 +129,7 @@ class LevelCdrWriterTest {
         assertThat(tasks.get(0).get("uniqueid")).isEqualTo("ad-1");
         assertThat(tasks.get(0).get("state")).isEqualTo(11);
         assertThat(tasks.get(0).get("answered")).isEqualTo(1);
+        assertThat(cdrs.get(0).get("credited")).as("ARCH-0001 5.5: the free session followed").isEqualTo(1);
         assertThat(tasks.get(0).get("billsec")).isEqualTo(15);
         assertThat(tasks.get(0).get("hangup_cause")).isEqualTo("NORMAL_CLEARING");
         assertThat(tasks.get(0).get("campaign_id")).isEqualTo(5);

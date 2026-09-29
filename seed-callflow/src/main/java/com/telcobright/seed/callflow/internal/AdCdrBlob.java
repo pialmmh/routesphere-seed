@@ -71,6 +71,7 @@ public final class AdCdrBlob {
         cdr.put("MediaKind", p.mediaKind());
         cdr.put("RequiredSeconds", p.requiredSeconds());
         cdr.put("Answered", answered);
+        cdr.put("Credited", p.credited());                 // ARCH-0001 ruling 5.5: the free session followed the view
         cdr.put("Outcome", outcome);
         cdr.put("HangupCause", cause);
         cdr.put("Fallback", p.fallback());
