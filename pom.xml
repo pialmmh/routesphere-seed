@@ -21,6 +21,7 @@
         <module>seed-context</module>
         <module>seed-campaign</module>
         <module>seed-routing</module>
+        <module>seed-callflow</module>
     </modules>
 
     <properties>
