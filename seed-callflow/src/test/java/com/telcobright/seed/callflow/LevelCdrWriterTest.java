@@ -122,6 +122,7 @@ class LevelCdrWriterTest {
         assertThat(leaf.get("app")).isEqualTo("wifi");
         assertThat(leaf.get("rulecode")).isEqualTo("1001");
         assertThat(leaf.get("fallback")).isEqualTo(0);
+        assertThat(leaf.get("contentid")).as("the content shown, beside the called number (the rule's code)").isEqualTo("lux-1");
         assertThat(root.get("tenant")).isEqualTo("btcl");
         assertThat(root.get("inpartnerid")).isEqualTo(44);
         assertThat(((Number) root.get("inpartnercost")).doubleValue()).isEqualTo(0.40);
@@ -229,5 +230,32 @@ class LevelCdrWriterTest {
         assertThat(seqs).hasSize(2);
         assertThat(((Number) seqs.get(1).get("sequenceno")).longValue()).isEqualTo(((Number) seqs.get(0).get("sequenceno")).longValue() + 1);
         assertThat(rows("SELECT cdr_state FROM cdr_state").get(0).get("cdr_state")).isEqualTo(1_000_002L);
+    }
+
+    /** OFFICER-API §8: the PC recipe's one H2 file is in PostgreSQL mode — the DDL takes that wording (identity columns, no inline INDEX) and a write lands. */
+    @Test
+    void the_ddl_and_a_write_work_on_h2_in_postgresql_mode_too() throws Exception {
+        org.h2.jdbcx.JdbcDataSource pg = new org.h2.jdbcx.JdbcDataSource();
+        pg.setURL("jdbc:h2:mem:cdrpg" + System.nanoTime() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1");
+        try (java.sql.Connection c = pg.getConnection()) {
+            assertThat(LevelCdrWriter.wordingOf(c)).isEqualTo(LevelCdrWriter.Wording.H2_POSTGRES);
+        }
+        assertThat(LevelCdrWriter.schema(LevelCdrWriter.Wording.H2_POSTGRES)).noneMatch(sql -> sql.contains("AUTO_INCREMENT") || sql.contains("LONGTEXT") || sql.contains("INDEX ix_ad_cdr_tenant_time ("));
+        assertThat(LevelCdrWriter.schema(LevelCdrWriter.Wording.MYSQL)).anyMatch(sql -> sql.contains("ENUM('add','subtract')")).anyMatch(sql -> sql.contains("AUTO_INCREMENT"));
+        assertThat(LevelCdrWriter.schema(true)).as("the H2-MySQL wording is the MySQL one but for the ENUM").noneMatch(sql -> sql.contains("ENUM")).anyMatch(sql -> sql.contains("AUTO_INCREMENT"));
+        LevelCdrWriter pgWriter = new LevelCdrWriter(pg, () -> {}, java.time.ZoneId.of("Asia/Dhaka")).ensureSchema().ensureSchema();
+        AdAdmission a = chain.admit(payload("ad-pg", 701), "ad-pg", StepMode.LIVE);
+        pgWriter.writeAllLevels(payload("ad-pg", 701), a.levels(), AdCause.NORMAL_CLEARING.name(), true);
+        try (java.sql.Connection c = pg.getConnection(); java.sql.Statement st = c.createStatement()) {
+            java.sql.ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM ad_cdr");
+            rs.next();
+            assertThat(rs.getInt(1)).isEqualTo(2);
+            rs = st.executeQuery("SELECT COUNT(*) FROM summary_affected WHERE entity_type = 'ad_cdr'");
+            rs.next();
+            assertThat(rs.getInt(1)).isEqualTo(1);
+            rs = st.executeQuery("SELECT COUNT(*) FROM campaign_task");
+            rs.next();
+            assertThat(rs.getInt(1)).isEqualTo(1);
+        }
     }
 }
