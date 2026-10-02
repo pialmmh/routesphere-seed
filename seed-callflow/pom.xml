@@ -17,8 +17,8 @@
         call, an SMS — is a Call and runs the same multi-tenant flow: launch a pooled machine, preprocess, identify the
         partner, walk the tenant chain leaf to root (authorize, rate, reserve), route, signal, settle, publish one CDR
         record per tier to Kafka. An application overrides only its own steps. The machines come from a pool of a fixed
-        size (statewalk 3.2.0). The Ad-typed classes of 2026-09-29 (AdCallPayload, ChainAdmission, LevelCdrWriter, …) are
-        the earlier, ad-only shape: deprecated, removed when ad-sphere has moved onto CallFlow.</description>
+        size (statewalk 3.2.0). The ledger of orchestrix's prepaid roads is here too (OrchestrixLedger). First user:
+        ad-sphere (AdCallFlow).</description>
 
     <properties>
         <statewalk.version>3.2.0</statewalk.version>
@@ -65,12 +65,6 @@
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <version>3.27.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <version>2.3.230</version>
             <scope>test</scope>
         </dependency>
         <dependency>

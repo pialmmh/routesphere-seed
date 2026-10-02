@@ -29,8 +29,7 @@ final class CallSettlement<C extends CallFlowContext> {
 
     /** The duration the tiers are charged for is fixed here, once: the CDR carries the same number. */
     private void fixBilledDuration(C ctx) {
-        if (ctx.durationSec > 0 || !ctx.answered()) return;
-        ctx.durationSec = Math.max(0, flow.kit().clock().millis() - ctx.answeredAtMs) / 1000.0;
+        ctx.durationSec = Math.max(0, flow.safely(ctx, "billedDuration", () -> flow.billedDuration(ctx, flow.kit().clock().millis()), ctx.durationSec));
     }
 
     private TierSettlement settleLevel(C ctx, LevelAdmission level) {

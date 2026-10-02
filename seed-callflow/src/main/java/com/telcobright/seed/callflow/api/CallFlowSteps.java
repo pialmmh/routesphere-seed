@@ -174,6 +174,17 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     }
 
     /**
+     * The settlement, first · The billed duration of the call in seconds. It is asked once, when the tiers are settled, and
+     * written on the context: the CDR carries the same number. The default: what the signaling wrote on the context
+     * ({@code durationSec}), else the time since the answer. An application that measures it itself returns its own (the
+     * ad: the seconds watched).
+     */
+    protected double billedDuration(C ctx, long nowMs) {
+        if (ctx.durationSec > 0 || !ctx.answered()) return ctx.durationSec;
+        return Math.max(0, nowMs - ctx.answeredAtMs) / 1000.0;
+    }
+
+    /**
      * ACTIVE, every reserve period · What this tier reserves for the next window of a long call. Null = this tier does
      * not renew. Only asked when the settings name a reserve period.
      */

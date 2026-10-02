@@ -93,6 +93,7 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
 | end | `onTeardown` | nothing | hang up both legs | | |
+| | `billedDuration` | the signaling's, else the time since the answer | from the hangup | | the seconds watched |
 | | `chargeAtSettle` | answered: the reserve. Else nothing | rate × minutes | | the owner's "unshown" rule |
 | | (settle, slot, CDR) | fixed | | | |
 | | `fillCdr` | nothing more | codec, IPs | | group 30 facts |
@@ -141,12 +142,14 @@ testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder
 ## 8 · Tests
 
 ```bash
-mvn -o test                       # 89 tests
+mvn -o test                       # the whole suite
 mvn -o test -Dseed.it=true        # + the Kafka road over a real broker on 127.0.0.1:9092
 ```
 
-## 9 · Deprecated
+## 9 · History
 
-The Ad-typed classes of 2026-09-29 (`AdCallPayload`, `AdAdmission`, `AdCause`, `ChainAdmission`, `AdBillingPort`,
-`AdCdrPort`, `LevelCdrWriter`, `RoutedSessionSupervisor`, …) are the earlier, ad-only shape. They stay until ad-sphere
-has moved onto `CallFlow`, then they are deleted. Each names its replacement in its `@deprecated` note.
+- 2026-09-29 — the first shape, ad-only: `RoutedSessionSupervisor`, `ChainAdmission`, `AdBillingPort`, `LevelCdrWriter` (the switch wrote its
+  own CDR rows).
+- 2026-10-03 — the base pipeline (`CallFlow`); ad-sphere moved onto it (`AdCallFlow`) and the ad-only classes were removed. The orchestrix
+  ledger is now `Ledgers.orchestrix(...)`, an adapter of `LedgerPort`: reserve = road 16 on the partner's `billing_account_id`; what orchestrix
+  cannot give back yet is written to an owed journal.
