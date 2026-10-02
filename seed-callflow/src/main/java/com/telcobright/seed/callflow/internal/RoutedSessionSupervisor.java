@@ -47,7 +47,12 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Subclass rules (enforced by the framework): only {@code final} fields; {@link #defineDomainRoutes} runs from the
  * constructor — reference event classes and child names only, never instance fields.
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): {@link CallFlowSupervisor}, the one machine of every application, driven by a {@link com.telcobright.seed.callflow.api.CallFlow}.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public abstract class RoutedSessionSupervisor<C extends SessionContext> extends Supervisor<C> {
 
     public static final String PREPROCESSING = "PREPROCESSING";

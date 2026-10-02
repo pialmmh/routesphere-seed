@@ -26,7 +26,12 @@ import java.util.zip.GZIPOutputStream;
  * MatchedPrefixCustomer, ChargingStatus}) plus the ad facts the ad category keys on ({@code Tenant, CampaignId, RuleCode,
  * Zone, Site, App, MediaKind, Outcome, HangupCause …}); each {@code Chargeable} leg is one TIER ({@code servicegroup 30},
  * {@code assignedDirection 1}, {@code Tenant}, {@code PartnerId}, {@code LevelIndex}, {@code BilledAmount}, {@code Quantity}).
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): the summary input is written by billing-core, never by the switch.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class AdCdrBlob {
 
     public static final String ENTITY_TYPE = "ad_cdr";

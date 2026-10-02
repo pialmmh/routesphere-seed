@@ -18,7 +18,12 @@ import java.util.Optional;
  * beats {@code any}, then the lower id — ad-sphere's {@code AdRatePlan.better()} rule, unchanged. Per view = the amount
  * once; per second = amount × the charged seconds (the surcharge minimum, else the watch rounded up to the pulse) +
  * the surcharge amount. Rounded to the plan's {@code RateAmountRoundupDecimal} (null = 4).
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): rating is the application's own step: {@code CallFlow.rateAtLevel} (the ad's rate book moves to ad-sphere).
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class TierRating {
 
     private TierRating() {}

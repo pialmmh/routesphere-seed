@@ -12,16 +12,18 @@
 
     <artifactId>seed-callflow</artifactId>
     <name>seed-callflow</name>
-    <description>The routed session flow of a Telcobright switch, as a library (design: ad-sphere docs/ad-as-call/AD-AS-CALL-DESIGN.md,
-        2026-09-29): the session graph with PREPROCESSING in front (RoutedSessionSupervisor on statewalk 3.2.0), the multi-level
-        chain admission that DEBITS every reseller tier (ChainAdmission), the ledger port on orchestrix portal-api's prepaid
-        roads (OrchestrixLedgerBilling), and the per-tier CDR + campaign task + summary outbox row in ONE transaction
-        (LevelCdrWriter). Ad-sphere rides it first; the call switch adopts it in a later local window. The entities come
-        from rtc-domain; no framework in here.</description>
+    <description>The base call processing pipeline of a Telcobright switch, as a library (design: routesphere
+        docs/architecture/call-flow-base.md, 2026-10-03). One base class, CallFlow: every application — an ad view, a voice
+        call, an SMS — is a Call and runs the same multi-tenant flow: launch a pooled machine, preprocess, identify the
+        partner, walk the tenant chain leaf to root (authorize, rate, reserve), route, signal, settle, publish one CDR
+        record per tier to Kafka. An application overrides only its own steps. The machines come from a pool of a fixed
+        size (statewalk 3.2.0). The Ad-typed classes of 2026-09-29 (AdCallPayload, ChainAdmission, LevelCdrWriter, …) are
+        the earlier, ad-only shape: deprecated, removed when ad-sphere has moved onto CallFlow.</description>
 
     <properties>
         <statewalk.version>3.2.0</statewalk.version>
         <jackson.version>2.19.2</jackson.version>
+        <kafka.version>3.7.1</kafka.version>
     </properties>
 
     <dependencies>
@@ -40,6 +42,12 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+        </dependency>
+        <!-- the CDR road of every switch: one message per call on the tenant tree's cdr topic (KafkaCdrSink) -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -79,6 +87,13 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <!-- *IT needs the local Kafka on 127.0.0.1:9092: it only runs with -Dseed.it=true -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
             </plugin>
         </plugins>
     </build>

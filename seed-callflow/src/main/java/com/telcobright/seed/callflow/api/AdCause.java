@@ -5,7 +5,12 @@ import java.util.Locale;
 /**
  * The cause codes of an ad call (design §2.7): the string on the CDR row's {@code hangupCause}, and — as {@link #wire()},
  * lower-kebab — the API's {@code X-Ad-Reason}. {@code BUSY} (pool full) never gets a machine, so it is a counter, not a CDR.
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): the causes every call shares are {@link CallCause}; the ad's own words move to ad-sphere.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public enum AdCause {
     NORMAL_CLEARING,
     PREPROCESS_TIMEOUT,

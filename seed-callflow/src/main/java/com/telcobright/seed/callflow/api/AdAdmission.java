@@ -11,7 +11,12 @@ import java.util.List;
  * (leaf first, every tier DEBITED), or refused with a cause ({@link AdCause} names) — the tiers debited before the refusal
  * are already CREDITED back by the port (the only automatic refund there is), so a refused admission carries no levels.
  * {@code entryTenant} / {@code entryPartner} are what was identified before the refusal, for the failed CDR row.
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): the base answers with {@code AdmissionVerdict} and keeps the tiers on {@link CallFlowContext#levels} ({@link CallFlow#admit}).
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public record AdAdmission(boolean admitted, String cause, List<LevelAdmission> levels, Tenant entryTenant, Partner entryPartner) {
 
     public AdAdmission {

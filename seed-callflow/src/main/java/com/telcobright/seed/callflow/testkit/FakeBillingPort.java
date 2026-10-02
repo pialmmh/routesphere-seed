@@ -15,7 +15,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * The ledger of the tests: one cash balance per partner, the road-16 rules in memory (idempotent by reference, refused
  * when the balance cannot cover it, a scripted system fault), every debit and credit recorded with its reference so a
  * test can prove the mutation it expects — and nothing else.
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): {@link InMemoryLedger}.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class FakeBillingPort implements AdBillingPort {
 
     public record Debit(int partnerId, String tenant, BigDecimal amount, String reference) {}

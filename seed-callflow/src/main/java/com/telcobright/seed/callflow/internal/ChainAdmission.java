@@ -43,7 +43,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * A FALLBACK payload (the house campaign) is free: every tier is walked and recorded at 0, nothing is debited. A tier whose
  * partner has no live rate for the view refuses with {@code UNRATED} (the content leaves the draw, as {@code rating.unrated=skip}).
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): the tenant chain is the base's own: {@link com.telcobright.seed.callflow.api.CallFlow#admit}.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class ChainAdmission implements AdAdmissionPort {
 
     private static final Logger log = LoggerFactory.getLogger(ChainAdmission.class);

@@ -5,7 +5,12 @@ package com.telcobright.seed.callflow.api;
  * or PENDING ({@link #later()}) — the hook handed the work to something asynchronous that re-enters the machine with a
  * {@code Preprocessed} event through the registry; the state's timeout ends a pending that never answers
  * ({@code PREPROCESS_TIMEOUT}).
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): {@link CallFlow#preprocess} answers the refusal cause, or null.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public record PreprocessVerdict(Kind kind, String cause) {
 
     public enum Kind { OK, REFUSED, PENDING }

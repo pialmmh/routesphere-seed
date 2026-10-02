@@ -37,7 +37,12 @@ import java.util.function.Function;
  *   <li>{@code 402} → empty (nobody can pay: the next payer is tried); {@code 409 / 404 / 400} → {@link LedgerRefusal} with
  *       the body's {@code error.code}; {@code 401 / 403 / 5xx / no connection} → {@link BillingSystemFault}.</li>
  * </ul>
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): it becomes an adapter of {@link com.telcobright.seed.callflow.spi.LedgerPort} (reserve, settle, release).
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class OrchestrixLedgerBilling implements AdBillingPort {
 
     private static final Logger log = LoggerFactory.getLogger(OrchestrixLedgerBilling.class);

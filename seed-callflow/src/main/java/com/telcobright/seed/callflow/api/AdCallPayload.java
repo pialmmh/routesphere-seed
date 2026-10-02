@@ -21,7 +21,12 @@ import java.util.List;
  * {@code answerTimeMillis} = the ad reached the screen (shown), {@code billsec} = watched seconds, {@code hangupCause} = the
  * cause code ({@link AdCause}); {@code credited} = the free session followed the view (ARCH-0001 ruling 5.5, 2026-09-30).
  * {@code levels} is filled by admission (one {@link LevelAdmission} per tier, leaf first).
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): a call's facts live on {@link CallFlowContext}; the ad adds its own in its context (ad-sphere).
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public record AdCallPayload(
     String uniqueId,                 // the ad session id = the CDR's channel uuid
     String taskType,                 // "AD"

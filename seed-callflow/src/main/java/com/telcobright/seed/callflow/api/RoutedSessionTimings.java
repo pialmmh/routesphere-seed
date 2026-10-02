@@ -10,7 +10,12 @@ package com.telcobright.seed.callflow.api;
  * @param admittedSec      the whole signaling window (the ad: the view window)
  * @param activeMaxSec     dead-man backstop while ACTIVE
  * @param tearingDownSec   settlement must arrive within this
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): {@link CallFlowTimings} (with the ringing window).
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public record RoutedSessionTimings(long preprocessingSec, long admittingSec, long admittedSec, long activeMaxSec, long tearingDownSec) {
 
     public RoutedSessionTimings {

@@ -20,7 +20,12 @@ import java.util.Optional;
  *       {@code 409 PARTNER_INACTIVE}, {@code 404} (no such partner), {@code 400} — the body's code is the cause.</li>
  *   <li>{@link #credit}: the new balance, or empty when the account is unknown / the credit was refused.</li>
  * </ul>
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): {@link LedgerPort}: reserve, settle, release.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public interface AdBillingPort {
 
     Optional<LevelCharge> debit(LevelAdmission level, BigDecimal amount, String reference) throws BillingSystemFault;

@@ -41,7 +41,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * The money is NOT in this transaction (it is orchestrix's, already debited at admission); every RECORD of the money is.
  * The table name {@code ad_cdr} keeps clear of the tenant database's mediation {@code cdr} table (exchange X-0001 §2.3).
  * H2 (MySQL mode) and MySQL.
+ 
+ *
+ * @deprecated The ad-only shape of 2026-09-29. Since the base call pipeline (2026-10-03): the switch only publishes the CDR ({@link com.telcobright.seed.callflow.spi.CdrSink}); billing-core writes it.
+ *     Removed when ad-sphere has moved onto {@code CallFlow}.
  */
+@Deprecated(since = "2026-10-03", forRemoval = true)
 public final class LevelCdrWriter implements AdCdrPort {
 
     private static final Logger log = LoggerFactory.getLogger(LevelCdrWriter.class);
