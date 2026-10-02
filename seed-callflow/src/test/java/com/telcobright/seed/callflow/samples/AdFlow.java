@@ -140,9 +140,11 @@ public final class AdFlow extends CallFlow<AdFlow.View> {
         return left.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0 ? null : "QUOTA_EXHAUSTED";
     }
 
+    /** A ledger fault first; then the budget that ran out before every campaign was tried; else nobody could pay. */
     @Override
     protected String rejectCause(View view) {
-        return view.systemFault != null ? CallCause.BILLING_SYSTEM_ERROR : "NO_FUNDED_CAMPAIGN";
+        if (view.systemFault != null) return CallCause.BILLING_SYSTEM_ERROR;
+        return view.budgetSpent ? CallCause.ADMISSION_TIMEOUT : "NO_FUNDED_CAMPAIGN";
     }
 
     @Override

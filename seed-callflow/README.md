@@ -85,7 +85,7 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `applyRootRules` (root only) | none | digit filter | | |
 | | `isFree` | no | | | the house ad |
 | | `rateAtLevel` | — (must say) | per minute, 1 minute | per part, all parts | per view, whole |
-| | (reserve) | `LedgerPort.reserve` — fixed | | | |
+| | (reserve) | `LedgerPort.reserve`, inside the admission's budget — fixed | | | |
 | | `resolveRoute` (root) | none | dialplan | SMS routes | already routed |
 | | `confirmAdmission` | nothing | | | claim the quota |
 | ADMITTED | `startSignaling` | — (must say) | the ESL leg | the submit | the view |
@@ -108,9 +108,37 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 - On return the framework clears the context, ids and timers. The next call starts in PREPROCESSING with its own context.
 - Every state has a deadline. A call no deadline ended is killed by `globalTimeoutSec` (`HUNG_MACHINE`).
 - A deadline, a kill and a shutdown run the same end as a normal hangup: settle, free the slot, publish the CDR.
+- The caller may leave at any time. A `ServiceEnd` that arrives while the call is still preprocessed or admitted ends it
+  with that cause, as soon as the running step is over. An admission that had just reserved is settled like any other end.
 - `engine.stats()`: size, live, machines built, launched, busy, ended, CDRs, owed, slots held.
 
-## 5 · Money
+## 5 · The admission's time
+
+Admission has **one** deadline: the ADMITTING state's. Everything inside it fits, by construction.
+
+```
+ADMITTING deadline (5 s)
+|<----------- the budget: candidates that pay ----------->|<- reserve ->|
+|  try 1: tier 0, tier 1 ...   try 2 ...                  |  a free     |
+|  every ledger call waits at most what is left           |  candidate  |
+```
+
+- `settings.admissionReserveMs` (default 500) is kept for a free candidate (the house ad) and for the answer.
+  The budget is the deadline minus the reserve: `settings.admissionBudgetMs()`.
+- Every reserve is asked with the time left: `LedgerPort.reserve(level, amount, reference, withinMs)`. A ledger that calls a
+  remote road waits the smaller of its own timeout and `withinMs`. A ledger in the process ignores it.
+- When no time is left, a candidate that pays is not started and a tier is not asked. The candidate gives back what it held.
+  `ctx.budgetSpent` is set. If nobody is admitted, the cause is `ADMISSION_TIMEOUT`.
+- A free candidate is never cut by the budget. It asks nothing of the ledger.
+- An application's `useCandidate` may ask `paidTimeIsOver(ctx)` to skip a paying candidate early. `admissionTimeLeftMs(ctx)`
+  says what is left.
+- A dry run (`simulate`) has no budget.
+- At start the engine says the budget, and how many slow answers of the ledger fit in it (`LedgerPort.slowestAnswerMs()`).
+
+Why: a state's deadline does not interrupt a running step. A step that ran past the deadline was followed by the timeout,
+and its good decision was thrown away. Now the step ends in time.
+
+## 6 · Money
 
 Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end, **release** when a chain is refused.
 
@@ -118,9 +146,14 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 - A ledger fault is `BILLING_SYSTEM_ERROR`. It is never shown as a balance cause.
 - The settle rule (`chargeAtSettle`) runs **exactly once per tier, on every end path**. No path refunds by its own rule.
 - A settlement the ledger did not take is logged as `OWED` with its reference. The CDR is still published and marked.
+- The orchestrix ledger (`Ledgers.orchestrix`) asks road 16 once, and once more with the same reference when it got no
+  answer and time is left. Defaults: connect 500 ms, read 1,500 ms.
+- Its journal has two kinds of line. `owed`: a reserve that must go back and the ledger has no road for it; the amount is
+  certain. `unsure`: a reserve the ledger did not answer in time; the money may have moved after the switch stopped
+  waiting, so an officer looks the reference up first.
 - Reserve references: `<call>#L<tier>`; a later candidate `<call>#<try>#L<tier>`; a renewal `…#W<n>`.
 
-## 6 · The CDR
+## 7 · The CDR
 
 - The switch only publishes. It never writes a CDR or summary table.
 - One Kafka message per call: key = the call id, value = the JSON array of `CdrEvent`, the leaf first.
@@ -128,7 +161,7 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 - `CdrSinks.replay(file, sink)` sends a journal file again. billing-core takes a call once per tier.
 - A call nobody was admitted for still sends one record, on the tenant it entered.
 
-## 7 · Packages
+## 8 · Packages
 
 ```
 api/           CallFlow · CallFlowSteps · CallFlowEngine · CallFlowContext · CallCause · CallState · CdrEvent · TierRate …
@@ -139,17 +172,23 @@ internal/      CallFlowSupervisor (the machine) · ChannelSlots · CdrAssembler 
 testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder
 ```
 
-## 8 · Tests
+## 9 · Tests
 
 ```bash
 mvn -o test                       # the whole suite
 mvn -o test -Dseed.it=true        # + the Kafka road over a real broker on 127.0.0.1:9092
 ```
 
-## 9 · History
+For a test of a deadline: `testkit.ManualClock` (a clock the test moves) with `InMemoryLedger.slowOn(tenant, partner, ms)`
+and `timePassesBy(clock::advance)`. The slow ledger "takes" its time by moving the clock, so the test is exact and waits
+for nothing. `CallFlowBudgetTest` is the example.
+
+## 10 · History
 
 - 2026-09-29 — the first shape, ad-only: `RoutedSessionSupervisor`, `ChainAdmission`, `AdBillingPort`, `LevelCdrWriter` (the switch wrote its
   own CDR rows).
 - 2026-10-03 — the base pipeline (`CallFlow`); ad-sphere moved onto it (`AdCallFlow`) and the ad-only classes were removed. The orchestrix
   ledger is now `Ledgers.orchestrix(...)`, an adapter of `LedgerPort`: reserve = road 16 on the partner's `billing_account_id`; what orchestrix
   cannot give back yet is written to an owed journal.
+- 2026-10-03, later — the admission's budget (§5): one deadline for the whole admission, every ledger call bounded by what is
+  left, the `unsure` journal line, and a caller that leaves during preprocessing or admission ends the call.

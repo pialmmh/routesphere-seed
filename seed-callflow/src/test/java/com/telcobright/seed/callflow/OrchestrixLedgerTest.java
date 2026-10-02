@@ -83,8 +83,11 @@ class OrchestrixLedgerTest {
 
     private Path owedFile() { return dir.resolve("owed-ledger.jsonl"); }
 
-    private LedgerPort ledger() {
-        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit", 500, 300, "ad-sphere");
+    /** The ledger with a read timeout of 300 ms: shorter than the fake road's slow answer (700 ms). */
+    private LedgerPort ledger() { return ledger(300); }
+
+    private LedgerPort ledger(long readTimeoutMs) {
+        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit", 500, readTimeoutMs, "ad-sphere");
         return Ledgers.orchestrix(settings, env, owedFile(), Clock.fixed(Instant.parse("2026-10-03T04:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -181,9 +184,63 @@ class OrchestrixLedgerTest {
         assertThat(seen).hasSize(2);
         assertThat(seen.get(1).body()).as("the retry is the same request").isEqualTo(seen.get(0).body());
 
+        assertThat(owedFile()).as("an answered reserve leaves no line").doesNotExist();
+
         slowCalls.set(2);
         assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-9#L0"))
             .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("timed out twice");
+    }
+
+    // ── a reserve inside the time the admission has left ────────────────────
+
+    @Test
+    void aReserveNeverWaitsLongerThanTheAdmissionHasLeft_evenWhenItsOwnTimeoutIsLonger() {
+        LedgerPort patient = ledger(5000);                                          // its own timeout would wait 5 s
+        slowCalls.set(1);
+        long startedMs = System.currentTimeMillis();
+
+        assertThatThrownBy(() -> patient.reserve(level("9001"), new BigDecimal("0.50"), "ad-11#L0", 200))
+            .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("200 ms the admission had left");
+
+        assertThat(System.currentTimeMillis() - startedMs).as("given up at the 200 ms it was given, not at its own 5 s").isLessThan(2000);
+        assertThat(seen).as("no time was left for the repeat").hasSize(1);
+    }
+
+    @Test
+    void theSameReferenceIsRepeatedOnce_onlyWhenTimeIsLeft() {
+        LedgerPort ledger = ledger();
+        slowCalls.set(1);
+
+        Optional<LedgerPort.Reservation> held = ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-12#L0", 3000);
+
+        assertThat(held).as("the first try got no answer in 300 ms, the repeat was answered").isPresent();
+        assertThat(seen).hasSize(2);
+        assertThat(seen.get(1).body()).isEqualTo(seen.get(0).body());
+    }
+
+    @Test
+    void aReserveThatGotNoAnswer_isWrittenDownAsUnsure_theMoneyMayHaveMoved() throws Exception {
+        LedgerPort ledger = ledger();
+        slowCalls.set(2);
+
+        assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
+
+        List<String> lines = Files.readAllLines(owedFile());
+        assertThat(lines).hasSize(1);
+        JsonNode line = JSON.readTree(lines.get(0));
+        assertThat(line.get("kind").asText()).isEqualTo("unsure");
+        assertThat(line.get("reference").asText()).as("the reference an officer looks up at the ledger").isEqualTo("ad-13#L0");
+        assertThat(line.get("tenant").asText()).isEqualTo("res_44");
+        assertThat(line.get("partnerId").asInt()).isEqualTo(701);
+        assertThat(line.get("amount").decimalValue()).isEqualByComparingTo("0.50");
+        assertThat(line.get("why").asText()).contains("timed out twice");
+    }
+
+    @Test
+    void theLedgerSaysHowSlowOneAnswerMayBe() {
+        assertThat(ledger().slowestAnswerMs()).isEqualTo(300);
+        assertThat(LedgerSettings.of("http://127.0.0.1:1", "PORTAL_API_TOKEN", "btcl").readTimeoutMs()).as("the default read timeout").isEqualTo(1500);
+        assertThat(LedgerSettings.of("http://127.0.0.1:1", "PORTAL_API_TOKEN", "btcl").connectTimeoutMs()).as("the default connect timeout").isEqualTo(500);
     }
 
     @Test
@@ -192,6 +249,7 @@ class OrchestrixLedgerTest {
         server.stop(0);
 
         assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-10#L0")).isInstanceOf(LedgerPort.LedgerFault.class);
+        assertThat(owedFile()).as("nothing was sent: nothing is unsure").doesNotExist();
     }
 
     @Test
@@ -218,6 +276,7 @@ class OrchestrixLedgerTest {
         List<String> lines = Files.readAllLines(owedFile());
         assertThat(lines).hasSize(2);
         JsonNode first = JSON.readTree(lines.get(0));
+        assertThat(first.get("kind").asText()).isEqualTo("owed");
         assertThat(first.get("at").asText()).isEqualTo("2026-10-03T04:00:00Z");
         assertThat(first.get("reference").asText()).isEqualTo("ad-1#L0");
         assertThat(first.get("tenant").asText()).isEqualTo("res_44");

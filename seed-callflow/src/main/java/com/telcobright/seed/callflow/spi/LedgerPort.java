@@ -30,6 +30,15 @@ public interface LedgerPort {
     Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference);
 
     /**
+     * The same reserve, bounded: the answer must come within {@code withinMs} — what is left of the call's admission
+     * budget. A ledger that calls a remote road uses the smaller of its own timeout and this, and repeats a timed-out
+     * call only when the time left allows it. A ledger that cannot bound its call takes the plain reserve.
+     */
+    default Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) {
+        return reserve(level, amount, reference);
+    }
+
+    /**
      * The call ended: it finally costs {@code charged} at this tier. The ledger reconciles against everything the tier
      * reserved ({@code level.getTotalReserved()}) in EITHER direction: the rest goes back, a shortfall is debited.
      * Called exactly once per tier that reserved; the reference is {@code level.getDebitReference()}.
@@ -38,6 +47,12 @@ public interface LedgerPort {
 
     /** Give back everything the tier reserved: a later tier refused, or the candidate was dropped. */
     void release(LevelAdmission level, String why);
+
+    /**
+     * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
+     * (a ledger in the process). The engine says at start how many such answers fit one admission.
+     */
+    default long slowestAnswerMs() { return 0; }
 
     /**
      * What a reserve came to.

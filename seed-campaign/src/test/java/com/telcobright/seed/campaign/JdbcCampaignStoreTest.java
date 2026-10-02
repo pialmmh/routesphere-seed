@@ -72,6 +72,48 @@ class JdbcCampaignStoreTest {
         taskLifeLandsInTheRow(openH2(d), d);
     }
 
+    @ParameterizedTest
+    @EnumSource(Dialect.class)
+    void a_text_longer_than_its_column_is_cut_and_the_task_keeps_its_row(Dialect d) throws Exception {
+        aLongTextIsCutNotLost(openH2(d), d);
+    }
+
+    /** The widths are the table's own (CampaignSchema): a zone of 64 in a column of 60 must not cost the task its row. */
+    static void aLongTextIsCutNotLost(DataSource ds, Dialect d) throws Exception {
+        JdbcCampaignStore store = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d);
+        Instant t0 = Instant.parse("2026-10-03T06:00:00Z");
+        String zone = "z".repeat(64), site = "s".repeat(61), subject = "8".repeat(80), clientRef = "w".repeat(300);
+        CampaignTask task = new CampaignTask("ad-btcl-aabb-2", "btcl", 42, 701, CampaignKind.AD, subject, "c-77", zone, site, clientRef,
+            TaskState.PROCESSING, t0, null, null, 0, null, null, Map.of());
+
+        store.insertTask(task);
+
+        Map<String, Object> row = row(ds, "SELECT * FROM campaign_task WHERE uniqueId = 'ad-btcl-aabb-2'");
+        assertThat(row).as("the row is there").isNotEmpty();
+        assertThat(row).containsEntry("terminating_called_number", "z".repeat(60)).containsEntry("originating_calling_number", "s".repeat(60))
+            .containsEntry("phone_number", "8".repeat(60)).containsEntry("client_trans_id", "w".repeat(255));
+
+        store.updateTask(task.completed(t0.plusSeconds(3), 0, new TaskCharge(586L, "u".repeat(51), BigDecimal.ONE, BigDecimal.ZERO, "p".repeat(120)),
+            "abandoned:" + "x".repeat(200)));
+
+        row = row(ds, "SELECT * FROM campaign_task WHERE uniqueId = 'ad-btcl-aabb-2'");
+        assertThat((String) row.get("hangup_cause")).as("the end of the task is written, its cause cut").hasSize(100).startsWith("abandoned:xxx");
+        assertThat((String) row.get("uom")).hasSize(50);
+        assertThat((String) row.get("matchedprefixcustomer")).hasSize(100);
+        assertThat(row).containsEntry("end_time_millis", t0.plusSeconds(3).toEpochMilli());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Dialect.class)
+    void a_task_id_longer_than_its_column_is_refused_by_name_never_cut(Dialect d) throws Exception {
+        JdbcCampaignStore store = new JdbcCampaignStore(openH2(d), CampaignKind.AD, JdbcCampaignStoreTest::json, d);
+        CampaignTask task = new CampaignTask("ad-" + "t".repeat(48), "btcl", 42, 701, CampaignKind.AD, "8801711", "c-77", "zone0", "site", "wifi-9",
+            TaskState.PROCESSING, Instant.parse("2026-10-03T06:00:00Z"), null, null, 0, null, null, Map.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> store.insertTask(task))
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("51 characters").hasMessageContaining("holds 50");
+    }
+
     static void campaignsComeBackWhole(DataSource ds, Dialect d) {
         JdbcCampaignStore store = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d);
 

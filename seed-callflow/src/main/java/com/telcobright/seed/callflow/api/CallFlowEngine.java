@@ -56,6 +56,28 @@ public final class CallFlowEngine<C extends CallFlowContext> implements AutoClos
         CallFlowSettings s = flow.kit().settings();
         log.info("[{}] call flow up: a pool of {} machines, deadlines {}, hung-machine killer at {} s, reserve period {} s, children {}",
             flow.name(), s.pool(), s.timings(), builder.killerAfterSec, s.reservePeriodSec(), builder.children.keySet());
+        sayAdmissionBudget(s);
+    }
+
+    /**
+     * The admission's time, said once at start: how long the candidates that pay may take, and how many slow answers of
+     * the ledger fit in it. A ledger whose one answer may take longer than the whole budget is worth a WARN: its own
+     * timeout is never reached, the budget cuts every slow call first.
+     */
+    private void sayAdmissionBudget(CallFlowSettings s) {
+        long budgetMs = s.admissionBudgetMs();
+        long slowestMs = flow.kit().ledger().slowestAnswerMs();
+        if (slowestMs <= 0) {
+            log.info("[{}] admission: {} ms for the candidates that pay (the ADMITTING deadline {} s minus {} ms kept for a free candidate); the ledger answers in the process",
+                flow.name(), budgetMs, s.timings().admittingSec(), s.admissionReserveMs());
+            return;
+        }
+        log.info("[{}] admission: {} ms for the candidates that pay (the ADMITTING deadline {} s minus {} ms kept for a free candidate); one ledger answer may take {} ms, so {} slow answer(s) fit one admission",
+            flow.name(), budgetMs, s.timings().admittingSec(), s.admissionReserveMs(), slowestMs, budgetMs / slowestMs);
+        if (slowestMs > budgetMs) {
+            log.warn("[{}] the ledger's own timeout ({} ms) is longer than the whole admission budget ({} ms): every slow ledger call is cut by the budget, not by the ledger's timeout — shorten the ledger's read timeout or lengthen ADMITTING",
+                flow.name(), slowestMs, budgetMs);
+        }
     }
 
     public static <C extends CallFlowContext> Builder<C> of(CallFlow<C> flow) { return new Builder<>(flow); }

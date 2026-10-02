@@ -7,6 +7,9 @@ import com.telcobright.seed.campaign.api.TaskCharge;
 import com.telcobright.seed.campaign.spi.CampaignStore;
 
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -15,6 +18,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 /**
@@ -43,6 +47,9 @@ public final class JdbcCampaignStore implements CampaignStore {
     /** {@code enumjobstatus} ids that a task's STATUS mirrors (the SMS runner writes the same ones). */
     static final int STATUS_COMPLETE = 1, STATUS_FAILED = 5, STATUS_SENT = 11, STATUS_PROCESSING = 15;
 
+    private static final Logger log = LoggerFactory.getLogger(JdbcCampaignStore.class);
+
+    private final AtomicLong cuts = new AtomicLong();
     private final DataSource ds;
     private final CampaignKind kind;
     private final Function<Map<String, Object>, String> json;
@@ -80,28 +87,52 @@ public final class JdbcCampaignStore implements CampaignStore {
 
     @Override
     public void insertTask(CampaignTask t) {
+        requireIdFits(t);
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(INSERT_TASK)) {
             int i = 1;
             ps.setString(i++, t.uniqueId());
             ps.setInt(i++, t.campaignId());
             ps.setInt(i++, t.partnerId());
-            ps.setString(i++, t.subject());
-            ps.setString(i++, t.creativeId());
+            ps.setString(i++, fit(t.subject(), CampaignSchema.TASK_NUMBER_WIDTH, "PHONE_NUMBER", t));
+            ps.setString(i++, fit(t.creativeId(), CampaignSchema.TASK_MESSAGE_WIDTH, "MESSAGE", t));
             ps.setString(i++, t.kind().name());
             ps.setInt(i++, t.state().code());
             ps.setInt(i++, STATUS_PROCESSING);
             ps.setTimestamp(i++, Timestamp.from(t.createdAt()));
             ps.setTimestamp(i++, Timestamp.from(t.createdAt()));
             ps.setLong(i++, t.createdAt().toEpochMilli());
-            ps.setString(i++, t.zone());
-            ps.setString(i++, t.site());
-            ps.setString(i++, t.clientRef());
-            ps.setString(i++, t.tenantId());
+            ps.setString(i++, fit(t.zone(), CampaignSchema.TASK_NUMBER_WIDTH, "TERMINATING_CALLED_NUMBER", t));
+            ps.setString(i++, fit(t.site(), CampaignSchema.TASK_NUMBER_WIDTH, "ORIGINATING_CALLING_NUMBER", t));
+            ps.setString(i++, fit(t.clientRef(), CampaignSchema.TASK_CLIENT_REF_WIDTH, "CLIENT_TRANS_ID", t));
+            ps.setString(i++, fit(t.tenantId(), CampaignSchema.TASK_TENANT_WIDTH, "tenantName", t));
             ps.setString(i, json.apply(t.detail()));
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("task " + t.uniqueId() + " could not be inserted: " + e.getMessage(), e);
         }
+    }
+
+    // ── a text longer than its column never costs a task its row ────────────
+
+    /** The id is the row's key: it is never cut. An id that cannot fit is the caller's defect, said by name before any SQL. */
+    private static void requireIdFits(CampaignTask t) {
+        if (t.uniqueId() == null || t.uniqueId().length() <= CampaignSchema.TASK_ID_WIDTH) return;
+        throw new IllegalStateException("task id '" + t.uniqueId() + "' is " + t.uniqueId().length() + " characters; campaign_task.uniqueId holds "
+            + CampaignSchema.TASK_ID_WIDTH + " — the caller must mint ids that fit");
+    }
+
+    /**
+     * The text as the column can hold it: cut to the column's width when longer (never in the middle of a character
+     * pair), and said in the log for the first cut and every thousandth. The whole text stays in the caller's own records.
+     */
+    private String fit(String text, int width, String column, CampaignTask t) {
+        if (text == null || text.length() <= width) return text;
+        long soFar = cuts.incrementAndGet();
+        if (soFar == 1 || soFar % 1000 == 0) {
+            log.warn("campaign_task.{}: a text of {} characters was cut to the column's {} (task {}; {} cut so far)", column, text.length(), width, t.uniqueId(), soFar);
+        }
+        int end = Character.isHighSurrogate(text.charAt(width - 1)) ? width - 1 : width;
+        return text.substring(0, end);
     }
 
     @Override
@@ -116,13 +147,13 @@ public final class JdbcCampaignStore implements CampaignStore {
             setLong(ps, i++, t.answeredAt() == null ? null : t.answeredAt().toEpochMilli());
             setLong(ps, i++, t.endedAt() == null ? null : t.endedAt().toEpochMilli());
             ps.setInt(i++, t.billsec());
-            ps.setString(i++, t.endCause());
+            ps.setString(i++, fit(t.endCause(), CampaignSchema.TASK_CAUSE_WIDTH, "HANGUP_CAUSE", t));
             setLong(ps, i++, ch.packageAccountId());
             ps.setDouble(i++, ch.packageAmount() == null ? 0 : ch.packageAmount().doubleValue());
-            ps.setString(i++, ch.uom());
+            ps.setString(i++, fit(ch.uom(), CampaignSchema.TASK_UOM_WIDTH, "uom", t));
             ps.setDouble(i++, ch.cost() == null ? 0 : ch.cost().doubleValue());
             ps.setString(i++, ch.free() ? "0" : "1");
-            ps.setString(i++, ch.matchedPattern());
+            ps.setString(i++, fit(ch.matchedPattern(), CampaignSchema.TASK_PREFIX_WIDTH, "MatchedPrefixCustomer", t));
             ps.setString(i++, json.apply(t.detail()));
             ps.setString(i, t.uniqueId());
             ps.executeUpdate();

@@ -15,6 +15,7 @@ import com.telcobright.seed.callflow.samples.VoiceFlow;
 import com.telcobright.seed.callflow.samples.Wire;
 import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.session.SdrRecord;
+import com.telcobright.statewalk.session.events.ServiceEnd;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -158,6 +159,30 @@ class CallFlowLifecycleTest {
         assertThat(cdrOf("call-3")).allSatisfy(cdr -> assertThat(cdr.hangupCause).isEqualTo("ORIGINATOR_CANCEL"));
         assertThat(scene.ledger.balanceOf("res_44", 701)).isEqualByComparingTo("100.00");
         assertThat(scene.ledger.openReserves()).isZero();
+    }
+
+    @Test
+    void theCallerLeavesWhileTheCallIsStillBeingAdmitted_theCallEndsWithThatCause_andEveryReserveGoesBack() throws Exception {
+        scene.ledger.slowOn("res_44", 701, 400);                                     // the admission takes 400 ms: time to leave
+        CallFlowEngine<VoiceFlow.Call> engine = voiceEngine(Scene.settings(4));
+        VoiceFlow.Call call = Scene.call("call-7", "10.0.0.7", "01712345678");
+        engine.launch(call);
+        Scene.await("the admission is running", () -> scene.ledger.timeGivenFor("call-7#L0") != null);
+
+        engine.deliver("call-7", new ServiceEnd("ORIGINATOR_CANCEL"));               // queued behind the running step
+
+        SdrRecord record = sessionRecordOf("call-7");
+        assertThat(record.outcome()).isEqualTo(CallState.FAILED);
+        assertThat(record.endCause()).isEqualTo("ORIGINATOR_CANCEL");
+        assertThat(scene.ledger.count("reserve")).as("the admission had reserved both tiers before it saw the caller was gone").isEqualTo(2);
+        assertThat(scene.ledger.balanceOf("res_44", 701)).isEqualByComparingTo("100.00");
+        assertThat(scene.ledger.balanceOf("btcl", 44)).isEqualByComparingTo("100.00");
+        assertThat(scene.ledger.openReserves()).isZero();
+        List<CdrEvent> tiers = cdrOf("call-7");
+        assertThat(tiers).hasSize(2);
+        assertThat(tiers.get(0).hangupCause).isEqualTo("ORIGINATOR_CANCEL");
+        assertThat(tiers.get(0).inPartnerCost).isEqualByComparingTo("0");
+        Scene.await("the machine is back in the pool", () -> engine.stats().live() == 0);
     }
 
     @Test

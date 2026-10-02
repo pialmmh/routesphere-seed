@@ -54,6 +54,10 @@ public class CallFlowContext extends SessionContext {
     public volatile String lastRefusal;
     /** The ledger itself failed while a tier was reserved. Never a customer cause. */
     public volatile String systemFault;
+    /** When this call's admission budget ends (epoch ms): past it no candidate that pays is started and the ledger is not asked. 0 = not admitting yet. */
+    public volatile long admissionDeadlineMs;
+    /** The admission budget ran out and a candidate that pays was not tried (or not finished) because of it. */
+    public volatile boolean budgetSpent;
 
     // ── what routing found ──────────────────────────────────────────────────
 

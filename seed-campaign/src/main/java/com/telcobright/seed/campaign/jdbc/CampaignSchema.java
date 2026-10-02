@@ -20,6 +20,14 @@ public final class CampaignSchema {
 
     private CampaignSchema() {}
 
+    /**
+     * The widths of {@code campaign_task}'s text columns, in characters. The table below is made with them and the store
+     * cuts a longer text to them ({@link JdbcCampaignStore}): one number, two uses. The task's id is never cut — a caller
+     * mints ids that fit {@link #TASK_ID_WIDTH}.
+     */
+    public static final int TASK_ID_WIDTH = 50, TASK_NUMBER_WIDTH = 60, TASK_MESSAGE_WIDTH = 2000, TASK_CLIENT_REF_WIDTH = 255,
+        TASK_TENANT_WIDTH = 255, TASK_UOM_WIDTH = 50, TASK_PREFIX_WIDTH = 100, TASK_CAUSE_WIDTH = 100;
+
     /** The ad tables. {@code target_value} (not {@code value}) so no dialect needs to quote it. */
     public static List<String> adTables(Dialect d) {
         return List.of(
@@ -49,13 +57,13 @@ public final class CampaignSchema {
                 + " FIELD4 VARCHAR(255), FIELD5 VARCHAR(255), EXTERNAL_CAMPAIGN_ID VARCHAR(100) NOT NULL,"
                 + " CREATED_STAMP " + ts(d) + ", LAST_UPDATED_STAMP " + ts(d) + ")",
             "CREATE TABLE IF NOT EXISTS campaign_task ("
-                + "CAMPAIGN_TASK_ID " + identity(d) + " PRIMARY KEY, uniqueId VARCHAR(50) NOT NULL, CAMPAIGN_ID INT NOT NULL,"
-                + " ORIGINATING_CALLING_NUMBER VARCHAR(60), TERMINATING_CALLED_NUMBER VARCHAR(60), ID_PARTNER INT NOT NULL,"
-                + " PHONE_NUMBER VARCHAR(60) NOT NULL, MESSAGE VARCHAR(2000), CLIENT_TRANS_ID VARCHAR(255), CREATED_STAMP " + ts(d) + " NOT NULL,"
+                + "CAMPAIGN_TASK_ID " + identity(d) + " PRIMARY KEY, uniqueId VARCHAR(" + TASK_ID_WIDTH + ") NOT NULL, CAMPAIGN_ID INT NOT NULL,"
+                + " ORIGINATING_CALLING_NUMBER VARCHAR(" + TASK_NUMBER_WIDTH + "), TERMINATING_CALLED_NUMBER VARCHAR(" + TASK_NUMBER_WIDTH + "), ID_PARTNER INT NOT NULL,"
+                + " PHONE_NUMBER VARCHAR(" + TASK_NUMBER_WIDTH + ") NOT NULL, MESSAGE VARCHAR(" + TASK_MESSAGE_WIDTH + "), CLIENT_TRANS_ID VARCHAR(" + TASK_CLIENT_REF_WIDTH + "), CREATED_STAMP " + ts(d) + " NOT NULL,"
                 + " LAST_UPDATED_STAMP " + ts(d) + ", RETRY_COUNT INT NOT NULL DEFAULT 0, STATE INT, STATUS INT, TASK_DETAIL_JSON " + longText(d) + ","
-                + " idPackageAccount BIGINT, packageAmount DOUBLE PRECISION, uom VARCHAR(50), tenantName VARCHAR(255), isPrepaid VARCHAR(10),"
-                + " inPartnerCost DOUBLE PRECISION, MatchedPrefixCustomer VARCHAR(100), TASK_TYPE VARCHAR(20), ANSWERED SMALLINT DEFAULT 0,"
-                + " START_TIME_MILLIS BIGINT, ANSWER_TIME_MILLIS BIGINT, END_TIME_MILLIS BIGINT, BILLSEC INT, HANGUP_CAUSE VARCHAR(100),"
+                + " idPackageAccount BIGINT, packageAmount DOUBLE PRECISION, uom VARCHAR(" + TASK_UOM_WIDTH + "), tenantName VARCHAR(" + TASK_TENANT_WIDTH + "), isPrepaid VARCHAR(10),"
+                + " inPartnerCost DOUBLE PRECISION, MatchedPrefixCustomer VARCHAR(" + TASK_PREFIX_WIDTH + "), TASK_TYPE VARCHAR(20), ANSWERED SMALLINT DEFAULT 0,"
+                + " START_TIME_MILLIS BIGINT, ANSWER_TIME_MILLIS BIGINT, END_TIME_MILLIS BIGINT, BILLSEC INT, HANGUP_CAUSE VARCHAR(" + TASK_CAUSE_WIDTH + "),"
                 + " CONSTRAINT uq_campaign_task_uid UNIQUE (uniqueId))");
     }
 

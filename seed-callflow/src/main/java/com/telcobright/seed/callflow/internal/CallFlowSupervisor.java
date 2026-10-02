@@ -43,6 +43,10 @@ import static com.telcobright.seed.callflow.api.CallState.TEARING_DOWN;
  * clears the context, the ids and the timers and sets the machine idle; the next call starts in PREPROCESSING with its
  * own new context.
  *
+ * <p><b>The caller may leave at any time.</b> A {@code ServiceEnd} that arrives before the answer — while the call is
+ * still being preprocessed or admitted, too — ends the call with that cause. A step runs to its end first (an event
+ * never interrupts a step), so an admission that had just reserved is settled like any other end: nothing is left held.
+ *
  * <p><b>Every end runs the same end.</b> A normal end, a refusal, a state's deadline, the registry's global timeout
  * (a hung machine) and a shutdown all arrive in a final state, and every final state runs {@link #close}: the flow's
  * end (settle, slot, CDR) and one session record. {@link #close} runs once per call.
@@ -86,6 +90,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
                 .onEntry(self -> me(self).preprocess())
                 .on(Preprocessed.class, ADMITTING, (self, e) -> ((Preprocessed) e).ok())
                 .on(Preprocessed.class, FAILED, null, (self, e) -> me(self).endWith(((Preprocessed) e).cause()))
+                .stay(ServiceEnd.class, (self, e) -> me(self).abortBeforeAnswer((ServiceEnd) e))
 
             .state(ADMITTING)
                 .interim()
@@ -93,6 +98,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
                 .onEntry(self -> me(self).admit())
                 .on(AdmissionDecided.class, ADMITTED, (self, e) -> ((AdmissionDecided) e).accepted())
                 .on(AdmissionDecided.class, FAILED, null, (self, e) -> me(self).endWith(((AdmissionDecided) e).cause()))
+                .stay(ServiceEnd.class, (self, e) -> me(self).abortBeforeAnswer((ServiceEnd) e))
 
             .state(ADMITTED)
                 .interim()

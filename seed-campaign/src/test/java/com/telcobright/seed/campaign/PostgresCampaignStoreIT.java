@@ -38,6 +38,7 @@ class PostgresCampaignStoreIT {
         try {
             JdbcCampaignStoreTest.campaignsComeBackWhole(ds, Dialect.POSTGRES);
             JdbcCampaignStoreTest.taskLifeLandsInTheRow(ds, Dialect.POSTGRES);
+            JdbcCampaignStoreTest.aLongTextIsCutNotLost(ds, Dialect.POSTGRES);
         } finally {
             try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
                 st.execute("DROP SCHEMA " + schema + " CASCADE");

@@ -10,11 +10,13 @@ import com.telcobright.seed.callflow.spi.LedgerPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
@@ -41,8 +43,12 @@ import java.util.function.Function;
  * and the settlement says it is not closed. When orchestrix has the road, it is called here and the journal stays empty.
  *
  * <p>Road 16's answers: {@code 200/201} the reserve; {@code 402} nobody can pay (empty); {@code 409/404/400/422} a refusal
- * with the body's code; {@code 401/403/5xx}, no connection, or a second timeout: a {@link LedgerFault}. A read timeout
- * retries the SAME reference once: the road is idempotent by reference.
+ * with the body's code; {@code 401/403/5xx}, no connection, or no answer in time: a {@link LedgerFault}.
+ *
+ * <p><b>Time.</b> A reserve is given the time the call's admission has left. Each request waits the smaller of the read
+ * timeout and that time. A request that got no answer is repeated ONCE with the SAME reference (the road is idempotent
+ * by reference), and only when time is left. A reserve that ends with no answer is written to the journal as
+ * {@code unsure}: the ledger may have taken the money after the switch stopped waiting.
  */
 public final class OrchestrixLedger implements LedgerPort {
 
@@ -68,14 +74,40 @@ public final class OrchestrixLedger implements LedgerPort {
 
     @Override
     public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) {
+        return reserve(level, amount, reference, Long.MAX_VALUE);
+    }
+
+    @Override
+    public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) {
         String account = billingAccountOf(level);
-        HttpResponse<String> answer = post(settings.roads() + "/partners/" + account + "/charge", chargeOf(level, amount, reference), reference);
+        HttpResponse<String> answer = chargeOrGiveUp(level, amount, reference, account, withinMs);
         int status = answer.statusCode();
         if (status == 200 || status == 201) return Optional.of(reservationOf(parse(answer.body(), reference)));
         if (status == 402) return cannotPay(level, amount, reference, answer);
         if (status == 409 || status == 404 || status == 400 || status == 422) throw new LedgerRefusal(errorCode(answer.body(), status), errorMessage(answer.body()));
         throw new LedgerFault("the ledger answered " + status + " to the reserve of partner " + level.getPartnerId() + " (ref " + reference + ")"
             + (status == 401 || status == 403 ? " — the bearer in " + settings.tokenVar() + " is refused" : ""));
+    }
+
+    @Override
+    public long slowestAnswerMs() { return settings.readTimeoutMs(); }
+
+    /** Road 16. A request that was sent and never answered leaves an {@code unsure} line: nobody knows if the money moved. */
+    private HttpResponse<String> chargeOrGiveUp(LevelAdmission level, BigDecimal amount, String reference, String account, long withinMs) {
+        try {
+            return post(settings.roads() + "/partners/" + account + "/charge", chargeOf(level, amount, reference), reference, withinMs);
+        } catch (NoAnswer gaveUp) {
+            noteUnsure(level, reference, amount, gaveUp.getMessage());
+            throw new LedgerFault(gaveUp.getMessage(), gaveUp.getCause());
+        }
+    }
+
+    private void noteUnsure(LevelAdmission level, String reference, BigDecimal amount, String why) {
+        try {
+            owed.unsure(level, reference, amount, why);
+        } catch (RuntimeException e) {
+            log.error("ledger: the unsure reserve {} could not be written to {} — the line is in the log above: {}", reference, owed.file(), e.toString());
+        }
     }
 
     @Override
@@ -130,31 +162,54 @@ public final class OrchestrixLedger implements LedgerPort {
         return Optional.empty();
     }
 
-    /** One POST. A read timeout is retried ONCE with the same body (the same reference), then it is a fault. */
-    private HttpResponse<String> post(String url, ObjectNode body, String reference) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofMillis(settings.readTimeoutMs()))
+    /** The request was sent (or may have been) and no answer came in the time there was. */
+    private static final class NoAnswer extends RuntimeException {
+        NoAnswer(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * One POST, answered within {@code withinMs}. Each try waits the smaller of the read timeout and the time left. A try
+     * with no answer is repeated ONCE with the same body (the same reference) when time is left; then it is {@link NoAnswer}.
+     */
+    private HttpResponse<String> post(String url, ObjectNode body, String reference, long withinMs) {
+        long startedNs = System.nanoTime();
+        for (int attempt = 1; ; attempt++) {
+            long waitMs = Math.max(1, Math.min(settings.readTimeoutMs(), leftOf(withinMs, startedNs)));
+            try {
+                return http.send(requestOf(url, body, waitMs), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            } catch (HttpConnectTimeoutException e) {
+                throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": no connection within " + settings.connectTimeoutMs() + " ms", e);
+            } catch (HttpTimeoutException e) {
+                long left = leftOf(withinMs, startedNs);
+                if (attempt > 1) throw new NoAnswer("the ledger timed out twice on " + url + " (ref " + reference + ")", e);
+                if (left <= 0) throw new NoAnswer("the ledger did not answer within the " + waitMs + " ms the admission had left on " + url + " (ref " + reference + ")", e);
+                log.warn("ledger: {} did not answer within {} ms (ref {}) — repeating the same reference once, {} left", url, waitMs, reference,
+                    left == Long.MAX_VALUE ? "no limit" : left + " ms");
+            } catch (ConnectException | SSLHandshakeException e) {
+                throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": " + e.getMessage(), e);
+            } catch (IOException e) {
+                throw new NoAnswer("the ledger call failed on " + url + " (ref " + reference + "): " + e.getMessage(), e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NoAnswer("interrupted while calling the ledger (ref " + reference + ")", e);
+            }
+        }
+    }
+
+    private HttpRequest requestOf(String url, ObjectNode body, long waitMs) {
+        return HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofMillis(waitMs))
             .header("Authorization", "Bearer " + bearer)
             .header("X-Tenant-Id", settings.tenant())
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
             .build();
-        for (int attempt = 1; ; attempt++) {
-            try {
-                return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            } catch (HttpTimeoutException e) {
-                if (attempt > 1) throw new LedgerFault("the ledger timed out twice on " + url + " (ref " + reference + ")", e);
-                log.warn("ledger: {} timed out after {} ms (ref {}) — retrying the same reference once", url, settings.readTimeoutMs(), reference);
-            } catch (ConnectException e) {
-                throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": " + e.getMessage(), e);
-            } catch (IOException e) {
-                throw new LedgerFault("the ledger call failed on " + url + " (ref " + reference + "): " + e.getMessage(), e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new LedgerFault("interrupted while calling the ledger (ref " + reference + ")", e);
-            }
-        }
+    }
+
+    /** What is left of the caller's time since the call began. No limit stays no limit. */
+    private static long leftOf(long withinMs, long startedNs) {
+        return withinMs == Long.MAX_VALUE ? Long.MAX_VALUE : withinMs - (System.nanoTime() - startedNs) / 1_000_000;
     }
 
     // ── the answer's JSON ───────────────────────────────────────────────────

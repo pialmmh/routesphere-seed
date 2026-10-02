@@ -40,9 +40,11 @@ final class AdmissionChain<C extends CallFlowContext> {
     // ── the candidates ──────────────────────────────────────────────────────
 
     AdmissionVerdict admitFirstCandidate(C ctx, StepMode mode) {
+        openBudget(ctx, mode);
         int candidates = flow.safely(ctx, "candidateCount", () -> flow.candidateCount(ctx), 0);
         for (int index = 0; index < candidates; index++) {
             if (!eligible(ctx, index)) continue;
+            if (cutByBudget(ctx)) continue;
             String refusal = admitCandidate(ctx, mode);
             if (refusal == null) return accept(ctx, index);
             ctx.lastRefusal = refusal;
@@ -52,6 +54,21 @@ final class AdmissionChain<C extends CallFlowContext> {
 
     private boolean eligible(C ctx, int index) {
         return flow.safely(ctx, "useCandidate", () -> flow.useCandidate(ctx, index), false);
+    }
+
+    // ── the budget: admission has ONE deadline, inside the ADMITTING state's own ───────────────
+
+    /** The candidates that pay share one budget: the state's deadline minus the reserve kept for a free candidate. A dry run has none. */
+    private void openBudget(C ctx, StepMode mode) {
+        ctx.budgetSpent = false;
+        ctx.admissionDeadlineMs = mode == StepMode.SIMULATE ? Long.MAX_VALUE
+            : flow.kit().clock().millis() + flow.kit().settings().admissionBudgetMs();
+    }
+
+    /** A candidate that pays is not started when no time is left; a free one still is (it asks nothing of the ledger). */
+    private boolean cutByBudget(C ctx) {
+        boolean free = flow.safely(ctx, "isFree", () -> flow.isFree(ctx), false);
+        return !free && flow.paidTimeIsOver(ctx);
     }
 
     private String admitCandidate(C ctx, StepMode mode) {
@@ -125,7 +142,7 @@ final class AdmissionChain<C extends CallFlowContext> {
         if (rate == null) return CallCause.UNRATED;
         LevelAdmission level = levelOf(tier, partner, levelIndex, rate);
         String refusal = walk.simulated() ? null
-            : reserve(ctx, level, rate.reserveAmount(), referenceOf(ctx, walk.tryNo, levelIndex), flow.noBalanceCause(ctx));
+            : reserve(ctx, level, rate.reserveAmount(), referenceOf(ctx, walk.tryNo, levelIndex), flow.noBalanceCause(ctx), flow.admissionTimeLeftMs(ctx));
         if (refusal == null) walk.levels.add(level);
         return refusal;
     }
@@ -153,11 +170,15 @@ final class AdmissionChain<C extends CallFlowContext> {
         return (tryNo <= 1 ? ctx.sessionKey : ctx.sessionKey + "#" + tryNo) + "#L" + levelIndex;
     }
 
-    /** The ledger's reserve. Null = held (or nothing to hold). A ledger fault is never a balance cause. */
-    private String reserve(C ctx, LevelAdmission level, BigDecimal amount, String reference, String causeWhenItCannotPay) {
+    /**
+     * The ledger's reserve, inside what is left of the budget. Null = held (or nothing to hold). A ledger fault is never a
+     * balance cause; with no time left the ledger is not asked at all.
+     */
+    private String reserve(C ctx, LevelAdmission level, BigDecimal amount, String reference, String causeWhenItCannotPay, long withinMs) {
         if (amount.signum() <= 0) return null;
+        if (withinMs <= 0) return notAsked(ctx, level);
         try {
-            Optional<LedgerPort.Reservation> held = flow.kit().ledger().reserve(level, amount, reference);
+            Optional<LedgerPort.Reservation> held = flow.kit().ledger().reserve(level, amount, reference, withinMs);
             if (held.isEmpty()) return causeWhenItCannotPay;
             recordReserve(level, held.get(), reference);
             return null;
@@ -181,6 +202,13 @@ final class AdmissionChain<C extends CallFlowContext> {
         }
         level.setBalanceAfter(held.balanceAfter());
         level.incrementReservationCount();
+    }
+
+    /** No time is left for this tier's reserve: the ledger is not asked, the candidate ends here and gives back what it held. */
+    private String notAsked(C ctx, LevelAdmission level) {
+        ctx.budgetSpent = true;
+        ctx.history.note(flow.name(), "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") was not reserved: no time left — the ledger was not asked");
+        return CallCause.ADMISSION_TIMEOUT;
     }
 
     private String ledgerFault(C ctx, LevelAdmission level, RuntimeException fault) {
@@ -213,6 +241,9 @@ final class AdmissionChain<C extends CallFlowContext> {
 
     // ── a long call renews its reserve ──────────────────────────────────────
 
+    /** A renewal runs while the call is answered, outside any admission: the ledger's own timeout bounds it. */
+    private static final long RENEWAL_HAS_NO_BUDGET = Long.MAX_VALUE;
+
     /** Null = the call goes on. Else the cause to end it with: a tier cannot pay the next window. */
     String reserveNextWindow(C ctx) {
         for (LevelAdmission level : ctx.levels) {
@@ -227,7 +258,7 @@ final class AdmissionChain<C extends CallFlowContext> {
         TierRate next = flow.safely(ctx, "rateNextWindow", () -> flow.rateNextWindow(ctx, level), null);
         if (next == null || !next.reserves() || level.getDebitReference() == null) return null;
         String reference = level.getDebitReference() + "#W" + (level.getReservationCount() + 1);
-        String refusal = reserve(ctx, level, next.reserveAmount(), reference, CallCause.BALANCE_EXHAUSTED);
+        String refusal = reserve(ctx, level, next.reserveAmount(), reference, CallCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
         return CallCause.BILLING_SYSTEM_ERROR.equals(refusal) ? null : refusal;
     }
 }

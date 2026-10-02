@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.LongConsumer;
 
 /**
  * A ledger in memory, for the tests of every product on the call flow: one balance per (tenant, partner), and the three
@@ -19,8 +20,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * shortfall), a release gives everything back, and every verb moves money once per reference.
  *
  * <p>It can be told to fail like a real ledger: {@link #faultOn} (it does not answer), {@link #refuseOn} (it refuses
- * with a code of its own), {@link #failSettlements}. {@link #openReserves()} is the leak check: after every call has
- * ended it must be zero.
+ * with a code of its own), {@link #slowOn} (it takes time; a caller that waits less gets no answer),
+ * {@link #failSettlements}. {@link #openReserves()} is the leak check: after every call has ended it must be zero.
  */
 public final class InMemoryLedger implements LedgerPort {
 
@@ -36,6 +37,9 @@ public final class InMemoryLedger implements LedgerPort {
     private final Map<String, String> refusing = new HashMap<>();
     private final List<Entry> journal = new CopyOnWriteArrayList<>();
     private final Map<String, Integer> asked = new HashMap<>();
+    private final Map<String, Long> slow = new HashMap<>();
+    private final Map<String, Long> timeGiven = new HashMap<>();
+    private LongConsumer timePasses = InMemoryLedger::sleep;
     private boolean settlementsFail;
 
     // ── setting the scene ───────────────────────────────────────────────────
@@ -56,12 +60,31 @@ public final class InMemoryLedger implements LedgerPort {
     /** From now on the ledger refuses this partner with a code of its own (a {@link LedgerRefusal}). */
     public synchronized void refuseOn(String tenant, int partnerId, String code) { refusing.put(keyOf(tenant, partnerId), code); }
 
+    /**
+     * From now on a reserve of this partner takes {@code millis}. A caller that gives it less time waits its own time
+     * and gets no answer (a {@link LedgerFault}); the money is not moved.
+     */
+    public synchronized InMemoryLedger slowOn(String tenant, int partnerId, long millis) {
+        slow.put(keyOf(tenant, partnerId), millis);
+        return this;
+    }
+
+    /**
+     * How the time of a slow answer passes. By default the ledger really sleeps; a test with a clock of its own hands
+     * that clock's "advance" here, and no test waits.
+     */
+    public synchronized InMemoryLedger timePassesBy(LongConsumer advanceMillis) {
+        this.timePasses = advanceMillis;
+        return this;
+    }
+
     /** From now on the ledger does not take a settlement or a release. */
     public synchronized void failSettlements(boolean fail) { this.settlementsFail = fail; }
 
     public synchronized void heal() {
         faulting.clear();
         refusing.clear();
+        slow.clear();
         settlementsFail = false;
     }
 
@@ -79,10 +102,41 @@ public final class InMemoryLedger implements LedgerPort {
     /** How often a verb MOVED money ({@code reserve}, {@code settle}, {@code release}; {@code refused} = a reserve that could not be paid). */
     public long count(String verb) { return journal.stream().filter(e -> e.verb().equals(verb)).count(); }
 
+    /** The time the pipeline gave the ledger for this reference ({@code Long.MAX_VALUE} = no limit); null = never asked with a limit. */
+    public synchronized Long timeGivenFor(String reference) { return timeGiven.get(reference); }
+
     /** How often a verb was ASKED, a repeat of the same reference included: a pipeline that settles a tier twice shows here. */
     public synchronized int timesAsked(String verb) { return asked.getOrDefault(verb, 0); }
 
     // ── the three verbs ─────────────────────────────────────────────────────
+
+    /** The reserve as the pipeline asks it: within the time the call's admission has left. */
+    @Override
+    public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) {
+        long takes = takesFor(level, reference, withinMs);
+        if (takes > 0) timePasses.accept(Math.min(takes, withinMs));
+        if (takes > withinMs) throw noAnswer(level, takes, withinMs);
+        return reserve(level, amount, reference);
+    }
+
+    private synchronized long takesFor(LevelAdmission level, String reference, long withinMs) {
+        timeGiven.put(reference, withinMs);
+        return slow.getOrDefault(keyOf(level.getDbName(), level.getPartnerId()), 0L);
+    }
+
+    private synchronized LedgerFault noAnswer(LevelAdmission level, long takes, long withinMs) {
+        asked.merge("reserve", 1, Integer::sum);
+        return new LedgerFault("the ledger did not answer within " + withinMs + " ms (scripted: it takes " + takes + " ms) for "
+            + keyOf(level.getDbName(), level.getPartnerId()));
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
     @Override
     public synchronized Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) {

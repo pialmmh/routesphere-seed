@@ -96,7 +96,8 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
 
     /**
      * ADMITTING · Make candidate {@code index} the call's current task (the ad: invert the view for this campaign and
-     * content). False = skip it (it is no longer eligible; {@code ctx.systemFault} tells a ledger fault happened).
+     * content). False = skip it (it is no longer eligible; {@code ctx.systemFault} tells a ledger fault happened,
+     * {@link #paidTimeIsOver} that the admission has no time left for a candidate that pays).
      */
     protected boolean useCandidate(C ctx, int index) { return true; }
 
@@ -143,6 +144,7 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     /** ADMITTING · The call's cause when no candidate was admitted. */
     protected String rejectCause(C ctx) {
         if (ctx.systemFault != null) return ctx.systemFault;
+        if (ctx.budgetSpent) return CallCause.ADMISSION_TIMEOUT;
         return ctx.lastRefusal != null ? ctx.lastRefusal : CallCause.NO_CANDIDATE;
     }
 
@@ -232,6 +234,29 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * What is left of this call's admission budget, in milliseconds: the time the candidates that PAY may still take.
+     * The budget opens when ADMITTING starts and is the state's deadline minus the settings' reserve. A dry run has
+     * no budget ({@code Long.MAX_VALUE}).
+     */
+    protected final long admissionTimeLeftMs(C ctx) {
+        long deadline = ctx.admissionDeadlineMs;
+        return deadline <= 0 || deadline == Long.MAX_VALUE ? Long.MAX_VALUE : deadline - kit.clock().millis();
+    }
+
+    /**
+     * True when no time is left for a candidate that pays. The base asks before every paying candidate and before every
+     * reserve; an application's {@link #useCandidate} may ask too, to skip a paying candidate before it touches the
+     * context. Asking marks the call ({@code ctx.budgetSpent}): if nobody is admitted, the cause is {@code ADMISSION_TIMEOUT}.
+     * A free candidate (the house ad) is never refused by the budget: it asks nothing of the ledger.
+     */
+    protected final boolean paidTimeIsOver(C ctx) {
+        if (admissionTimeLeftMs(ctx) > 0) return false;
+        if (!ctx.budgetSpent) ctx.history.note(name(), "the admission budget is spent: no candidate that pays is tried any more");
+        ctx.budgetSpent = true;
+        return true;
+    }
 
     /** The entry of a partner whose id is known (the ad's advertiser): the tenant whose partners hold it. */
     protected final EntryPartner entryOfPartner(int partnerId) {

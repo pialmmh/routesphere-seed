@@ -14,6 +14,7 @@ import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.session.SdrRecord;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,13 @@ public final class Scene {
 
     public final RecordingCdrSink cdrs = new RecordingCdrSink();
     public final List<SdrRecord> sessionRecords = new CopyOnWriteArrayList<>();
+    private Clock clock = Clock.system(DHAKA);
+
+    /** The clock of every flow built from now on: a test of a deadline hands in a clock it moves by hand. */
+    public Scene withClock(Clock clock) {
+        this.clock = clock;
+        return this;
+    }
 
     public CallFlowKit kit(CallFlowSettings settings) {
         return CallFlowKit.builder()
@@ -64,6 +72,7 @@ public final class Scene {
             .ledger(ledger)
             .cdrSink(cdrs)
             .sdrSink(sessionRecords::add)
+            .clock(clock)
             .zone(DHAKA)
             .settings(settings)
             .build();
@@ -96,8 +105,9 @@ public final class Scene {
 
     public AdFlow ad(CallFlowSettings settings, boolean unshownViewIsCharged) {
         return new AdFlow(kit(settings),
-            Map.of("dhaka-zone", "R100", "house-zone", "R900", "poor-zone", "R200"),
+            Map.of("dhaka-zone", "R100", "house-zone", "R900", "poor-zone", "R200", "paying-zone", "R300"),
             Map.of(
+                "R300", AdFlow.campaigns(new AdFlow.Campaign(10, "camp-10", 702, false), new AdFlow.Campaign(11, "camp-11", 701, false)),
                 "R100", AdFlow.campaigns(new AdFlow.Campaign(10, "camp-10", 702, false), new AdFlow.Campaign(11, "camp-11", 701, false),
                     new AdFlow.Campaign(99, "house", 701, true)),
                 "R200", AdFlow.campaigns(new AdFlow.Campaign(10, "camp-10", 702, false)),
