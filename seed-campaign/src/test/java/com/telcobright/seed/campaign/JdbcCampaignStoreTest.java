@@ -19,9 +19,12 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -203,5 +206,45 @@ class JdbcCampaignStoreTest {
 
     static String json(Map<String, Object> m) {
         return "{" + m.entrySet().stream().map(e -> "\"" + e.getKey() + "\":\"" + e.getValue() + "\"").collect(Collectors.joining(",")) + "}";
+    }
+
+    /**
+     * The TIMESTAMP columns keep the TENANT's wall clock, whatever zone the JVM runs in: a container runs in UTC, the legacy switch
+     * wrote Dhaka's local time because its JVM ran there. With the JVM in UTC, a task created at 06:00Z lands as 12:00 (Dhaka) when
+     * the store is given the tenant's zone — and as 06:00 through the old constructor, which stamps in the JVM's zone and says so.
+     */
+    @ParameterizedTest
+    @EnumSource(Dialect.class)
+    void the_timestamp_columns_keep_the_tenants_wall_clock_not_the_jvms(Dialect d) throws Exception {
+        TimeZone was = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+        try {
+            DataSource ds = openH2(d);
+            Instant t0 = Instant.parse("2026-10-03T06:00:00Z");
+            JdbcCampaignStore dhaka = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d, null, ZoneId.of("Asia/Dhaka"));
+            JdbcCampaignStore jvm = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d);
+
+            dhaka.insertTask(task("ad-btcl-zone-dhaka", t0));
+            jvm.insertTask(task("ad-btcl-zone-jvm", t0));
+
+            assertThat(createdStamp(ds, "ad-btcl-zone-dhaka")).as("the tenant's wall clock, Dhaka").isEqualTo(LocalDateTime.parse("2026-10-03T12:00:00"));
+            assertThat(createdStamp(ds, "ad-btcl-zone-jvm")).as("the old constructor: the JVM's zone, UTC here").isEqualTo(LocalDateTime.parse("2026-10-03T06:00:00"));
+            assertThat(dhaka.zone()).isEqualTo(ZoneId.of("Asia/Dhaka"));
+        } finally {
+            TimeZone.setDefault(was);
+        }
+    }
+
+    private static CampaignTask task(String uniqueId, Instant createdAt) {
+        return new CampaignTask(uniqueId, "btcl", 42, 701, CampaignKind.AD, "8801711", "c-77", "zone0", "site", "wifi-9",
+            TaskState.PROCESSING, createdAt, null, null, 0, null, null, Map.of());
+    }
+
+    private static LocalDateTime createdStamp(DataSource ds, String uniqueId) throws Exception {
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT CREATED_STAMP FROM campaign_task WHERE uniqueId = '" + uniqueId + "'")) {
+            assertThat(rs.next()).as("the row of " + uniqueId).isTrue();
+            return rs.getObject(1, LocalDateTime.class);
+        }
     }
 }

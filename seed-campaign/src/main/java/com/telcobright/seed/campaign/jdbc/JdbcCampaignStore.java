@@ -13,9 +13,10 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -55,6 +56,7 @@ public final class JdbcCampaignStore implements CampaignStore {
     private final Function<Map<String, Object>, String> json;
     private final Dialect dialect;
     private final CampaignRowReader reader;
+    private final ZoneId zone;
 
     /** The dialect read from the pool's URL ({@code jdbc:postgresql:} → PostgreSQL, else MySQL). */
     public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json) {
@@ -65,14 +67,39 @@ public final class JdbcCampaignStore implements CampaignStore {
         this(ds, kind, json, dialect, null);
     }
 
-    /** @param creativesSql the product's own creatives query (see {@code CampaignRowReader}); null = the legacy {@code campaign_creative} rows */
+    /**
+     * The JVM's zone as the wall clock — the shape before the zone was a parameter. It is right only while the JVM runs in the
+     * tenant's zone (a container runs in UTC), so it says so once, WARN; pass the tenant's zone instead.
+     *
+     * @param creativesSql the product's own creatives query (see {@code CampaignRowReader}); null = the legacy {@code campaign_creative} rows
+     */
     public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect, String creativesSql) {
+        this(ds, kind, json, dialect, creativesSql, ZoneId.systemDefault());
+        log.warn("campaign store stamps its rows in the JVM's zone {} — right only while the JVM runs in the tenant's zone; pass the tenant's zone",
+            zone);
+    }
+
+    /**
+     * @param creativesSql the product's own creatives query (see {@code CampaignRowReader}); null = the legacy {@code campaign_creative} rows
+     * @param zone         the tenant's wall clock: every TIMESTAMP column ({@code CREATED_STAMP}, {@code LAST_UPDATED_STAMP}, …) is written
+     *                     as the local time of this zone, whatever zone the JVM runs in (the legacy switch wrote Dhaka's wall clock because
+     *                     its JVM ran there). The epoch-millis columns are zone-free and unchanged
+     */
+    public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect, String creativesSql, ZoneId zone) {
+        if (zone == null) throw new IllegalArgumentException("the tenant's zone is required");
         this.ds = ds;
         this.kind = kind;
         this.json = json;
         this.dialect = dialect;
         this.reader = new CampaignRowReader(dialect, creativesSql);
+        this.zone = zone;
     }
+
+    /** The zone the TIMESTAMP columns are written in. */
+    public ZoneId zone() { return zone; }
+
+    /** An instant as the tenant's wall clock, the shape a TIMESTAMP (without zone) column keeps; never converted by the JVM's zone. */
+    private LocalDateTime stamp(Instant at) { return LocalDateTime.ofInstant(at, zone); }
 
     public Dialect dialect() { return dialect; }
 
@@ -98,8 +125,8 @@ public final class JdbcCampaignStore implements CampaignStore {
             ps.setString(i++, t.kind().name());
             ps.setInt(i++, t.state().code());
             ps.setInt(i++, STATUS_PROCESSING);
-            ps.setTimestamp(i++, Timestamp.from(t.createdAt()));
-            ps.setTimestamp(i++, Timestamp.from(t.createdAt()));
+            ps.setObject(i++, stamp(t.createdAt()));
+            ps.setObject(i++, stamp(t.createdAt()));
             ps.setLong(i++, t.createdAt().toEpochMilli());
             ps.setString(i++, fit(t.zone(), CampaignSchema.TASK_NUMBER_WIDTH, "TERMINATING_CALLED_NUMBER", t));
             ps.setString(i++, fit(t.site(), CampaignSchema.TASK_NUMBER_WIDTH, "ORIGINATING_CALLING_NUMBER", t));
@@ -142,7 +169,7 @@ public final class JdbcCampaignStore implements CampaignStore {
             int i = 1;
             ps.setInt(i++, t.state().code());
             ps.setInt(i++, statusOf(t));
-            ps.setTimestamp(i++, Timestamp.from(Instant.now()));
+            ps.setObject(i++, stamp(Instant.now()));
             ps.setInt(i++, t.answered() ? 1 : 0);
             setLong(ps, i++, t.answeredAt() == null ? null : t.answeredAt().toEpochMilli());
             setLong(ps, i++, t.endedAt() == null ? null : t.endedAt().toEpochMilli());
@@ -168,7 +195,7 @@ public final class JdbcCampaignStore implements CampaignStore {
             ps.setInt(1, sentDelta);
             ps.setInt(2, failedDelta);
             ps.setInt(3, pendingDelta);
-            ps.setTimestamp(4, Timestamp.from(Instant.now()));
+            ps.setObject(4, stamp(Instant.now()));
             ps.setInt(5, campaignId);
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -180,7 +207,7 @@ public final class JdbcCampaignStore implements CampaignStore {
     public void markComplete(String tenantId, int campaignId) {
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(COMPLETE)) {
             ps.setInt(1, STATUS_COMPLETE);
-            ps.setTimestamp(2, Timestamp.from(Instant.now()));
+            ps.setObject(2, stamp(Instant.now()));
             ps.setInt(3, campaignId);
             ps.executeUpdate();
         } catch (SQLException e) {
