@@ -1,3 +1,6 @@
 target/
 *.iml
 .idea/
+
+# the owner's worktree layout: <root>/worktrees/<name>
+/worktrees/
