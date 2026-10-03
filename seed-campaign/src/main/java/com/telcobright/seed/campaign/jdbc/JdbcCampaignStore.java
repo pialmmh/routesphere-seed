@@ -75,9 +75,14 @@ public final class JdbcCampaignStore implements CampaignStore {
      */
     public JdbcCampaignStore(DataSource ds, CampaignKind kind, Function<Map<String, Object>, String> json, Dialect dialect, String creativesSql) {
         this(ds, kind, json, dialect, creativesSql, ZoneId.systemDefault());
-        log.warn("campaign store stamps its rows in the JVM's zone {} — right only while the JVM runs in the tenant's zone; pass the tenant's zone",
-            zone);
+        if (JVM_ZONE_SAID.compareAndSet(false, true)) {
+            log.warn("campaign store stamps its rows in the JVM's zone {} — right only while the JVM runs in the tenant's zone; pass the tenant's zone",
+                zone);
+        }
     }
+
+    /** The JVM-zone warning is said once per process, not once per store (a tenant reload makes a new store). */
+    private static final java.util.concurrent.atomic.AtomicBoolean JVM_ZONE_SAID = new java.util.concurrent.atomic.AtomicBoolean();
 
     /**
      * @param creativesSql the product's own creatives query (see {@code CampaignRowReader}); null = the legacy {@code campaign_creative} rows
