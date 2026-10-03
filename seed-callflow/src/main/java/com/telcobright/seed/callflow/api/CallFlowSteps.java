@@ -106,7 +106,8 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
 
     /**
      * ADMITTING, above the leaf · The partner that pays at {@code tier} for traffic of the tenant below it. The default
-     * is the call switch's rule: the tier's partner of type RESELLER whose name is the child tenant's.
+     * is the call switch's live rule: the tier's partner whose id the child tenant's database name ends with, else the one
+     * named as the child tenant ({@link #resellerPartnerOf}); no partner type is asked.
      */
     protected Partner identifyPartner(C ctx, Tenant childTier, Tenant tier) { return resellerPartnerOf(childTier, tier); }
 
@@ -267,22 +268,49 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     }
 
     /**
-     * The parent's partner of type RESELLER that stands for the child tenant: the one whose name is the child tenant's
-     * name or schema name (the call switch's convention), else the one whose id the child's schema name ends with
-     * ({@code res_44} → partner 44; {@code res_44_7} → partner 7 of {@code res_44}).
+     * The parent's partner that stands for the child tenant — the partner that pays at the parent's tier for everything below it. This
+     * is the call switch's LIVE rule ({@code CallAdmissionController.identifyPartnerAtParentLevel}), so a multi-level call and a
+     * multi-level ad view climb the tree the same way:
      *
-     * <p>The call switch also matched a partner name that the schema name merely STARTS with. That rule is left out on
-     * purpose: with schemas named {@code res_<id>}, a partner called {@code res_4} would stand for {@code res_44}.
+     * <ol>
+     *   <li>the partner whose id the child's database name ENDS with — {@code res_233} → partner 233 of the root, {@code res_233_2} →
+     *       partner 2 of {@code res_233}. Both switches name a reseller's database after its partner id in the tier above (TelcoREST
+     *       {@code ResellerService.generateDbName}, prime-context's provisioning), so this is true by construction;</li>
+     *   <li>else the partner NAMED as the child tenant (its name or its database name, without case) — for a tenant whose database
+     *       was named by hand.</li>
+     * </ol>
+     *
+     * <p><b>No partner type is asked.</b> The call switch asks none, and the two worlds type a reseller differently (the call's data:
+     * 4; the ad's: {@link PartnerType#RESELLER} = 100). A base that asked for one type could not carry the other's calls.
+     *
+     * <p>Two deviations from the call switch's code, both named:
+     * <ul>
+     *   <li>the call switch looks the NAME up first and the id second. Here, when both answer and disagree, the id wins and the conflict
+     *       is logged: a partner's name is free text (a client could be called {@code res_44}), the id in the database name is the
+     *       system's own naming. Where the data is consistent the two orders give the same partner;</li>
+     *   <li>an older call path ({@code MultiLevelTaskBuilder}) also took a partner whose name the database name merely STARTS with. Left
+     *       out on purpose: a partner called {@code res_4} would stand for {@code res_44}.</li>
+     * </ul>
      */
     protected static Partner resellerPartnerOf(Tenant child, Tenant parent) {
         if (child == null || parent == null || parent.getContext() == null || parent.getContext().getPartners() == null) return null;
+        Partner byId = parent.getContext().getPartners().get(idAtTheEndOf(child.getDbName()));
+        Partner byName = partnerNamedAs(child, parent);
+        if (byId != null && byName != null && byId != byName) {
+            STEPS_LOG.warn("tier {}: partner {} ({}) is NAMED as the tenant below, but its database name ends with partner {} ({}): the id wins",
+                parent.getDbName(), byName.getIdPartner(), byName.getPartnerName(), byId.getIdPartner(), byId.getPartnerName());
+        }
+        return byId != null ? byId : byName;
+    }
+
+    private static final Logger STEPS_LOG = LoggerFactory.getLogger(CallFlowSteps.class);
+
+    private static Partner partnerNamedAs(Tenant child, Tenant parent) {
         String childName = child.getName() == null || child.getName().isBlank() ? child.getDbName() : child.getName();
         for (Partner p : parent.getContext().getPartners().values()) {
-            if (p == null || !PartnerType.isReseller(p.getPartnerType())) continue;
-            if (namesTenant(p.getPartnerName(), childName, child.getDbName())) return p;
+            if (p != null && namesTenant(p.getPartnerName(), childName, child.getDbName())) return p;
         }
-        Partner byId = parent.getContext().getPartners().get(idAtTheEndOf(child.getDbName()));
-        return byId != null && PartnerType.isReseller(byId.getPartnerType()) ? byId : null;
+        return null;
     }
 
     private static boolean namesTenant(String partnerName, String tenantName, String tenantDbName) {
