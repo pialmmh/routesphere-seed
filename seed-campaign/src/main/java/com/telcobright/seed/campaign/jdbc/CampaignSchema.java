@@ -67,6 +67,26 @@ public final class CampaignSchema {
                 + " CONSTRAINT uq_campaign_task_uid UNIQUE (uniqueId))");
     }
 
+    /**
+     * The campaigns' counters as TRAFFIC, a table of their own (ad-sphere ARCH-0029): every view moves its campaign's counters, and a
+     * campaign's row is configuration — a change feed that publishes {@code campaign} would see a change at every view. A store told
+     * {@link JdbcCampaignStore.Counters#COUNTER_TABLE} bumps this table and never the campaign's row; the row's own three counters then
+     * stand still. One row per campaign, made by its first bump (no row = zeros). No key to {@code campaign}: traffic never locks
+     * configuration. A change feed must leave this table out, as it leaves {@code campaign_task} out.
+     */
+    public static final String COUNTER_TABLE = "campaign_counter";
+
+    /** {@link #COUNTER_TABLE}'s DDL. Not part of {@link #routesphereSubset}: a store that keeps the counters on the campaign's row needs none. */
+    public static String counterTable(Dialect d) {
+        return "CREATE TABLE IF NOT EXISTS " + COUNTER_TABLE + " (CAMPAIGN_ID INT NOT NULL PRIMARY KEY, SENT_TASK_COUNT INT NOT NULL DEFAULT 0,"
+            + " FAILED_TASK_COUNT INT NOT NULL DEFAULT 0, PENDING_TASK_COUNT INT NOT NULL DEFAULT 0, LAST_UPDATED_STAMP " + ts(d) + ")";
+    }
+
+    /** {@link #COUNTER_TABLE}, for a store in {@link JdbcCampaignStore.Counters#COUNTER_TABLE} mode. Safe to run twice. */
+    public static void createCounterTable(Connection c, Dialect d) throws SQLException {
+        run(c, List.of(counterTable(d)));
+    }
+
     public static final String STATUS_ROWS =
         "INSERT INTO enumjobstatus (id, Type) VALUES (1,'Complete'),(2,'Prepared'),(3,'Paused'),(4,'Scheduled'),(5,'Failed'),"
             + "(6,'Created'),(7,'Downloaded'),(8,'Canceled'),(9,'ReadyForPosting'),(10,'Running'),(11,'Sent'),(12,'Pending'),(13,'Delivered'),(15,'Processing')";

@@ -33,6 +33,7 @@ final class CampaignRowReader {
     private final Dialect dialect;
     private final String timeBands;
     private final String creativesSql;
+    private final String campaigns;
 
     CampaignRowReader(Dialect dialect) { this(dialect, CREATIVES); }
 
@@ -41,20 +42,30 @@ final class CampaignRowReader {
      *                     duration_sec, click_url, caption, partner_id, share_percent} — the default reads the legacy
      *                     {@code campaign_creative} rows (owner 0, share 0); a product may read its own member table
      */
-    CampaignRowReader(Dialect dialect, String creativesSql) {
+    CampaignRowReader(Dialect dialect, String creativesSql) { this(dialect, creativesSql, false); }
+
+    /** @param countersFromTheTable the three counters come from {@code campaign_counter} (no row = zeros), never from the campaign's row */
+    CampaignRowReader(Dialect dialect, String creativesSql, boolean countersFromTheTable) {
         this.dialect = dialect;
         this.creativesSql = creativesSql == null || creativesSql.isBlank() ? CREATIVES : creativesSql;
         this.timeBands = "SELECT policy_id, " + dialect.quote("day") + " AS band_day, specific_date_only, start_time, end_time, allow_or_restrict FROM time_band";
+        this.campaigns = countersFromTheTable ? CAMPAIGNS.formatted(COUNTERS_OF_THE_TABLE, JOIN_THE_TABLE) : CAMPAIGNS.formatted(COUNTERS_OF_THE_ROW, "");
     }
 
+    private static final String COUNTERS_OF_THE_ROW = "c.SENT_TASK_COUNT, c.FAILED_TASK_COUNT, c.PENDING_TASK_COUNT";
+    private static final String COUNTERS_OF_THE_TABLE = "COALESCE(k.SENT_TASK_COUNT, 0) AS SENT_TASK_COUNT, COALESCE(k.FAILED_TASK_COUNT, 0) AS FAILED_TASK_COUNT,"
+        + " COALESCE(k.PENDING_TASK_COUNT, 0) AS PENDING_TASK_COUNT";
+    private static final String JOIN_THE_TABLE = "\n        LEFT JOIN " + CampaignSchema.COUNTER_TABLE + " k ON k.CAMPAIGN_ID = c.CAMPAIGN_ID";
+
+    /** The campaign rows; {@code %s} twice: where the three counters come from, and the join that brings them. */
     private static final String CAMPAIGNS = """
         SELECT c.CAMPAIGN_ID, c.CAMPAIGN_NAME, c.CAMPAIGN_TYPE, s.Type AS status_name, c.ID_PARTNER, c.EXPIRE_AT, c.PRIORITY,
-               c.TOTAL_TASK_COUNT, c.SENT_TASK_COUNT, c.FAILED_TASK_COUNT, c.PENDING_TASK_COUNT, c.POLICY_ID, c.MESSAGE,
+               c.TOTAL_TASK_COUNT, %s, c.POLICY_ID, c.MESSAGE,
                c.AUDIO_FILE_PATH, c.AUDIO_FILE_NAME, c.FIELD1, c.FIELD2, c.FIELD3, c.FIELD4, c.FIELD5, c.EXTERNAL_CAMPAIGN_ID,
                sp.START_TIME AS schedule_start, sp.END_TIME AS schedule_end
         FROM campaign c
         LEFT JOIN enumjobstatus s ON s.id = c.STATUS
-        LEFT JOIN schedule_policy sp ON sp.ID = c.SCHEDULE_POLICY_ID
+        LEFT JOIN schedule_policy sp ON sp.ID = c.SCHEDULE_POLICY_ID%s
         WHERE c.CAMPAIGN_TYPE = ?
         ORDER BY c.CAMPAIGN_ID""";
     private static final String TARGETS = "SELECT campaign_id, dimension, target_value FROM campaign_target";
@@ -66,7 +77,7 @@ final class CampaignRowReader {
         Map<Integer, Targeting> targets = targets(c);
         Map<Integer, List<Creative>> creatives = creatives(c);
         List<Campaign> out = new ArrayList<>();
-        try (PreparedStatement ps = c.prepareStatement(CAMPAIGNS)) {
+        try (PreparedStatement ps = c.prepareStatement(campaigns)) {
             ps.setString(1, kind.name());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) out.add(campaign(rs, tenantId, kind, bands, targets, creatives));
