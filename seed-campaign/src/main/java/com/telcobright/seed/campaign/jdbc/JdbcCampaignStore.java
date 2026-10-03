@@ -72,6 +72,7 @@ public final class JdbcCampaignStore implements CampaignStore {
         + " ON CONFLICT (CAMPAIGN_ID) DO UPDATE SET SENT_TASK_COUNT = campaign_counter.SENT_TASK_COUNT + EXCLUDED.SENT_TASK_COUNT,"
         + " FAILED_TASK_COUNT = campaign_counter.FAILED_TASK_COUNT + EXCLUDED.FAILED_TASK_COUNT,"
         + " PENDING_TASK_COUNT = GREATEST(campaign_counter.PENDING_TASK_COUNT + ?, 0), LAST_UPDATED_STAMP = EXCLUDED.LAST_UPDATED_STAMP";
+    // VALUES(col) on purpose: the tenants' servers are MySQL / Percona 5.7, which has no row alias (AS new); 8.0.20+ only warns.
     private static final String UPSERT_MYSQL = "INSERT INTO campaign_counter " + UPSERT_COLUMNS + " VALUES (?, ?, ?, GREATEST(?, 0), ?)"
         + " ON DUPLICATE KEY UPDATE SENT_TASK_COUNT = SENT_TASK_COUNT + VALUES(SENT_TASK_COUNT),"
         + " FAILED_TASK_COUNT = FAILED_TASK_COUNT + VALUES(FAILED_TASK_COUNT),"
@@ -87,7 +88,10 @@ public final class JdbcCampaignStore implements CampaignStore {
         + " PENDING_TASK_COUNT = GREATEST(t.PENDING_TASK_COUNT + s.pending_again, 0), LAST_UPDATED_STAMP = s.at"
         + " WHEN NOT MATCHED THEN INSERT " + UPSERT_COLUMNS + " VALUES (s.id, s.sent, s.failed, GREATEST(s.pending, 0), s.at)";
     private static final String COUNTERS_OF = "SELECT CAMPAIGN_ID, SENT_TASK_COUNT, FAILED_TASK_COUNT, PENDING_TASK_COUNT FROM campaign_counter";
-    /** SQLSTATE of a unique-key violation, the same on H2, PostgreSQL and MySQL's drivers. */
+    /**
+     * SQLSTATE of a unique-key violation on H2 and PostgreSQL. (MySQL says 23000 — and never needs it here: its upsert, like
+     * PostgreSQL's, settles two first bumps that race; only H2's MERGE can lose that race.)
+     */
     private static final String UNIQUE_VIOLATION = "23505";
 
     /** {@code enumjobstatus} ids that a task's STATUS mirrors (the SMS runner writes the same ones). */
