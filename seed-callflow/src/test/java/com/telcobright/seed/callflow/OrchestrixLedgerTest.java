@@ -53,6 +53,9 @@ class OrchestrixLedgerTest {
     final List<Seen> seen = new CopyOnWriteArrayList<>();
     volatile int status = 200;
     volatile String answer = "{\"chargeAccount\":587,\"chargeUom\":\"BDT\",\"chargeUnits\":0,\"chargeBdt\":0.50,\"balanceBefore\":10.00,\"balanceAfter\":9.50}";
+    /** The return road's answer ({@code …/charge/return}); the road's own contract is {@code OrchestrixReturnRoadTest}'s. */
+    volatile int returnStatus = 200;
+    volatile String returnAnswer = "{\"account\":587,\"uom\":\"BDT\",\"units\":0,\"bdt\":0.50,\"balanceBefore\":9.50,\"balanceAfter\":10.00}";
     final AtomicInteger slowCalls = new AtomicInteger();
     final Function<String, String> env = Map.of("PORTAL_API_TOKEN", "t0ken-not-a-secret")::get;
 
@@ -71,14 +74,28 @@ class OrchestrixLedgerTest {
         String body;
         try (InputStream in = x.getRequestBody()) { body = new String(in.readAllBytes(), StandardCharsets.UTF_8); }
         seen.add(new Seen(x.getRequestURI().getPath(), x.getRequestHeaders().getFirst("Authorization"), x.getRequestHeaders().getFirst("X-Tenant-Id"), body));
-        if (slowCalls.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) {
+        boolean theReturnRoad = x.getRequestURI().getPath().endsWith("/charge/return");
+        if (!theReturnRoad && slowCalls.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) {
             try { Thread.sleep(700); } catch (InterruptedException ignored) { }
         }
-        byte[] out = answer.getBytes(StandardCharsets.UTF_8);
+        byte[] out = (theReturnRoad ? returnAnswer : answer).getBytes(StandardCharsets.UTF_8);
         x.getResponseHeaders().add("Content-Type", "application/json");
-        x.sendResponseHeaders(status, out.length);
-        x.getResponseBody().write(out);
+        x.sendResponseHeaders(theReturnRoad ? returnStatus : status, out.length == 0 ? -1 : out.length);
+        if (out.length > 0) x.getResponseBody().write(out);
         x.close();
+    }
+
+    /** What road 16 was asked: a reserve that got no answer is asked back afterwards, on the return road. */
+    private List<Seen> charges() { return seen.stream().filter(s -> s.path().endsWith("/charge")).toList(); }
+
+    private List<String> journalLines(int atLeast) throws Exception {
+        long until = System.currentTimeMillis() + 5_000;
+        while (true) {
+            List<String> lines = Files.isRegularFile(owedFile()) ? Files.readAllLines(owedFile()) : List.of();
+            if (lines.size() >= atLeast) return lines;
+            if (System.currentTimeMillis() > until) throw new AssertionError("the journal has " + lines.size() + " line(s), not " + atLeast + ": " + lines);
+            Thread.sleep(10);
+        }
     }
 
     private Path owedFile() { return dir.resolve("owed-ledger.jsonl"); }
@@ -203,7 +220,7 @@ class OrchestrixLedgerTest {
             .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("200 ms the admission had left");
 
         assertThat(System.currentTimeMillis() - startedMs).as("given up at the 200 ms it was given, not at its own 5 s").isLessThan(2000);
-        assertThat(seen).as("no time was left for the repeat").hasSize(1);
+        assertThat(charges()).as("no time was left for the repeat").hasSize(1);
     }
 
     @Test
@@ -225,8 +242,10 @@ class OrchestrixLedgerTest {
 
         assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
 
-        List<String> lines = Files.readAllLines(owedFile());
-        assertThat(lines).hasSize(1);
+        List<String> lines = journalLines(3);
+        assertThat(lines).as("unsure; then asked back on the return road; then what the road answered").hasSize(3);
+        assertThat(JSON.readTree(lines.get(1)).get("kind").asText()).isEqualTo("returning");
+        assertThat(JSON.readTree(lines.get(2)).get("kind").asText()).as("this orchestrix had taken the money: it came back").isEqualTo("returned");
         JsonNode line = JSON.readTree(lines.get(0));
         assertThat(line.get("kind").asText()).isEqualTo("unsure");
         assertThat(line.get("reference").asText()).as("the reference an officer looks up at the ledger").isEqualTo("ad-13#L0");
@@ -264,17 +283,19 @@ class OrchestrixLedgerTest {
     }
 
     @Test
-    void whatMustGoBackIsWrittenDownAsOwed_notSentToAnOfficersRoad_andTheSettlementSaysSo() throws Exception {
+    void onAnOrchestrixWithoutTheReturnRoad_whatMustGoBackIsWrittenDownAsOwed_neverSentToAnOfficersRoad_andTheSettlementSaysSo() throws Exception {
+        returnStatus = 404;                                               // an older portal-api: the road is not there
+        returnAnswer = "";
         LedgerPort ledger = ledger();
 
         TierSettlement settlement = ledger.settle(reserved("0.50"), BigDecimal.ZERO);
         ledger.release(reserved("0.40"), "INSUFFICIENT_BALANCE");
 
-        assertThat(seen).as("no road is called: road 15 is an officer's").isEmpty();
+        List<String> lines = journalLines(3);
+        assertThat(seen).as("only the return road is asked: road 15 is an officer's").allMatch(s -> s.path().endsWith("/charge/return"));
         assertThat(settlement.closed()).isFalse();
         assertThat(settlement.charged()).isEqualByComparingTo("0");
-        List<String> lines = Files.readAllLines(owedFile());
-        assertThat(lines).hasSize(2);
+        assertThat(lines).as("the settlement's owed line; the release's returning line and its owed line").hasSize(3);
         JsonNode first = JSON.readTree(lines.get(0));
         assertThat(first.get("kind").asText()).isEqualTo("owed");
         assertThat(first.get("at").asText()).isEqualTo("2026-10-03T04:00:00Z");
@@ -284,8 +305,12 @@ class OrchestrixLedgerTest {
         assertThat(first.get("account").asLong()).isEqualTo(587L);
         assertThat(first.get("amount").decimalValue()).isEqualByComparingTo("0.50");
         assertThat(first.get("uom").asText()).isEqualTo("BDT");
-        JsonNode second = JSON.readTree(lines.get(1));
-        assertThat(second.get("amount").decimalValue()).isEqualByComparingTo("0.40");
-        assertThat(second.get("why").asText()).contains("INSUFFICIENT_BALANCE");
+        assertThat(first.get("why").asText()).contains("no return road");
+        JsonNode asked = JSON.readTree(lines.get(1));
+        assertThat(asked.get("kind").asText()).isEqualTo("returning");
+        assertThat(asked.get("why").asText()).contains("INSUFFICIENT_BALANCE");
+        JsonNode last = JSON.readTree(lines.get(2));
+        assertThat(last.get("kind").asText()).isEqualTo("owed");
+        assertThat(last.get("amount").decimalValue()).isEqualByComparingTo("0.40");
     }
 }
