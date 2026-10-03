@@ -57,6 +57,12 @@ public record Campaign(int id,
             totalTaskCount, sentTaskCount, failedTaskCount, pendingTaskCount, defaultViewSeconds, policy, targeting, creatives, fields);
     }
 
+    /** The same campaign with other counters — the store's, when they live outside the campaign's row ({@code campaign_counter}). */
+    public Campaign withCounters(int sent, int failed, int pending) {
+        return new Campaign(id, tenantId, name, kind, status, partnerId, expireAt, scheduleStart, scheduleEnd, priority,
+            totalTaskCount, sent, failed, pending, defaultViewSeconds, policy, targeting, creatives, fields);
+    }
+
     /** The smallest open ad campaign: one creative, every zone, no quota, no advertiser. */
     public static Campaign openAd(int id, String tenantId, String name, Creative creative, int viewSeconds) {
         return new Campaign(id, tenantId, name, CampaignKind.AD, "Running", 0, null, null, null, 0, 0, 0, 0, 0,
