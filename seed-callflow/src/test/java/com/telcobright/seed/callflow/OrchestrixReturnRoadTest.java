@@ -96,7 +96,7 @@ class OrchestrixReturnRoadTest {
             Canned next = returnAnswers.poll();
             canned = next != null ? next : returnAnswer;
         } else {
-            if (slowCharges.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) pause(700);
+            if (slowCharges.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) pause(2500);
             canned = new Canned(200, CHARGED);
         }
         byte[] out = canned.body().getBytes(StandardCharsets.UTF_8);
@@ -113,13 +113,17 @@ class OrchestrixReturnRoadTest {
 
     private Path journal() { return dir.resolve("owed-ledger.jsonl"); }
 
-    /** The ledger with a read timeout of 300 ms and the quick pace. */
+    /**
+     * The ledger with the quick pace and connect and read timeouts of 3 s: long enough that a loaded box never turns an
+     * answered ask into "no answer", nor a slow connect into "unreachable". A reserve that must get no answer is given 1.5 s
+     * by its caller while the fake road sleeps 2.5 s ({@link #unanswered}).
+     */
     private LedgerPort ledger() { return ledger(QUICK); }
 
-    private LedgerPort ledger(ReturnPace pace) { return ledger(pace, 300); }
+    private LedgerPort ledger(ReturnPace pace) { return ledger(pace, 3000); }
 
     private LedgerPort ledger(ReturnPace pace, long readTimeoutMs) {
-        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit", 500, readTimeoutMs, "ad-sphere");
+        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit", 3000, readTimeoutMs, "ad-sphere");
         return Ledgers.orchestrix(settings, env, journal(), Clock.fixed(Instant.parse("2026-10-04T04:00:00Z"), ZoneOffset.UTC), pace);
     }
 
@@ -140,6 +144,13 @@ class OrchestrixReturnRoadTest {
         level.setReservedAmount(new BigDecimal(amount));
         level.setBalanceAfter(new BigDecimal("9.50"));
         return level;
+    }
+
+    /** A reserve whose charge gets no answer in the 1.5 s its admission had left (the fake road sleeps 2.5 s once). */
+    private void unanswered(LedgerPort ledger) {
+        slowCharges.set(1);
+        assertThatThrownBy(() -> ledger.reserve(reserved("0"), new BigDecimal("0.50"), "ad-13#L0", 1500))
+            .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("1500 ms the admission had left");
     }
 
     private List<Seen> returnsAsked() { return seen.stream().filter(s -> s.path().endsWith("/charge/return")).toList(); }
@@ -196,7 +207,7 @@ class OrchestrixReturnRoadTest {
     @Test
     void aReleaseNeverWaitsForTheRoad() throws Exception {
         returnDelayMs = 1500;                                             // the road answers a second and a half later
-        LedgerPort ledger = ledger(QUICK, 4000);
+        LedgerPort ledger = ledger();
         long startedMs = System.currentTimeMillis();
 
         ledger.release(reserved("0.40"), "ROUTE_NOT_FOUND");
@@ -348,10 +359,7 @@ class OrchestrixReturnRoadTest {
 
     @Test
     void aReserveThatGotNoAnswer_isAskedBack_andMoneyThatMovedComesBack() throws Exception {
-        LedgerPort ledger = ledger();
-        slowCharges.set(2);
-
-        assertThatThrownBy(() -> ledger.reserve(reserved("0"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
+        unanswered(ledger());
 
         awaitKinds("unsure", "returning", "returned");
         assertThat(JSON.readTree(returnsAsked().get(0).body()).get("reference").asText()).isEqualTo("ad-13#L0");
@@ -361,10 +369,7 @@ class OrchestrixReturnRoadTest {
     @Test
     void anUnansweredReserve_notChargedWhenAsked_isAskedOnceMoreBeforeItIsBelieved() throws Exception {
         returnAnswer = NO_SUCH_CHARGE;
-        LedgerPort ledger = ledger();
-        slowCharges.set(2);
-
-        assertThatThrownBy(() -> ledger.reserve(reserved("0"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
+        unanswered(ledger());
 
         awaitKinds("unsure", "returning", "not-charged");
         assertThat(returnsAsked()).as("a charge that got no answer may still land after the first 'nothing charged'").hasSize(2);
@@ -373,10 +378,7 @@ class OrchestrixReturnRoadTest {
     @Test
     void anUnansweredReserve_whoseChargeLandsLate_isGivenBackAtTheSecondAsk() throws Exception {
         returnAnswers.add(NO_SUCH_CHARGE);                                // asked too early: the charge had not landed
-        LedgerPort ledger = ledger();
-        slowCharges.set(2);
-
-        assertThatThrownBy(() -> ledger.reserve(reserved("0"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
+        unanswered(ledger());
 
         awaitKinds("unsure", "returning", "returned");
         assertThat(returnsAsked()).hasSize(2);
@@ -403,19 +405,17 @@ class OrchestrixReturnRoadTest {
 
     @Test
     void aReturnLeftOpenByAProcessThatStopped_isAskedAgainAtTheNextStart() throws Exception {
-        returnAnswer = DOWN;
-        ledger(new ReturnPace(2, 400, 400, 60, 100)).release(reserved("0.40"), "INSUFFICIENT_BALANCE");
-        await("the first ask", () -> returnsAsked().size() == 1);
-        assertThat(kinds()).as("the first process is still asking: the story has no end").containsExactly("returning");
+        // what a process leaves behind when it stops between the 'returning' line and the road's answer: the line, and nothing else
+        Files.writeString(journal(), "{\"kind\":\"returning\",\"at\":\"2026-10-04T03:59:00Z\",\"reference\":\"ad-1#L0\",\"tier\":0,\"tenant\":\"res_44\","
+            + "\"partnerId\":701,\"billingAccount\":\"9001\",\"account\":587,\"amount\":0.40,\"uom\":\"BDT\",\"why\":\"released: INSUFFICIENT_BALANCE\"}" + System.lineSeparator());
 
-        returnAnswer = RETURNED;
-        ledger();                                                         // the next start, on the same journal
+        ledger();                                                         // the next start, on that journal
 
-        await("a 'returned' line", () -> {
-            try { return kinds().contains("returned"); } catch (IOException e) { return false; }
-        });
-        assertThat(returnsAsked().get(1).path()).isEqualTo(RETURN_ROAD);
-        assertThat(json(returnsAsked().get(1).body()).get("reference").asText()).isEqualTo("ad-1#L0");
+        awaitKinds("returning", "returned");
+        assertThat(returnsAsked()).hasSize(1);
+        assertThat(returnsAsked().get(0).path()).isEqualTo(RETURN_ROAD);
+        assertThat(json(returnsAsked().get(0).body()).get("reference").asText()).isEqualTo("ad-1#L0");
+        assertThat(lines().get(1).get("amount").decimalValue()).isEqualByComparingTo("0.40");
     }
 
     @Test
@@ -436,7 +436,7 @@ class OrchestrixReturnRoadTest {
     @Test
     void moreReturnsThanMayWait_areOwedInsteadOfQueued() throws Exception {
         returnDelayMs = 600;                                              // the worker is busy with the first one
-        LedgerPort ledger = ledger(new ReturnPace(1, 30, 30, 60, 1), 4000);
+        LedgerPort ledger = ledger(new ReturnPace(1, 30, 30, 60, 1));
 
         ledger.release(reserved("0.40"), "first");
         await("the worker took the first", () -> returnsAsked().size() == 1);

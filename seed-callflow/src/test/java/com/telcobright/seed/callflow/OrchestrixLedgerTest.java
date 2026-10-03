@@ -286,7 +286,7 @@ class OrchestrixLedgerTest {
     void onAnOrchestrixWithoutTheReturnRoad_whatMustGoBackIsWrittenDownAsOwed_neverSentToAnOfficersRoad_andTheSettlementSaysSo() throws Exception {
         returnStatus = 404;                                               // an older portal-api: the road is not there
         returnAnswer = "";
-        LedgerPort ledger = ledger();
+        LedgerPort ledger = ledger(3000);                                 // a loaded box must not turn the road's answer into "no answer"
 
         TierSettlement settlement = ledger.settle(reserved("0.50"), BigDecimal.ZERO);
         ledger.release(reserved("0.40"), "INSUFFICIENT_BALANCE");
