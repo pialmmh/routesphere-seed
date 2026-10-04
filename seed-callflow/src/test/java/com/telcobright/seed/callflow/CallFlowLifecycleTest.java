@@ -355,8 +355,8 @@ class CallFlowLifecycleTest {
 
         List<CdrEvent> tiers = cdrOf("ad-4");
         assertThat(tiers).hasSize(1);
-        assertThat(tiers.get(0).tenant).isEqualTo("res_44");
-        assertThat(tiers.get(0).resellerHierarchy).isEqualTo("btcl > res_44");
+        assertThat(tiers.get(0).tenant).as("the call's own tenant: the root it named").isEqualTo("btcl");
+        assertThat(tiers.get(0).resellerHierarchy).isEqualTo("btcl");
         assertThat(tiers.get(0).hangupCause).isEqualTo("NO_RULE");
         assertThat(tiers.get(0).inPartnerId).isEqualTo(5);
         assertThat(tiers.get(0).serviceGroup).isEqualTo(30);

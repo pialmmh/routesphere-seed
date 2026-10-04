@@ -52,7 +52,7 @@ final class CallCdr<C extends CallFlowContext> {
 
     /** Nobody was admitted (or the call was free and had no tier): one record on the tenant the call entered. */
     private List<CdrEvent> unadmitted(C ctx, int serviceGroup, String cause) {
-        Tenant tenant = ctx.entryTenant != null ? ctx.entryTenant : flow.kit().tenants().tenantByDbName(ctx.tenantName).orElse(null);
+        Tenant tenant = ctx.entryTenant != null ? ctx.entryTenant : flow.kit().tenants().root(ctx.tenantName).orElse(null);
         if (tenant == null) return lost(ctx, cause);
         Integer payer = ctx.partner != null ? ctx.partner.getIdPartner() : flow.payerWhenUnknown(ctx, tenant);
         return List.of(sealed(ctx, null, assembler.unadmittedRecord(ctx, tenant, payer, serviceGroup, cause)));

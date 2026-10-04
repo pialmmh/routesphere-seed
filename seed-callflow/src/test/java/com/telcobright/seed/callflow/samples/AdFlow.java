@@ -122,7 +122,7 @@ public final class AdFlow extends CallFlow<AdFlow.View> {
     /** The advertiser of the candidate pays. The house ad of a tenant with no advertiser has no partner and no tier. */
     @Override
     protected EntryPartner identifyEntryPartner(View view) {
-        return view.playing.advertiserId() == null ? null : entryOfPartner(view.playing.advertiserId());
+        return view.playing.advertiserId() == null ? null : entryOfPartner(view, view.playing.advertiserId());
     }
 
     /** A view is rated whole and reserved whole. */

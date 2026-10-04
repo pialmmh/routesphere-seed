@@ -54,6 +54,9 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     /**
      * ADMITTING · The partner this call belongs to, and the tenant that partner lives in (a call: by the source address
      * or the SIP account; an SMS: by the user name; an ad: the advertiser of the candidate). Null = nobody.
+     *
+     * <p>The tenant must be one of the call's OWN tree: when the call names its tenant ({@code ctx.tenantName}) the base refuses an
+     * entry whose chain ends at another root ({@code PARTNER_NOT_FOUND}) — a call never leaves the tree it came in on.
      */
     protected abstract EntryPartner identifyEntryPartner(C ctx);
 
@@ -79,10 +82,13 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
      */
     public void defineRoutes(InternalEventResolver routes) { }
 
-    /** PREPROCESSING · The tenant the request named must be one this process serves. A request that names none passes. */
+    /**
+     * PREPROCESSING · The tenant the request named must be one this process serves: the ROOT of a served tree, by its database name —
+     * the call's own tenant, inside whose tree its partner is found and its chain climbs. A request that names none passes.
+     */
     protected String resolveTenant(C ctx) {
         if (ctx.tenantName == null) return null;
-        return kit.tenants().tenantByDbName(ctx.tenantName).isPresent() ? null : CallCause.TENANT_UNAVAILABLE;
+        return kit.tenants().root(ctx.tenantName).isPresent() ? null : CallCause.TENANT_UNAVAILABLE;
     }
 
     /**
@@ -259,9 +265,15 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
         return true;
     }
 
-    /** The entry of a partner whose id is known (the ad's advertiser): the tenant whose partners hold it. */
-    protected final EntryPartner entryOfPartner(int partnerId) {
-        Optional<Tenant> tenant = kit.tenants().tenantOfPartner(partnerId);
+    /**
+     * The entry of a partner whose id is known (the ad's advertiser): the tenant INSIDE THE CALL'S OWN TREE whose partners hold it — the
+     * tree whose root the call names ({@code ctx.tenantName}). A partner id is unique inside one tree, not across the trees a process
+     * serves, so the id alone names nobody: a call that names no tenant finds no entry here, and neither does one whose own tree does
+     * not hold the id — whatever another served tree holds.
+     */
+    protected final EntryPartner entryOfPartner(C ctx, int partnerId) {
+        if (ctx.tenantName == null) return null;
+        Optional<Tenant> tenant = kit.tenants().tenantOfPartner(ctx.tenantName, partnerId);
         if (tenant.isEmpty() || tenant.get().getContext() == null) return null;
         Partner partner = tenant.get().getContext().getPartners().get(partnerId);
         return partner == null ? null : new EntryPartner(tenant.get(), partner);

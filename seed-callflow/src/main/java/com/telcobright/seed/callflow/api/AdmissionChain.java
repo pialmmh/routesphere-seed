@@ -16,6 +16,7 @@ import java.util.Optional;
  * ADMITTING, for every application: the candidates in order, and for each the call switch's admission —
  * identify the entry partner → walk the tenant chain leaf to root (check, slot, authorize, root rules, rate, RESERVE)
  * → resolve the route → confirm. A refused candidate keeps nothing: every reserve goes back and its slot is free.
+ * The chain is the entry tenant's, and it must end at the call's own tenant: a call never climbs another served tree.
  *
  * <p>This is the work behind {@link CallFlow#admit}; the application's part of each step is in {@link CallFlowSteps}.
  */
@@ -105,16 +106,33 @@ final class AdmissionChain<C extends CallFlowContext> {
     }
 
     private String admitThroughTenantChain(C ctx, EntryPartner entry, Walk walk) {
+        List<Tenant> chain = entry.tenant().getAncestorChain();
+        Tenant root = chain.get(chain.size() - 1);
+        if (leavesTheCallsOwnTree(ctx, entry, root)) return CallCause.PARTNER_NOT_FOUND;
         ctx.entryTenant = entry.tenant();
         ctx.partner = entry.partner();
-        List<Tenant> chain = entry.tenant().getAncestorChain();
-        walk.root = chain.get(chain.size() - 1);
+        walk.root = root;
         for (int i = 0; i < chain.size(); i++) {
             Partner partner = i == 0 ? entry.partner() : partnerAbove(ctx, chain.get(i - 1), chain.get(i));
             String refusal = admitAtLevel(ctx, walk, chain.get(i), partner, i);
             if (refusal != null) return refusal;
         }
         return null;
+    }
+
+    /**
+     * The belt of every application: a call that names its tenant climbs THAT tenant's tree and no other. An entry whose chain ends at
+     * another root — a lookup or an override that searched across the trees this process serves (a partner id is unique inside one tree
+     * only) — is refused as if the partner did not exist: for the call's own tenant it does not. Nothing of the call is put on the
+     * foreign tier: no reserve, no slot, and its record stays on its own tenant.
+     */
+    private boolean leavesTheCallsOwnTree(C ctx, EntryPartner entry, Tenant root) {
+        if (ctx.tenantName == null || ctx.tenantName.equals(root.getDbName())) return false;
+        flow.log.error("[{}] {} | the entry partner {} was found in tenant '{}', a tier of the tree of '{}', but this call's tenant is '{}':"
+            + " a call never leaves its own tree — refused {}", flow.name(), ctx.sessionKey, entry.partner().getIdPartner(),
+            entry.tenant().getDbName(), root.getDbName(), ctx.tenantName, CallCause.PARTNER_NOT_FOUND);
+        ctx.history.note(flow.name(), "the entry partner was found in the tree of '" + root.getDbName() + "', not in this call's own ('" + ctx.tenantName + "')");
+        return true;
     }
 
     private Partner partnerAbove(C ctx, Tenant childTier, Tenant tier) {
