@@ -378,11 +378,18 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
     }
 
     private void itFails(int changes, RuntimeException e) {
-        lastFailure = String.valueOf(e.getMessage());
+        lastFailure = whatTheStoreSaid(e);
         if (failingSince != 0) return;
         failingSince = System.currentTimeMillis();
         log.error("campaign store {}: a batch of {} change(s) could not be written: {} — it is written again every {}–{} ms until the store takes it; no task waits"
-            + " ({} more wait in the queue, then on disk in {})", name, changes, e.getMessage(), settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
+            + " ({} more wait in the queue, then on disk in {})", name, changes, lastFailure, settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
+    }
+
+    /** The words of the failure's first cause: what the database or the pool said, not this library's sentence around it. */
+    private static String whatTheStoreSaid(Throwable e) {
+        Throwable first = e;
+        while (first.getCause() != null && first.getCause() != first) first = first.getCause();
+        return String.valueOf(first.getMessage() == null ? first : first.getMessage());
     }
 
     private void itWritesAgain() {
