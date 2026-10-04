@@ -4,7 +4,10 @@ import com.telcobright.seed.campaign.api.Campaign;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.campaign.api.TaskCharge;
+import com.telcobright.seed.campaign.api.TaskState;
 import com.telcobright.seed.campaign.spi.CampaignStore;
+import com.telcobright.seed.campaign.spi.StoreChange;
+import com.telcobright.seed.campaign.spi.StoreRepair;
 
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -20,8 +23,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
@@ -54,6 +60,16 @@ public final class JdbcCampaignStore implements CampaignStore {
           RETRY_COUNT, CREATED_STAMP, LAST_UPDATED_STAMP, START_TIME_MILLIS, TERMINATING_CALLED_NUMBER,
           ORIGINATING_CALLING_NUMBER, CLIENT_TRANS_ID, tenantName, TASK_DETAIL_JSON)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)""";
+    /**
+     * The same row, made only when no row has that id — for a batch, which may be written again whole (a batch that failed, a journal
+     * line of a process that stopped): a task that is there already is left as it is. The id is said twice.
+     */
+    private static final String INSERT_TASK_IF_ABSENT_SELECT = """
+        INSERT INTO campaign_task (uniqueId, CAMPAIGN_ID, ID_PARTNER, PHONE_NUMBER, MESSAGE, TASK_TYPE, STATE, STATUS,
+          RETRY_COUNT, CREATED_STAMP, LAST_UPDATED_STAMP, START_TIME_MILLIS, TERMINATING_CALLED_NUMBER,
+          ORIGINATING_CALLING_NUMBER, CLIENT_TRANS_ID, tenantName, TASK_DETAIL_JSON)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?""";
+    private static final String WHERE_NO_SUCH_TASK = " WHERE NOT EXISTS (SELECT 1 FROM campaign_task WHERE uniqueId = ?)";
     private static final String UPDATE_TASK = """
         UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, ANSWERED = ?, ANSWER_TIME_MILLIS = ?,
           END_TIME_MILLIS = ?, BILLSEC = ?, HANGUP_CAUSE = ?, idPackageAccount = ?, packageAmount = ?, uom = ?,
@@ -188,27 +204,33 @@ public final class JdbcCampaignStore implements CampaignStore {
     public void insertTask(CampaignTask t) {
         requireIdFits(t);
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(INSERT_TASK)) {
-            int i = 1;
-            ps.setString(i++, t.uniqueId());
-            ps.setInt(i++, t.campaignId());
-            ps.setInt(i++, t.partnerId());
-            ps.setString(i++, fit(t.subject(), CampaignSchema.TASK_NUMBER_WIDTH, "PHONE_NUMBER", t));
-            ps.setString(i++, fit(t.creativeId(), CampaignSchema.TASK_MESSAGE_WIDTH, "MESSAGE", t));
-            ps.setString(i++, t.kind().name());
-            ps.setInt(i++, t.state().code());
-            ps.setInt(i++, STATUS_PROCESSING);
-            ps.setObject(i++, stamp(t.createdAt()));
-            ps.setObject(i++, stamp(t.createdAt()));
-            ps.setLong(i++, t.createdAt().toEpochMilli());
-            ps.setString(i++, fit(t.zone(), CampaignSchema.TASK_NUMBER_WIDTH, "TERMINATING_CALLED_NUMBER", t));
-            ps.setString(i++, fit(t.site(), CampaignSchema.TASK_NUMBER_WIDTH, "ORIGINATING_CALLING_NUMBER", t));
-            ps.setString(i++, fit(t.clientRef(), CampaignSchema.TASK_CLIENT_REF_WIDTH, "CLIENT_TRANS_ID", t));
-            ps.setString(i++, fit(t.tenantId(), CampaignSchema.TASK_TENANT_WIDTH, "tenantName", t));
-            ps.setString(i, json.apply(t.detail()));
+            bindInsert(ps, t);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("task " + t.uniqueId() + " could not be inserted: " + e.getMessage(), e);
         }
+    }
+
+    /** The insert's sixteen values, in the statement's order; the next free index is handed back. */
+    private int bindInsert(PreparedStatement ps, CampaignTask t) throws SQLException {
+        int i = 1;
+        ps.setString(i++, t.uniqueId());
+        ps.setInt(i++, t.campaignId());
+        ps.setInt(i++, t.partnerId());
+        ps.setString(i++, fit(t.subject(), CampaignSchema.TASK_NUMBER_WIDTH, "PHONE_NUMBER", t));
+        ps.setString(i++, fit(t.creativeId(), CampaignSchema.TASK_MESSAGE_WIDTH, "MESSAGE", t));
+        ps.setString(i++, t.kind().name());
+        ps.setInt(i++, t.state().code());
+        ps.setInt(i++, STATUS_PROCESSING);
+        ps.setObject(i++, stamp(t.createdAt()));
+        ps.setObject(i++, stamp(t.createdAt()));
+        ps.setLong(i++, t.createdAt().toEpochMilli());
+        ps.setString(i++, fit(t.zone(), CampaignSchema.TASK_NUMBER_WIDTH, "TERMINATING_CALLED_NUMBER", t));
+        ps.setString(i++, fit(t.site(), CampaignSchema.TASK_NUMBER_WIDTH, "ORIGINATING_CALLING_NUMBER", t));
+        ps.setString(i++, fit(t.clientRef(), CampaignSchema.TASK_CLIENT_REF_WIDTH, "CLIENT_TRANS_ID", t));
+        ps.setString(i++, fit(t.tenantId(), CampaignSchema.TASK_TENANT_WIDTH, "tenantName", t));
+        ps.setString(i++, json.apply(t.detail()));
+        return i;
     }
 
     // ── a text longer than its column never costs a task its row ────────────
@@ -236,28 +258,131 @@ public final class JdbcCampaignStore implements CampaignStore {
 
     @Override
     public void updateTask(CampaignTask t) {
-        TaskCharge ch = t.charge() == null ? TaskCharge.FREE : t.charge();
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(UPDATE_TASK)) {
-            int i = 1;
-            ps.setInt(i++, t.state().code());
-            ps.setInt(i++, statusOf(t));
-            ps.setObject(i++, stamp(Instant.now()));
-            ps.setInt(i++, t.answered() ? 1 : 0);
-            setLong(ps, i++, t.answeredAt() == null ? null : t.answeredAt().toEpochMilli());
-            setLong(ps, i++, t.endedAt() == null ? null : t.endedAt().toEpochMilli());
-            ps.setInt(i++, t.billsec());
-            ps.setString(i++, fit(t.endCause(), CampaignSchema.TASK_CAUSE_WIDTH, "HANGUP_CAUSE", t));
-            setLong(ps, i++, ch.packageAccountId());
-            ps.setDouble(i++, ch.packageAmount() == null ? 0 : ch.packageAmount().doubleValue());
-            ps.setString(i++, fit(ch.uom(), CampaignSchema.TASK_UOM_WIDTH, "uom", t));
-            ps.setDouble(i++, ch.cost() == null ? 0 : ch.cost().doubleValue());
-            ps.setString(i++, ch.free() ? "0" : "1");
-            ps.setString(i++, fit(ch.matchedPattern(), CampaignSchema.TASK_PREFIX_WIDTH, "MatchedPrefixCustomer", t));
-            ps.setString(i++, json.apply(t.detail()));
-            ps.setString(i, t.uniqueId());
+            bindUpdate(ps, t);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("task " + t.uniqueId() + " could not be updated: " + e.getMessage(), e);
+        }
+    }
+
+    private void bindUpdate(PreparedStatement ps, CampaignTask t) throws SQLException {
+        TaskCharge ch = t.charge() == null ? TaskCharge.FREE : t.charge();
+        int i = 1;
+        ps.setInt(i++, t.state().code());
+        ps.setInt(i++, statusOf(t));
+        ps.setObject(i++, stamp(Instant.now()));
+        ps.setInt(i++, t.answered() ? 1 : 0);
+        setLong(ps, i++, t.answeredAt() == null ? null : t.answeredAt().toEpochMilli());
+        setLong(ps, i++, t.endedAt() == null ? null : t.endedAt().toEpochMilli());
+        ps.setInt(i++, t.billsec());
+        ps.setString(i++, fit(t.endCause(), CampaignSchema.TASK_CAUSE_WIDTH, "HANGUP_CAUSE", t));
+        setLong(ps, i++, ch.packageAccountId());
+        ps.setDouble(i++, ch.packageAmount() == null ? 0 : ch.packageAmount().doubleValue());
+        ps.setString(i++, fit(ch.uom(), CampaignSchema.TASK_UOM_WIDTH, "uom", t));
+        ps.setDouble(i++, ch.cost() == null ? 0 : ch.cost().doubleValue());
+        ps.setString(i++, ch.free() ? "0" : "1");
+        ps.setString(i++, fit(ch.matchedPattern(), CampaignSchema.TASK_PREFIX_WIDTH, "MatchedPrefixCustomer", t));
+        ps.setString(i++, json.apply(t.detail()));
+        ps.setString(i, t.uniqueId());
+    }
+
+    // ── a batch: ONE transaction (the queue's writer; a journal's replay) ───
+
+    /**
+     * The batch in ONE transaction, on one connection: the task rows in their order, then for each campaign ONE counter statement with
+     * the batch's sums, then the campaigns that reached their quota. All of it or none: a batch that failed wrote nothing, so it may be
+     * written again whole. And a batch may be written TWICE (the commit was made and its answer was lost; a journal read again after a
+     * crash): a task row that is there is not made again, and an update that finds no row makes it first — so the rows end right either
+     * way. Only the counters would then count twice; a start sets them from the rows ({@link #repairAfterRestart}).
+     */
+    @Override
+    public void write(List<StoreChange> batch) {
+        if (batch.isEmpty()) return;
+        try (Connection c = ds.getConnection()) {
+            boolean autoCommit = c.getAutoCommit();
+            c.setAutoCommit(false);
+            try {
+                writeTheTaskRows(c, batch);
+                writeTheCounterSums(c, batch);
+                writeTheCompletedCampaigns(c, batch);
+                c.commit();
+            } catch (SQLException | RuntimeException e) {
+                try { c.rollback(); } catch (SQLException alreadyGone) { e.addSuppressed(alreadyGone); }
+                throw e;
+            } finally {
+                try { c.setAutoCommit(autoCommit); } catch (SQLException alreadyGone) { /* the pool drops such a connection */ }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("a batch of " + batch.size() + " change(s) could not be written: " + e.getMessage(), e);
+        }
+    }
+
+    /** Every insert and update of the batch, in the batch's order: a task's insert comes before its update. */
+    private void writeTheTaskRows(Connection c, List<StoreChange> batch) throws SQLException {
+        try (PreparedStatement insert = c.prepareStatement(insertIfAbsent(c)); PreparedStatement update = c.prepareStatement(UPDATE_TASK)) {
+            for (StoreChange change : batch) {
+                if (change instanceof StoreChange.TaskInserted made) insertIfAbsent(insert, made.task());
+                else if (change instanceof StoreChange.TaskUpdated moved) updateOrMake(insert, update, moved.task());
+            }
+        }
+    }
+
+    private void insertIfAbsent(PreparedStatement insert, CampaignTask t) throws SQLException {
+        requireIdFits(t);
+        int next = bindInsert(insert, t);
+        insert.setString(next, t.uniqueId());
+        insert.executeUpdate();
+    }
+
+    /** The row as the task is now. A row that is not there (its insert was never written) is made first: the update is the whole truth. */
+    private void updateOrMake(PreparedStatement insert, PreparedStatement update, CampaignTask t) throws SQLException {
+        bindUpdate(update, t);
+        if (update.executeUpdate() > 0) return;
+        insertIfAbsent(insert, t);
+        bindUpdate(update, t);
+        update.executeUpdate();
+    }
+
+    /** MySQL wants a table in a SELECT that has a WHERE; PostgreSQL has no DUAL; H2 takes each engine's own wording in its mode. */
+    private String insertIfAbsent(Connection c) {
+        return INSERT_TASK_IF_ABSENT_SELECT + (dialect == Dialect.MYSQL ? " FROM DUAL" : "") + WHERE_NO_SUCH_TASK;
+    }
+
+    /** Per campaign ONE statement with the batch's sums: 2,000 views of one campaign that end together are one bump, not 2,000. */
+    private void writeTheCounterSums(Connection c, List<StoreChange> batch) throws SQLException {
+        Map<Integer, int[]> sums = new LinkedHashMap<>();
+        for (StoreChange change : batch) {
+            if (!(change instanceof StoreChange.CountersBumped bump)) continue;
+            int[] sum = sums.computeIfAbsent(bump.campaignId(), id -> new int[3]);
+            sum[0] += bump.sent();
+            sum[1] += bump.failed();
+            sum[2] += bump.pending();
+        }
+        if (sums.isEmpty()) return;
+        boolean table = counters == Counters.COUNTER_TABLE;
+        try (PreparedStatement ps = c.prepareStatement(table ? upsertOf(c) : BUMP)) {
+            for (Map.Entry<Integer, int[]> campaign : sums.entrySet()) {
+                int[] sum = campaign.getValue();
+                if (sum[0] == 0 && sum[1] == 0 && sum[2] == 0) continue;
+                if (table) bindUpsert(ps, campaign.getKey(), sum[0], sum[1], sum[2]);
+                else bindBump(ps, campaign.getKey(), sum[0], sum[1], sum[2]);
+                ps.executeUpdate();
+            }
+        }
+    }
+
+    private void writeTheCompletedCampaigns(Connection c, List<StoreChange> batch) throws SQLException {
+        Set<Integer> completed = new LinkedHashSet<>();
+        for (StoreChange change : batch) if (change instanceof StoreChange.CampaignCompleted done) completed.add(done.campaignId());
+        if (completed.isEmpty()) return;
+        try (PreparedStatement ps = c.prepareStatement(COMPLETE)) {
+            for (int campaignId : completed) {
+                ps.setInt(1, STATUS_COMPLETE);
+                ps.setObject(2, stamp(Instant.now()));
+                ps.setInt(3, campaignId);
+                ps.executeUpdate();
+            }
         }
     }
 
@@ -268,26 +393,34 @@ public final class JdbcCampaignStore implements CampaignStore {
             return;
         }
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(BUMP)) {
-            ps.setInt(1, sentDelta);
-            ps.setInt(2, failedDelta);
-            ps.setInt(3, pendingDelta);
-            ps.setObject(4, stamp(Instant.now()));
-            ps.setInt(5, campaignId);
+            bindBump(ps, campaignId, sentDelta, failedDelta, pendingDelta);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("counters of campaign " + campaignId + " could not be bumped: " + e.getMessage(), e);
         }
     }
 
+    private void bindBump(PreparedStatement ps, int campaignId, int sentDelta, int failedDelta, int pendingDelta) throws SQLException {
+        ps.setInt(1, sentDelta);
+        ps.setInt(2, failedDelta);
+        ps.setInt(3, pendingDelta);
+        ps.setObject(4, stamp(Instant.now()));
+        ps.setInt(5, campaignId);
+    }
+
+    private void bindUpsert(PreparedStatement ps, int campaignId, int sentDelta, int failedDelta, int pendingDelta) throws SQLException {
+        ps.setInt(1, campaignId);
+        ps.setInt(2, sentDelta);
+        ps.setInt(3, failedDelta);
+        ps.setInt(4, pendingDelta);
+        ps.setObject(5, stamp(Instant.now()));
+        ps.setInt(6, pendingDelta);
+    }
+
     /** ONE upsert: the campaign's counter row is made by its first bump and added to by every later one; the campaign's row is not written. */
     private void bumpTheCounterTable(int campaignId, int sentDelta, int failedDelta, int pendingDelta) {
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(upsertOf(c))) {
-            ps.setInt(1, campaignId);
-            ps.setInt(2, sentDelta);
-            ps.setInt(3, failedDelta);
-            ps.setInt(4, pendingDelta);
-            ps.setObject(5, stamp(Instant.now()));
-            ps.setInt(6, pendingDelta);
+            bindUpsert(ps, campaignId, sentDelta, failedDelta, pendingDelta);
             try {
                 ps.executeUpdate();
             } catch (SQLException lostTheRace) {
@@ -331,6 +464,132 @@ public final class JdbcCampaignStore implements CampaignStore {
             out.add(k == null ? campaign.withCounters(0, 0, 0) : campaign.withCounters(k[0], k[1], k[2]));
         }
         return out;
+    }
+
+    // ── a start repairs what a dead process left ────────────────────────────
+
+    private static final String CLOSE_WHAT_IS_NOT_FINAL = """
+        UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, END_TIME_MILLIS = ?, HANGUP_CAUSE = ?
+        WHERE TASK_TYPE = ? AND tenantName = ? AND STATE NOT IN (?, ?)""";
+    private static final String COUNT_THE_TASKS = """
+        SELECT CAMPAIGN_ID, SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END), SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END),
+          SUM(CASE WHEN STATE IN (?, ?) THEN 0 ELSE 1 END)
+        FROM campaign_task WHERE TASK_TYPE = ? GROUP BY CAMPAIGN_ID""";
+    private static final String COUNTERS_ON_THE_ROWS = "SELECT CAMPAIGN_ID, COALESCE(SENT_TASK_COUNT, 0), COALESCE(FAILED_TASK_COUNT, 0),"
+        + " COALESCE(PENDING_TASK_COUNT, 0) FROM campaign WHERE CAMPAIGN_TYPE = ? FOR UPDATE";
+    private static final String SET_ON_THE_ROW = "UPDATE campaign SET SENT_TASK_COUNT = ?, FAILED_TASK_COUNT = ?, PENDING_TASK_COUNT = ?,"
+        + " LAST_UPDATED_STAMP = ? WHERE CAMPAIGN_ID = ?";
+    private static final String SET_IN_THE_TABLE = "UPDATE campaign_counter SET SENT_TASK_COUNT = ?, FAILED_TASK_COUNT = ?, PENDING_TASK_COUNT = ?,"
+        + " LAST_UPDATED_STAMP = ? WHERE CAMPAIGN_ID = ?";
+    private static final String MAKE_IN_THE_TABLE = "INSERT INTO campaign_counter (SENT_TASK_COUNT, FAILED_TASK_COUNT, PENDING_TASK_COUNT,"
+        + " LAST_UPDATED_STAMP, CAMPAIGN_ID) VALUES (?, ?, ?, ?, ?)";
+
+    /**
+     * One transaction: every task of this store's kind and of {@code tenantName} that is not final is closed FAILED with {@code cause};
+     * then the campaigns' counters are made to say what the task rows say. The counter rows are locked first, so a writer of the same
+     * tables that is live (another served tenant of the same database) waits and then adds to what was set.
+     *
+     * <p><b>What "set" means</b> depends on whose the counter is. In {@link Counters#COUNTER_TABLE} the counters are this store's own
+     * traffic: SENT, FAILED and PENDING are SET to the count of the rows. In {@link Counters#CAMPAIGN_ROW} the counters stand on the
+     * campaign's own row, which others write too (a migration, another runner whose task rows are not kept for ever): SENT and FAILED
+     * are only RAISED to the count — never lowered — and PENDING is set to the rows that are not final.
+     */
+    @Override
+    public StoreRepair repairAfterRestart(String tenantName, String cause, Instant at) {
+        try (Connection c = ds.getConnection()) {
+            boolean autoCommit = c.getAutoCommit();
+            c.setAutoCommit(false);
+            try {
+                Map<Integer, int[]> stored = lockTheCounters(c);
+                int closed = closeWhatIsNotFinal(c, tenantName, cause, at);
+                List<String> corrected = setTheCountersFromTheRows(c, stored, countTheTasks(c));
+                c.commit();
+                return new StoreRepair(closed, corrected.size(), wordsOf(tenantName, closed, cause, corrected));
+            } catch (SQLException | RuntimeException e) {
+                try { c.rollback(); } catch (SQLException alreadyGone) { e.addSuppressed(alreadyGone); }
+                throw e;
+            } finally {
+                try { c.setAutoCommit(autoCommit); } catch (SQLException alreadyGone) { /* the pool drops such a connection */ }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("the tasks of " + tenantName + " could not be repaired at the start: " + e.getMessage(), e);
+        }
+    }
+
+    /** Campaign → {sent, failed, pending} as stored now, the rows locked until the repair commits. */
+    private Map<Integer, int[]> lockTheCounters(Connection c) throws SQLException {
+        Map<Integer, int[]> stored = new HashMap<>();
+        String sql = counters == Counters.COUNTER_TABLE ? COUNTERS_OF + " FOR UPDATE" : COUNTERS_ON_THE_ROWS;
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            if (counters == Counters.CAMPAIGN_ROW) ps.setString(1, kind.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) stored.put(rs.getInt(1), new int[] {rs.getInt(2), rs.getInt(3), rs.getInt(4)});
+            }
+        }
+        return stored;
+    }
+
+    private int closeWhatIsNotFinal(Connection c, String tenantName, String cause, Instant at) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(CLOSE_WHAT_IS_NOT_FINAL)) {
+            ps.setInt(1, TaskState.FAILED.code());
+            ps.setInt(2, STATUS_FAILED);
+            ps.setObject(3, stamp(at));
+            ps.setLong(4, at.toEpochMilli());
+            ps.setString(5, cause);
+            ps.setString(6, kind.name());
+            ps.setString(7, tenantName);
+            ps.setInt(8, TaskState.FAILED.code());
+            ps.setInt(9, TaskState.SENT.code());
+            return ps.executeUpdate();
+        }
+    }
+
+    /** Campaign → {sent, failed, not final} as the task rows of this kind say (every tenant's rows: a campaign's counter is one). */
+    private Map<Integer, int[]> countTheTasks(Connection c) throws SQLException {
+        Map<Integer, int[]> counted = new HashMap<>();
+        try (PreparedStatement ps = c.prepareStatement(COUNT_THE_TASKS)) {
+            ps.setInt(1, TaskState.SENT.code());
+            ps.setInt(2, TaskState.FAILED.code());
+            ps.setInt(3, TaskState.SENT.code());
+            ps.setInt(4, TaskState.FAILED.code());
+            ps.setString(5, kind.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) counted.put(rs.getInt(1), new int[] {rs.getInt(2), rs.getInt(3), rs.getInt(4)});
+            }
+        }
+        return counted;
+    }
+
+    private List<String> setTheCountersFromTheRows(Connection c, Map<Integer, int[]> stored, Map<Integer, int[]> counted) throws SQLException {
+        boolean table = counters == Counters.COUNTER_TABLE;
+        List<String> corrected = new ArrayList<>();
+        java.util.TreeSet<Integer> campaigns = new java.util.TreeSet<>(stored.keySet());
+        if (table) campaigns.addAll(counted.keySet());           // a campaign with tasks and no counter row yet gets its row
+        try (PreparedStatement set = c.prepareStatement(table ? SET_IN_THE_TABLE : SET_ON_THE_ROW);
+             PreparedStatement make = table ? c.prepareStatement(MAKE_IN_THE_TABLE) : null) {
+            for (int campaignId : campaigns) {
+                int[] was = stored.get(campaignId);
+                int[] rows = counted.getOrDefault(campaignId, new int[3]);
+                int[] now = table ? rows : new int[] {Math.max(was[0], rows[0]), Math.max(was[1], rows[1]), rows[2]};
+                if (was != null && was[0] == now[0] && was[1] == now[1] && was[2] == now[2]) continue;
+                PreparedStatement ps = was == null ? make : set;
+                ps.setInt(1, now[0]);
+                ps.setInt(2, now[1]);
+                ps.setInt(3, now[2]);
+                ps.setObject(4, stamp(Instant.now()));
+                ps.setInt(5, campaignId);
+                ps.executeUpdate();
+                corrected.add("campaign " + campaignId + ": sent/failed/pending " + (was == null ? "(no row)" : was[0] + "/" + was[1] + "/" + was[2])
+                    + " → " + now[0] + "/" + now[1] + "/" + now[2]);
+            }
+        }
+        return corrected;
+    }
+
+    private static String wordsOf(String tenantName, int closed, String cause, List<String> corrected) {
+        if (closed == 0 && corrected.isEmpty()) return "";
+        return closed + " task(s) of " + tenantName + " that a stopped process left not final are closed " + cause + "; " + corrected.size()
+            + " campaign(s) had counters that did not say what their task rows say, set now" + (corrected.isEmpty() ? "" : " — " + String.join("; ", corrected));
     }
 
     @Override
