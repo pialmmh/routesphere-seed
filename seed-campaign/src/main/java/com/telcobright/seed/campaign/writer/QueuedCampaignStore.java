@@ -380,6 +380,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
     private void itFails(int changes, RuntimeException e) {
         lastFailure = whatTheStoreSaid(e);
         if (failingSince != 0) return;
+        if (stopping) return;                                        // a stop that cut a write short: the stop says what it kept, once
         failingSince = System.currentTimeMillis();
         log.error("campaign store {}: a batch of {} change(s) could not be written: {} — it is written again every {}–{} ms until the store takes it; no task waits"
             + " ({} more wait in the queue, then on disk in {})", name, changes, lastFailure, settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
@@ -487,10 +488,11 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
             List<StoreChange> left = new ArrayList<>(inHand);        // what the writer held (also when it hangs in the store's call: then it may be written twice — a task row is made once, and a start sets the counters)
             for (Entry e : queue) left.add(e.change());
             queue.clear();
-            if (left.isEmpty() && !journal.hasLines()) { log.info("campaign store {}: stopped; every change is in the store", name); return; }
+            boolean heldLines = journal.hasLines();
+            if (left.isEmpty() && !heldLines) { log.info("campaign store {}: stopped; every change is in the store", name); return; }
             journal.prepend(left);
-            log.warn("campaign store {}: {} change(s) were not in the store when the process stopped{}: they are in {} and are written at the next start",
-                name, left.size() + (journal.hasLines() ? " (and the lines the journal held already)" : ""), lastFailure == null ? "" : " (" + lastFailure + ")", journal.file());
+            log.warn("campaign store {}: {} change(s) were not in the store when the process stopped{}: they are in {}{} and are written at the next start",
+                name, left.size(), lastFailure == null ? "" : " (" + lastFailure + ")", journal.file(), heldLines ? ", before the lines it held already," : "");
         } catch (RuntimeException e) {
             log.error("campaign store {}: what was not written could not be put in the journal {}: {}", name, journal.file(), e.toString());
         } finally {
