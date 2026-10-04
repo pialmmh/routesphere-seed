@@ -77,7 +77,7 @@ public final class SmsFlow extends CallFlow<SmsFlow.Message> {
     @Override
     protected EntryPartner identifyEntryPartner(Message sms) {
         Integer partnerId = partnerByUser.get(sms.user);
-        return partnerId == null ? null : entryOfPartner(partnerId);
+        return partnerId == null ? null : entryOfPartner(sms, partnerId);
     }
 
     /** Every part is reserved at admission: a message is rated before it is sent. */

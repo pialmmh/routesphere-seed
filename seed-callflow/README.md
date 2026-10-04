@@ -39,7 +39,7 @@ public final class AdCallFlow extends CallFlow<AdCallContext> {
     @Override protected String buildTask(AdCallContext ctx) { ... }
 
     /** ADMITTING: the partner that pays at the leaf, and its tenant. */
-    @Override protected EntryPartner identifyEntryPartner(AdCallContext ctx) { return entryOfPartner(ctx.payerId); }
+    @Override protected EntryPartner identifyEntryPartner(AdCallContext ctx) { return entryOfPartner(ctx, ctx.payerId); }
 
     /** ADMITTING, at every tier: this tier's rate, and what admission reserves. Null = unrated. */
     @Override protected TierRate rateAtLevel(AdCallContext ctx, Tenant tier, Partner partner, int levelIndex) { ... }
@@ -48,6 +48,16 @@ public final class AdCallFlow extends CallFlow<AdCallContext> {
     @Override protected void startSignaling(AdCallContext ctx, CallMachine machine) { machine.spawnChild("AdView", new AdViewContext(ctx)); }
 }
 ```
+
+**A call names its tenant, and never leaves that tenant's tree.** `ctx.tenantName` is the ROOT of the call's tree (its database
+name). One process may serve several trees, and a partner id is unique inside one tree only — every operator's root starts at
+partner 1, every tree with a reseller 44 has a tier `res_44`. So:
+
+- `TenantLookup` answers INSIDE a root: `root(rootDbName)`, `tenantOfPartner(rootDbName, partnerId)`, `tenantByDbName(rootDbName, dbName)`.
+  There is no lookup across everything served. `TenantLookup.of(roots…)` keeps one partner map per root.
+- `entryOfPartner(ctx, partnerId)` finds the partner inside the call's own tree; a call that names no tenant finds nobody.
+- Whatever an application's `identifyEntryPartner` hands back, the base refuses a chain that ends at another root
+  (`PARTNER_NOT_FOUND`, one ERROR naming both roots): nothing of the call is put on the other tree.
 
 Start it:
 

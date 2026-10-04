@@ -68,7 +68,7 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
     @Override
     protected EntryPartner identifyEntryPartner(Call call) {
         Integer partnerId = partnerBySourceIp.get(call.sourceIp);
-        return partnerId == null ? null : entryOfPartner(partnerId);
+        return partnerId == null ? null : entryOfPartner(call, partnerId);
     }
 
     /** One minute of talk time is reserved at admission. */
