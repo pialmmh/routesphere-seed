@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.callflow.api.TierSettlement;
 import com.telcobright.seed.callflow.dependencies.LedgerSettings;
+import com.telcobright.seed.callflow.dependencies.ReturnPace;
 import com.telcobright.seed.callflow.spi.LedgerPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,13 +35,18 @@ import java.util.function.Function;
  *   <tr><td>reserve</td><td>road 16, {@code POST …/partners/{pid}/charge}: the usage carries the rated amount, the reference
  *       is the idempotency key. {@code {pid}} is the partner's {@code billing_account_id} (the Odoo partner), never the
  *       switch's own partner id</td></tr>
- *   <tr><td>settle</td><td>the tier pays everything it reserved: no call. It pays less: the rest must go back</td></tr>
- *   <tr><td>release</td><td>everything must go back</td></tr>
+ *   <tr><td>settle</td><td>the tier pays everything it reserved: no call. It pays nothing: the whole charge goes back by the
+ *       return road, asked once here so that the settlement says what happened. It pays a part: the rest is owed (the
+ *       return road gives back a WHOLE charge by its reference, never a part)</td></tr>
+ *   <tr><td>release</td><td>the whole charge goes back by the return road. It is asked by a worker, never on the call's
+ *       thread: a refused candidate must not wait for the ledger</td></tr>
  * </table>
  *
- * <p><b>"Must go back".</b> orchestrix has no "return by reference" road yet, and road 15 is an officer's credit that a
- * service must never use. So what must go back is written to the {@link OwedJournal} — one durable line and one ERROR —
- * and the settlement says it is not closed. When orchestrix has the road, it is called here and the journal stays empty.
+ * <p><b>"Must go back".</b> {@link ReturnRoad}: {@code POST …/partners/{pid}/charge/return} with the CHARGE's reference;
+ * idempotent, so a return may be asked again. Road 15 is an officer's credit and is never used by a service. What the
+ * return road does not give back — it is not on this orchestrix, it refuses, it does not answer after the tries, or it
+ * says an officer must decide — is one durable line in the {@link OwedJournal} and one ERROR, and the settlement says it
+ * is not closed. A reserve that got no answer ({@code unsure}) is asked back too: the call was not charged on it.
  *
  * <p>Road 16's answers: {@code 200/201} the reserve; {@code 402} nobody can pay (empty); {@code 409/404/400/422} a refusal
  * with the body's code; {@code 401/403/5xx}, no connection, or no answer in time: a {@link LedgerFault}.
@@ -61,15 +67,22 @@ public final class OrchestrixLedger implements LedgerPort {
     private final String bearer;
     private final HttpClient http;
     private final OwedJournal owed;
+    private final ReturnRoad returns;
 
     /** @param environment the process environment by variable NAME ({@code System::getenv} in production) */
     public OrchestrixLedger(LedgerSettings settings, Function<String, String> environment, OwedJournal owed) {
+        this(settings, environment, owed, ReturnPace.standard());
+    }
+
+    public OrchestrixLedger(LedgerSettings settings, Function<String, String> environment, OwedJournal owed, ReturnPace pace) {
         this.settings = settings;
         this.bearer = settings.bearer(environment);
         this.owed = owed;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(settings.connectTimeoutMs())).build();
-        log.info("ledger: orchestrix {} tenant {} profile {} (bearer from {}; connect {} ms, read {} ms); what cannot be returned is journaled in {}",
-            settings.baseUrl(), settings.tenant(), settings.profile(), settings.tokenVar(), settings.connectTimeoutMs(), settings.readTimeoutMs(), owed.file());
+        this.returns = new ReturnRoad(settings, http, this::requestOf, owed, pace);
+        log.info("ledger: orchestrix {} tenant {} profile {} (bearer from {}; connect {} ms, read {} ms); a reserve that must go back is asked of the return road {} times, and what it does not give back is journaled in {}",
+            settings.baseUrl(), settings.tenant(), settings.profile(), settings.tokenVar(), settings.connectTimeoutMs(), settings.readTimeoutMs(), pace.tries(), owed.file());
+        returns.resumeOpen();
     }
 
     @Override
@@ -105,6 +118,7 @@ public final class OrchestrixLedger implements LedgerPort {
     private void noteUnsure(LevelAdmission level, String reference, BigDecimal amount, String why) {
         try {
             owed.unsure(level, reference, amount, why);
+            returns.later(OwedJournal.Entry.of(level, reference, amount), "the reserve got no answer: whatever the ledger took under it goes back", true);
         } catch (RuntimeException e) {
             log.error("ledger: the unsure reserve {} could not be written to {} — the line is in the log above: {}", reference, owed.file(), e.toString());
         }
@@ -114,13 +128,30 @@ public final class OrchestrixLedger implements LedgerPort {
     public TierSettlement settle(LevelAdmission level, BigDecimal charged) {
         BigDecimal toReturn = TierSettlement.reservedOf(level).subtract(charged);
         if (toReturn.signum() <= 0) return TierSettlement.of(level, charged, level.getBalanceAfter());
-        owed.owe(level, toReturn, "settled at " + charged + ": the rest of the reserve");
-        return TierSettlement.owed(level, charged, "the ledger has no return road: " + toReturn + " is journaled as owed");
+        if (!oneWholeCharge(level, charged)) {
+            owed.owe(level, toReturn, "settled at " + charged + ": the rest of the reserve (the return road gives back a whole charge, never a part)");
+            return TierSettlement.owed(level, charged, toReturn + " of the reserve cannot go back by the return road: journaled as owed");
+        }
+        ReturnRoad.Answer answer = returns.now(OwedJournal.Entry.of(level, level.getDebitReference(), toReturn), "settled at " + charged);
+        if (answer.closed()) return TierSettlement.of(level, charged, answer.balanceAfter() != null ? answer.balanceAfter() : level.getBalanceAfter());
+        return TierSettlement.owed(level, charged, "the reserve did not go back at the settlement: " + answer.words());
     }
 
+    /** The whole of a refused candidate's reserve goes back. Asked by the return road's worker: this call never waits. */
     @Override
     public void release(LevelAdmission level, String why) {
-        owed.owe(level, TierSettlement.reservedOf(level), "released: " + why);
+        BigDecimal reserved = TierSettlement.reservedOf(level);
+        if (reserved.signum() <= 0) return;
+        if (!oneWholeCharge(level, BigDecimal.ZERO)) {
+            owed.owe(level, reserved, "released: " + why + " (several charges under one tier: the return road gives back one charge by its reference)");
+            return;
+        }
+        returns.later(OwedJournal.Entry.of(level, level.getDebitReference(), reserved), "released: " + why, false);
+    }
+
+    /** What the return road can undo: ONE charge, whole. A tier that paid a part, or reserved in several windows, is not that. */
+    private static boolean oneWholeCharge(LevelAdmission level, BigDecimal charged) {
+        return charged.signum() == 0 && level.getReservationCount() <= 1;
     }
 
     // ── road 16 ─────────────────────────────────────────────────────────────
@@ -197,13 +228,18 @@ public final class OrchestrixLedger implements LedgerPort {
     }
 
     private HttpRequest requestOf(String url, ObjectNode body, long waitMs) {
+        return requestOf(url, body.toString(), waitMs);
+    }
+
+    /** One prepaid road's request: the bearer, the tenant, JSON. The return road asks with the same one. */
+    HttpRequest requestOf(String url, String json, long waitMs) {
         return HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofMillis(waitMs))
             .header("Authorization", "Bearer " + bearer)
             .header("X-Tenant-Id", settings.tenant())
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
+            .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
             .build();
     }
 
@@ -223,14 +259,14 @@ public final class OrchestrixLedger implements LedgerPort {
     }
 
     /** The error envelope {@code { error: { code, message } }}. */
-    private static String errorCode(String body, int status) {
+    static String errorCode(String body, int status) {
         JsonNode n = lenient(body);
         if (n.path("error").hasNonNull("code")) return n.path("error").get("code").asText();
         if (n.hasNonNull("code")) return n.get("code").asText();
         return status == 409 ? "CONFLICT" : status == 404 ? "NOT_FOUND" : "VALIDATION";
     }
 
-    private static String errorMessage(String body) {
+    static String errorMessage(String body) {
         JsonNode n = lenient(body);
         if (n.path("error").hasNonNull("message")) return n.path("error").get("message").asText();
         if (n.hasNonNull("message")) return n.get("message").asText();
