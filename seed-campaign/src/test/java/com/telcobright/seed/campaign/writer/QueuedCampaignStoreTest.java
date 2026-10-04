@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * must, never not at all; and a task never waits for the store. The store here is a fake that can be away, be slow, refuse one change
  * by its own rules, and remembers every batch it took.
  */
+@org.junit.jupiter.api.Timeout(60)
 class QueuedCampaignStoreTest {
 
     static final Instant T0 = Instant.parse("2026-10-04T06:00:00Z");
@@ -58,7 +59,7 @@ class QueuedCampaignStoreTest {
         public void write(List<StoreChange> batch) {
             asked++;
             CountDownLatch gate = hold;
-            if (gate != null) { try { gate.await(30, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw away(); } }
+            if (gate != null) { try { gate.await(8, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw away(); } }
             if (away) throw away();
             for (StoreChange change : batch) {
                 if (change instanceof StoreChange.TaskInserted c && c.task().uniqueId().startsWith("bad")) {
@@ -94,6 +95,7 @@ class QueuedCampaignStoreTest {
         @Override
         public StoreRepair repairAfterRestart(String tenantName, String cause, Instant at) {
             repairs.add(tenantName + " " + cause);
+            order.add("repair " + tenantName);
             return new StoreRepair(3, 1, "3 task(s) closed; 1 campaign set");
         }
     }
@@ -336,7 +338,9 @@ class QueuedCampaignStoreTest {
 
         List<String> expected = new ArrayList<>();
         for (int i = 0; i < 20; i++) { expected.add("insert v" + i); expected.add("update v" + i + " SENT"); }
-        assertThat(store.order).as("written at the start, before the writer takes a new change").containsExactlyElementsOf(expected);
+        expected.add("repair wroot");
+        assertThat(store.order).as("written at the start — before the writer takes a new change, and BEFORE the repair: a view that ended is not closed as lost")
+            .containsExactlyElementsOf(expected);
         assertThat(store.counters.get(7)).containsExactly(20, 0, 0);
         assertThat(store.rows.get("v19").charge().cost()).as("a task comes back from its line whole").isEqualByComparingTo("0.30");
         assertThat(store.rows.get("v19").detail()).containsEntry("viewSeconds", 15).containsEntry("facts", Map.of("zone", "dhaka-01"));
