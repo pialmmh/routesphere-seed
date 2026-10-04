@@ -16,4 +16,6 @@ public final class FlowCounters {
     public final AtomicLong cdrLost = new AtomicLong();
     /** Tier settlements or releases the ledger did not take. */
     public final AtomicLong owed = new AtomicLong();
+    /** Calls not handed over because their line in the journal of the calls in the air could not be written (R1-6). */
+    public final AtomicLong journalRefused = new AtomicLong();
 }
