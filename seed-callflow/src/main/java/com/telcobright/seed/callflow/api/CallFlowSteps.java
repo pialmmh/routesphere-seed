@@ -155,7 +155,7 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
         return ctx.lastRefusal != null ? ctx.lastRefusal : CallCause.NO_CANDIDATE;
     }
 
-    /** ADMITTED / RINGING · The signaling reported a phase (ringing, early media). */
+    /** ADMITTED · The signaling reported a phase (ringing, early media). The base stamped the first one ({@code progressAtMs}: the PDD). */
     protected void onProgress(C ctx, String phase) { }
 
     /** The signaling answered: copy what it granted onto the context. */
@@ -207,7 +207,7 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
         return switch (state) {
             case CallState.PREPROCESSING -> CallCause.PREPROCESS_TIMEOUT;
             case CallState.ADMITTING -> CallCause.ADMISSION_TIMEOUT;
-            case CallState.ADMITTED, CallState.RINGING -> CallCause.NO_ANSWER;
+            case CallState.ADMITTED -> CallCause.NO_ANSWER;
             case CallState.ACTIVE -> CallCause.MAX_DURATION_REACHED;
             case CallState.TEARING_DOWN -> CallCause.SETTLE_TIMEOUT;
             default -> CallCause.INTERNAL_ERROR;

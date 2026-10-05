@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  *   ADMITTING       per candidate: identify the entry partner
  *                                  → the tenant chain, leaf to root: check, authorize, rate, RESERVE
  *                                  → resolve the route → confirm          (a refusal gives every reserve back)
- *   ADMITTED        start the signaling            (RINGING on progress; a failed attempt may be retried)
+ *   ADMITTED        start the signaling            (progress — ringing, early media — is a stay; a failed attempt may be retried)
  *   ACTIVE          the service runs               (a long call renews its reserve)
  *   TEARING_DOWN    stop the service → SETTLE every tier
  *   the end         settle if not yet settled → free the slot → publish ONE CDR message, a record per tier
@@ -80,7 +80,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     public final AdmissionVerdict admit(C ctx, StepMode mode) { return admission.admitFirstCandidate(ctx, mode); }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // ADMITTED · RINGING · ACTIVE
+    // ADMITTED · ACTIVE
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     public final void signal(C ctx, CallMachine machine) {
@@ -88,6 +88,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         startSignaling(ctx, machine);
     }
 
+    /** The signaling reported progress (C11): the first report is the PDD; the call stays ADMITTED, its deadline untouched. */
     public final void progress(C ctx, String phase) {
         if (ctx.progressAtMs == 0) ctx.progressAtMs = kit.clock().millis();
         guarded(ctx, "onProgress", () -> onProgress(ctx, phase));

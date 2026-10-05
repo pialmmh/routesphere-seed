@@ -29,13 +29,19 @@ import static com.telcobright.seed.callflow.api.CallState.ADMITTING;
 import static com.telcobright.seed.callflow.api.CallState.DEFERRED;
 import static com.telcobright.seed.callflow.api.CallState.FAILED;
 import static com.telcobright.seed.callflow.api.CallState.PREPROCESSING;
-import static com.telcobright.seed.callflow.api.CallState.RINGING;
 import static com.telcobright.seed.callflow.api.CallState.SUCCEEDED;
 import static com.telcobright.seed.callflow.api.CallState.TEARING_DOWN;
 
 /**
  * The machine of ONE call — the same class for every application. It only maps states and events onto the steps of its
  * {@link CallFlow}; it decides nothing itself.
+ *
+ * <p><b>The graph is generic.</b> {@code PREPROCESSING → ADMITTING → ADMITTED → ACTIVE → TEARING_DOWN → SUCCEEDED | FAILED}
+ * (and {@code DEFERRED}, an end by design before any service) — the library's session graph with the base's preprocessing in
+ * front. No protocol word is a state of it: ringing, early media, playing, submitting live in the application's own signaling
+ * child, which reports them as {@code SignalingProgress} — a stay in ADMITTED, the first one stamped for the PDD. ADMITTED's one
+ * deadline bounds the whole pre-answer phase; a protocol's own windows (the carrier's silence, the far end's ringing) are the
+ * child's deadlines.
  *
  * <p><b>Pooling.</b> A machine is taken from the pool for one call and goes back when the call reaches a final state.
  * Its only field is the flow, final and shared: a machine carries NOTHING of a call, so there is nothing a reset could
@@ -80,7 +86,6 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     @Override
     protected StateMap defineStates() {
         CallFlowTimings t = flow.timings();
-        long ringingSec = t.hasRingingPhase() ? t.ringingSec() : t.admittedSec();
         return StateMap.builder()
             .initialState(PREPROCESSING)
 
@@ -104,16 +109,6 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
                 .interim()
                 .timeout(t.admittedSec(), TimeUnit.SECONDS, FAILED)
                 .onEntry(self -> me(self).signal())
-                .on(SignalingDone.class, ACTIVE, null, (self, e) -> me(self).answered((SignalingDone) e))
-                .on(SignalingProgress.class, RINGING, (self, e) -> me(self).hasRingingPhase(), (self, e) -> me(self).progress((SignalingProgress) e))
-                .stay(SignalingProgress.class, (self, e) -> me(self).progress((SignalingProgress) e))
-                .stay(SignalingFailed.class, (self, e) -> me(self).signalingFailed((SignalingFailed) e))
-                .on(SignalingDeferred.class, DEFERRED, null, (self, e) -> me(self).endWith(((SignalingDeferred) e).cause()))
-                .stay(ServiceEnd.class, (self, e) -> me(self).abortBeforeAnswer((ServiceEnd) e))
-
-            .state(RINGING)
-                .interim()
-                .timeout(ringingSec, TimeUnit.SECONDS, FAILED)
                 .on(SignalingDone.class, ACTIVE, null, (self, e) -> me(self).answered((SignalingDone) e))
                 .stay(SignalingProgress.class, (self, e) -> me(self).progress((SignalingProgress) e))
                 .stay(SignalingFailed.class, (self, e) -> me(self).signalingFailed((SignalingFailed) e))
@@ -173,8 +168,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         }
     }
 
-    private boolean hasRingingPhase() { return flow.timings().hasRingingPhase(); }
-
+    /** Ringing, early media, a beacon: a stay in ADMITTED. The first one is the PDD; the deadline of ADMITTED is not re-armed. */
     private void progress(SignalingProgress report) { flow.progress(getContext(), report.phase()); }
 
     private void signalingFailed(SignalingFailed failure) {

@@ -85,7 +85,8 @@ class CallFlowLifecycleTest {
         engine.awaitSettled("call-1", 5, TimeUnit.SECONDS);
         assertThat(engine.stateOf("call-1")).isEqualTo(CallState.ADMITTED);
         tell(engine, "call-1", new Wire.Ring("RINGING"));
-        assertThat(engine.stateOf("call-1")).isEqualTo(CallState.RINGING);
+        assertThat(engine.stateOf("call-1")).as("ringing is a stay: the supervisor has no ringing state").isEqualTo(CallState.ADMITTED);
+        assertThat(call.progressAtMs).as("the first progress is stamped for the PDD").isPositive();
         tell(engine, "call-1", new Wire.Answer());
         assertThat(engine.stateOf("call-1")).isEqualTo(CallState.ACTIVE);
         tell(engine, "call-1", new Wire.Hangup(CallCause.NORMAL_CLEARING, 95));       // 95 s = two started minutes
@@ -127,7 +128,7 @@ class CallFlowLifecycleTest {
     }
 
     @Test
-    void aVoiceCallNobodyAnswers_endsAtTheRingingDeadline_andPaysNothing() throws Exception {
+    void aVoiceCallNobodyAnswers_endsAtTheAdmittedDeadline_ringingDoesNotReArmIt_andPaysNothing() throws Exception {
         CallFlowEngine<VoiceFlow.Call> engine = voiceEngine(Scene.settings(4));
         VoiceFlow.Call call = Scene.call("call-2", "10.0.0.7", "01712345678");
 
@@ -135,7 +136,7 @@ class CallFlowLifecycleTest {
         engine.awaitSettled("call-2", 5, TimeUnit.SECONDS);
         tell(engine, "call-2", new Wire.Ring("RINGING"));
 
-        List<CdrEvent> tiers = cdrOf("call-2");                                      // the 3 s ringing deadline ends it
+        List<CdrEvent> tiers = cdrOf("call-2");                                      // the 2 s ADMITTED deadline ends it; the ring opened no second window
         assertThat(tiers).hasSize(2);
         assertThat(tiers).allSatisfy(cdr -> {
             assertThat(cdr.hangupCause).isEqualTo(CallCause.NO_ANSWER);

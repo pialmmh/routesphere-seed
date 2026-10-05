@@ -6,13 +6,17 @@ multi-tenant pipeline; each application says only its own steps.
 Design: `pialmmh/routesphere` `docs/architecture/call-flow-base.md`. The CDR contract: `docs/architecture/ad-is-a-call.md` §4.
 
 ```
-launch ─► PREPROCESSING ─► ADMITTING ─► ADMITTED ─► (RINGING) ─► ACTIVE ─► TEARING_DOWN ─► SUCCEEDED
- (pool)   tenant           per candidate:  signaling   progress     service    stop, SETTLE     │
-          task             entry partner                                        every tier       ▼
-          candidates       tenant chain ▲ leaf→root                                         one CDR message
-                           check · slot · rate · RESERVE                                    a record per tier
-                           route · confirm                          any refusal, deadline or kill ─► FAILED (same end)
+launch ─► PREPROCESSING ─► ADMITTING ─► ADMITTED ─────────► ACTIVE ─► TEARING_DOWN ─► SUCCEEDED
+ (pool)   tenant           per candidate:  signaling          service    stop, SETTLE     │
+          task             entry partner   (progress = a stay:            every tier       ▼
+          candidates       tenant chain ▲ leaf→root   ringing, early media)           one CDR message
+                           check · slot · rate · RESERVE                                a record per tier
+                           route · confirm                      any refusal, deadline or kill ─► FAILED (same end)
 ```
+
+The graph is the library's session graph with the base's preprocessing in front. It is generic: no protocol word (ringing,
+playing, submitting) is a state of it — those live in the application's signaling child and arrive as `SignalingProgress`, a
+stay in ADMITTED whose first report is the PDD. ADMITTED's one deadline bounds the whole pre-answer phase.
 
 ## 1 · The three classes you meet
 
