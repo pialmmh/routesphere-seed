@@ -93,7 +93,7 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | ADMITTING | `useCandidate` / `candidateCount` | one | | | per campaign and content |
 | | `identifyEntryPartner` | — (must say) | by source IP / SIP account | by user | the advertiser |
 | | `identifyPartner` (above the leaf) | the parent's partner that stands for the child tenant: the id the child's database name ends with (`res_233` → 233, `res_233_2` → 2), else the partner named as the child — the call switch's live rule; no partner type is asked | | | |
-| | `checkPartner` | status ACTIVE | | | |
+| | `checkPartner` | only the status `DEACTIVATED` (any case) refuses; any other word, or none, passes — the call switch's rule | | | |
 | | (channel slot) | the partner's cap, at the leaf — fixed | | | |
 | | `authorize` | nothing more | DID, account cap | | |
 | | `applyRootRules` (root only) | none | digit filter | | |

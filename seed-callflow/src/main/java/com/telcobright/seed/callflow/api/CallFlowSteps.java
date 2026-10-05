@@ -117,10 +117,13 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
      */
     protected Partner identifyPartner(C ctx, Tenant childTier, Tenant tier) { return resellerPartnerOf(childTier, tier); }
 
-    /** ADMITTING, at every tier · The partner must be active. */
+    /**
+     * ADMITTING, at every tier · The partner must not be deactivated — the call switch's rule ({@code CallAdmissionController.processLevel},
+     * {@code CheckAuthorizationStep}): only the word {@code DEACTIVATED}, in any case, refuses; any other status, or none, passes
+     * (ARCH-0051 Q2, B5 of CALL-0001).
+     */
     protected String checkPartner(C ctx, Tenant tier, Partner partner, int levelIndex) {
-        boolean active = partner.getStatus() == null || "ACTIVE".equalsIgnoreCase(partner.getStatus());
-        return active ? null : CallCause.PARTNER_DEACTIVATED;
+        return "DEACTIVATED".equalsIgnoreCase(partner.getStatus()) ? CallCause.PARTNER_DEACTIVATED : null;
     }
 
     /**
