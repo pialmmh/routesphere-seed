@@ -61,6 +61,8 @@ public class CallFlowContext extends SessionContext {
     public volatile long admissionDeadlineMs;
     /** The admission budget ran out and a candidate that pays was not tried (or not finished) because of it. */
     public volatile boolean budgetSpent;
+    /** This admission is a dry run ({@code SIMULATE}): the base reserves nothing, and a hook that holds its tier itself must hold nothing either. */
+    public volatile boolean dryRun;
 
     // ── what routing found ──────────────────────────────────────────────────
 
