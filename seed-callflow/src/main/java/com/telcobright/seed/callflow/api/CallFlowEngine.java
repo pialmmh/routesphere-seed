@@ -50,6 +50,7 @@ public final class CallFlowEngine<C extends CallFlowContext> implements AutoClos
 
     private CallFlowEngine(Builder<C> builder) {
         this.flow = builder.flow;
+        flow.publishWhatWasLeftInTheAir();               // R1-6: before the first call, the calls a stopped process left in the air
         this.registry = buildRegistry(builder);
         counters().machinesBuilt.decrementAndGet();      // the registry built one sample to check the type; it never serves a call
         this.housekeeping = startSlotReconciler();

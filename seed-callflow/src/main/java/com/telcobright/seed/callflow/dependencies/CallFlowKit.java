@@ -1,5 +1,6 @@
 package com.telcobright.seed.callflow.dependencies;
 
+import com.telcobright.seed.callflow.spi.CallJournal;
 import com.telcobright.seed.callflow.spi.CdrSink;
 import com.telcobright.seed.callflow.spi.LedgerPort;
 import com.telcobright.seed.callflow.spi.TenantLookup;
@@ -18,6 +19,7 @@ public final class CallFlowKit {
     private final LedgerPort ledger;
     private final CdrSink cdrSink;
     private final SdrSink sdrSink;
+    private final CallJournal journal;
     private final Clock clock;
     private final ZoneId zone;
     private final CallFlowSettings settings;
@@ -28,6 +30,7 @@ public final class CallFlowKit {
         this.cdrSink = required(b.cdrSink, "cdrSink");
         this.zone = required(b.zone, "zone");
         this.sdrSink = b.sdrSink;
+        this.journal = b.journal;
         this.clock = b.clock;
         this.settings = b.settings;
     }
@@ -44,6 +47,9 @@ public final class CallFlowKit {
     /** Where the session record (the call's timeline) goes. */
     public SdrSink sdrSink() { return sdrSink; }
 
+    /** The calls in the air (R1-6): none unless the host keeps one — then a process death loses no handed-over call's record. */
+    public CallJournal journal() { return journal; }
+
     public Clock clock() { return clock; }
 
     /** The root tenant's zone: the CDR's times are its wall clock. */
@@ -56,6 +62,7 @@ public final class CallFlowKit {
         private LedgerPort ledger;
         private CdrSink cdrSink;
         private SdrSink sdrSink = record -> { };
+        private CallJournal journal = CallJournal.NONE;
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
         private CallFlowSettings settings = CallFlowSettings.defaults();
@@ -66,6 +73,7 @@ public final class CallFlowKit {
         public Builder ledger(LedgerPort v) { this.ledger = v; return this; }
         public Builder cdrSink(CdrSink v) { this.cdrSink = v; return this; }
         public Builder sdrSink(SdrSink v) { this.sdrSink = required(v, "sdrSink"); return this; }
+        public Builder journal(CallJournal v) { this.journal = required(v, "journal"); return this; }
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }
         public Builder settings(CallFlowSettings v) { this.settings = required(v, "settings"); return this; }

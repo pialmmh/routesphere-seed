@@ -7,6 +7,7 @@ import com.telcobright.seed.callflow.internal.FlowCounters;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.session.AdmissionVerdict;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -115,6 +116,63 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     private void recordFailedAttempt(C ctx, String failureCause) {
         if (ctx.routePlan != null) ctx.routePlan.record(failureCause, kit.clock().millis());
         ctx.history.note(name(), "attempt " + ctx.attempts + " failed: " + failureCause);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // R1-6 · the calls in the air: every reserve ends in a record or goes back, a process death included
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The application hands the call to its user (an ad's start road hands the session to the phone): the call's line is written
+     * to the journal of the calls in the air FIRST — on this thread, one append — then {@code theFact} is asked (the application's
+     * own decision: is the call still there to hand over?).
+     *
+     * @return true = handed over. False = do not hand it over: its line could not be written (the cause is in the call's history;
+     *         the caller refuses the call as a system fault and its reserves go back), or the fact said no (the call ended first;
+     *         its line is done again at once — its own end publishes its record)
+     */
+    public final boolean handOver(C ctx, BooleanSupplier theFact) {
+        if (!journalTheHandOver(ctx)) return false;
+        if (theFact.getAsBoolean()) return true;
+        kit.journal().done(ctx.sessionKey);
+        return false;
+    }
+
+    private boolean journalTheHandOver(C ctx) {
+        if (!kit.journal().keeps()) return true;
+        try {
+            kit.journal().handedOver(ctx.sessionKey, kit.clock().millis(), cdr.lostRecordsOf(ctx));
+            return true;
+        } catch (RuntimeException e) {
+            counters.journalRefused.incrementAndGet();
+            ctx.history.note(name(), "its line in the journal of the calls in the air (" + kit.journal().where() + ") could not be written: " + e.getMessage()
+                + " — not handed over, refused as a system fault; its reserves go back");
+            return false;
+        }
+    }
+
+    /**
+     * What the switch learned of a call in the air since its hand-over: its answer, the seconds it is billed for so far. The next
+     * start's record of the call says them if the process dies before the call's end. Never fails the call.
+     */
+    public final void noteInTheAir(String callId, long answeredAtMs, double billedSec) {
+        try {
+            kit.journal().noted(callId, kit.clock().millis(), answeredAtMs, billedSec);
+        } catch (RuntimeException e) {
+            log.warn("[{}] {} | the journal of the calls in the air did not take what was learned of the call (its record after a death would say less): {}",
+                name(), callId, e.toString());
+        }
+    }
+
+    /**
+     * Before the first call of a start (the engine asks it): the record of every call a stopped process left in the air is published
+     * — handed over, ended {@link CallCause#LOST_AT_RESTART}, every tier charged what it reserved. One WARN with the count and the sums.
+     */
+    public final void publishWhatWasLeftInTheAir() {
+        CallCdr.LeftInTheAir left = cdr.publishLeftovers();
+        if (left.calls() == 0) return;
+        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved — {} in money and {} in units over every tier",
+            name(), left.calls(), kit.journal().where(), CallCause.LOST_AT_RESTART, left.money().toPlainString(), left.units().toPlainString());
     }
 
     public final void answered(C ctx, Object grant) {
