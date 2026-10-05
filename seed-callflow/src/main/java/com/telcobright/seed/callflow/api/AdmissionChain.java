@@ -262,21 +262,18 @@ final class AdmissionChain<C extends CallFlowContext> {
     /** A renewal runs while the call is answered, outside any admission: the ledger's own timeout bounds it. */
     private static final long RENEWAL_HAS_NO_BUDGET = Long.MAX_VALUE;
 
-    /** Null = the call goes on. Else the cause to end it with: a tier cannot pay the next window. */
-    String reserveNextWindow(C ctx) {
-        for (LevelAdmission level : ctx.levels) {
-            String cause = extendReserve(ctx, level);
-            if (cause != null) return cause;
-        }
-        return null;
-    }
-
-    /** A ledger FAULT never cuts a call: the settlement reconciles when the call ends. */
-    private String extendReserve(C ctx, LevelAdmission level) {
-        TierRate next = flow.safely(ctx, "rateNextWindow", () -> flow.rateNextWindow(ctx, level), null);
-        if (next == null || !next.reserves() || level.getDebitReference() == null) return null;
+    /**
+     * The default renewal of one tier (C14), in seconds: the next window as the application rates it, held through the ledger under
+     * {@code …#W<n>}. The period = held, or nothing to hold (the tier does not renew, is zero-rated, never reserved); 0 = the ledger
+     * refused. A ledger FAULT never cuts a call: the settlement reconciles when the call ends. The base has no "remainder": a ledger
+     * that can fund part of a window is the application's own (the call switch's billing answers the seconds itself).
+     */
+    double renewThroughLedger(C ctx, LevelAdmission level) {
+        double period = flow.kit().settings().reservePeriodSec();
+        TierRate next = flow.rateNextWindow(ctx, level);
+        if (next == null || !next.reserves() || level.getDebitReference() == null) return period;
         String reference = level.getDebitReference() + "#W" + (level.getReservationCount() + 1);
         String refusal = reserve(ctx, level, next.reserveAmount(), reference, CallCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
-        return CallCause.BILLING_SYSTEM_ERROR.equals(refusal) ? null : refusal;
+        return refusal == null || CallCause.BILLING_SYSTEM_ERROR.equals(refusal) ? period : 0;
     }
 }

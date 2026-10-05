@@ -107,6 +107,7 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `nextAttempt` | the v1 ritual on `ctx.routePlan`: RETRY_SAME = the same hop again; REROUTE = the next hop while one is left and the attempts are under the plan's cap (3); the attempt is recorded first; the same reserve, nothing re-admitted | | its own: the next route | |
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
+| | `renewWindowSeconds` (C14, in seconds) | the default: `rateNextWindow` held through the ledger → the period; refused → 0; no rate, zero-rated or a ledger fault → the period | the switch's own billing: a whole unit, else the remainder in seconds, under its minimum 0 | | |
 | end | `settlesAsync` | false: TEARING_DOWN settles inline | true: the balance child settles and answers | | |
 | | `onTeardown` | nothing | hang up both legs | | |
 | | `billedDuration` | the signaling's, else the time since the answer | from the hangup | | the seconds watched |
@@ -173,6 +174,10 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
   certain. `unsure`: a reserve the ledger did not answer in time; the money may have moved after the switch stopped
   waiting, so an officer looks the reference up first.
 - Reserve references: `<call>#L<tier>`; a later candidate `<call>#<try>#L<tier>`; a renewal `…#W<n>`.
+- The renewal (C14), one tick per reserve period from the balance child: every tier answers how many seconds it can still fund
+  (`renewWindowSeconds`) and the narrowest decides — the period: the call goes on; 0: cut now (`ServiceEnd(BALANCE_EXHAUSTED)`);
+  less: no more renewals, the cut is armed for the moment the money ends, so the last partial unit is spent and not stranded. The
+  cut is never a settlement: the end settles on the real talk time.
 
 ## 7 · The CDR
 

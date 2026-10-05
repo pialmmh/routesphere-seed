@@ -1,5 +1,6 @@
 package com.telcobright.seed.callflow.api;
 
+import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.seed.callflow.internal.ChannelSlots;
 import com.telcobright.seed.callflow.internal.FlowCounters;
@@ -127,10 +128,24 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     }
 
     /**
-     * A long call renews its reserve at every tier. Null = the call goes on. Else the cause to end it with: a tier
-     * cannot pay the next window. A ledger FAULT never cuts a call: the settlement reconciles when the call ends.
+     * ACTIVE, every reserve period (C14): every tier renews its window; the narrowest answer, in seconds, is how long the call may
+     * still run. The period = the call goes on; 0 = a tier can pay nothing more; between = a partial window, to be cut when it ends.
+     * A tier that answers 0 ends the asking (the rest are not renewed for a call that is over). A hook that throws never cuts a
+     * call. Asked by the balance child, on the call's own bus, so a renewal never runs beside the settlement of the same call.
      */
-    public final String reserveNextWindow(C ctx) { return admission.reserveNextWindow(ctx); }
+    public final double renewReserves(C ctx) {
+        double period = kit.settings().reservePeriodSec();
+        if (ctx.reservesClosed) return period;
+        double narrowest = period;
+        for (LevelAdmission level : ctx.levels) {
+            narrowest = Math.min(narrowest, safely(ctx, "renewWindowSeconds", () -> renewWindowSeconds(ctx, level), period));
+            if (narrowest <= 0) break;
+        }
+        return narrowest;
+    }
+
+    @Override
+    final double renewThroughLedger(C ctx, LevelAdmission level) { return admission.renewThroughLedger(ctx, level); }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // TEARING_DOWN · the end

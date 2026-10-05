@@ -1,5 +1,6 @@
 package com.telcobright.seed.callflow.internal;
 
+import com.telcobright.seed.callflow.api.CallCause;
 import com.telcobright.seed.callflow.api.CallFlow;
 import com.telcobright.seed.callflow.api.CallFlowContext;
 import com.telcobright.seed.callflow.dependencies.CallFlowSettings;
@@ -10,6 +11,7 @@ import com.telcobright.statewalk.session.events.SettleRequest;
 import com.telcobright.statewalk.session.events.Settled;
 import com.telcobright.statewalk.state.StateMap;
 
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -18,21 +20,27 @@ import java.util.concurrent.TimeUnit;
  * the supervisor with the per-tier results (C18). It outlives every signaling attempt: a re-route retires the signaling child only.
  *
  * <pre>
- *   HOLDING ──BudgetStart──► RENEWING ──(one tick per period: every tier renews; a tier that cannot pay ends the call)
- *      │                        │
- *      └───── SettleRequest ────┴──► SETTLING ──Settled──► CLOSED
+ *   HOLDING ──BudgetStart──► RENEWING ──(one tick per period: every tier renews; the narrowest window decides)
+ *      │                        │   the period: on · 0: cut now · less: WINDING_DOWN, the cut armed for when the money ends
+ *      └───── SettleRequest ────┴──────────────────────────────────► SETTLING ──Settled──► CLOSED
  * </pre>
+ *
+ * <p>The renewal is the call switch's (C14): a tier that cannot hold a whole window may hold the remainder, and the call is then
+ * cut at the moment that credit ends — not at the next tick — so the caller spends the last partial unit instead of being cut with
+ * paid credit still in the package ({@code BalanceTracker.renewOrSignal} + {@code CallSupervisor.scheduleFinalCut}). Nothing is
+ * settled here on a cut: the end runs the one settlement rule on the real talk time.
  *
  * <p>The settlement itself is the base's one rule ({@link CallFlow#settle}), exactly once per call: a call that never reaches this
  * child's SETTLING — a deadline, a kill — is settled by the supervisor's end with the same rule. Its context is the call's own.
  *
- * <p>Pooled: its only field is the flow, final and shared.
+ * <p>Pooled: its fields are the flow and the period, final and shared.
  */
 public final class LevelBalanceTracker<C extends CallFlowContext> extends Machine<C> {
 
     public static final String TYPE = "LevelBalanceTracker";
     static final String HOLDING = "HOLDING";
     static final String RENEWING = "RENEWING";
+    static final String WINDING_DOWN = "WINDING_DOWN";
     static final String SETTLING = "SETTLING";
     static final String CLOSED = "CLOSED";
 
@@ -65,6 +73,11 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
         return renewing
                 .on(SettleRequest.class, SETTLING)
 
+            .state(WINDING_DOWN)
+                .interim()
+                .timeout(lifetimeSec, TimeUnit.SECONDS, CLOSED)
+                .on(SettleRequest.class, SETTLING)
+
             .state(SETTLING)
                 .interim()
                 .timeout(Math.max(1, s.timings().tearingDownSec()), TimeUnit.SECONDS, CLOSED)
@@ -85,20 +98,58 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
         if (periodSec > 0) transitionTo(RENEWING);
     }
 
-    /** One tick of the cadence (C14): every tier renews its window; a tier that cannot pay the next one ends the call. */
+    /**
+     * One tick of the cadence (C14): every tier renews; the narrowest window decides. The period = the cadence goes on. 0 = the call
+     * is cut now. Less than the period = no more renewals; the cut is armed for the moment the money ends.
+     */
     private void renew() {
         C ctx = getContext();
         if (ctx == null || ctx.reservesClosed) return;
-        String cause = flow.reserveNextWindow(ctx);
-        if (cause == null) return;
-        ctx.history.note(TYPE, "the next window could not be held: " + cause);
-        publishEvent(new ServiceEnd(cause));
+        double seconds = flow.renewReserves(ctx);
+        if (seconds >= periodSec) return;
+        if (seconds <= 0) {
+            cut(ctx, "a tier can pay nothing more");
+            return;
+        }
+        if (armFinalCut(ctx, seconds)) transitionTo(WINDING_DOWN);
+    }
+
+    private void cut(C ctx, String why) {
+        ctx.history.note(TYPE, "balance exhausted: " + why);
+        publishEvent(new ServiceEnd(CallCause.BALANCE_EXHAUSTED));
+    }
+
+    /** The call switch's final window: the cut comes when the credit ends, not at the next tick. False = no timer: the next tick decides. */
+    private boolean armFinalCut(C ctx, double seconds) {
+        MachineRegistryHandle timer = getRegistry();
+        if (timer == null) {
+            ctx.history.note(TYPE, String.format("final window of %.1f s, but no timer to arm its cut: the next tick decides", seconds));
+            return false;
+        }
+        long delayMs = Math.max(0L, (long) (seconds * 1000.0));
+        ctx.history.note(TYPE, String.format("final window: %.1f s of service left — the cut is armed", seconds));
+        ctx.balanceCut = timer.schedule(getMachineId(), () -> finalCut(ctx), delayMs, TimeUnit.MILLISECONDS);
+        return true;
+    }
+
+    /** The armed cut fires: only for the call it was armed for, and only while that call still runs. */
+    private void finalCut(C ctx) {
+        if (getContext() != ctx || ctx.reservesClosed || ctx.outcome != null) return;
+        cut(ctx, "the final window ended");
+    }
+
+    private static void disarmFinalCut(CallFlowContext ctx) {
+        ScheduledFuture<?> armed = ctx.balanceCut;
+        if (armed == null) return;
+        ctx.balanceCut = null;
+        armed.cancel(false);
     }
 
     /** TEARING_DOWN asked (C16): the one settlement rule runs here, once; the supervisor gets the per-tier results (C17, C18). */
     private void settle() {
         C ctx = getContext();
         if (ctx != null) {
+            disarmFinalCut(ctx);
             flow.settle(ctx);
             publishEvent(new Settled(ctx.settlements));
         }

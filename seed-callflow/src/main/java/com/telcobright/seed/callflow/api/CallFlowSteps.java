@@ -229,9 +229,22 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
 
     /**
      * ACTIVE, every reserve period · What this tier reserves for the next window of a long call. Null = this tier does
-     * not renew. Only asked when the settings name a reserve period.
+     * not renew. Asked by the default {@link #renewWindowSeconds}; an application that answers the renewal itself never sees it.
      */
     protected TierRate rateNextWindow(C ctx, LevelAdmission level) { return null; }
+
+    /**
+     * ACTIVE, every reserve period · Renew this tier's reserve for the next window and answer how many seconds of service it funds
+     * (C14): the whole period = the next unit is held; less = only that much could be held — the call is cut when it ends; 0 =
+     * nothing is left. The default rates the window with {@link #rateNextWindow} and holds it through the kit's ledger: held → the
+     * period; a tier that does not renew, or is zero-rated → the period (the cadence goes on); refused → 0; a ledger FAULT → the
+     * period (a fault never cuts a call: the settlement reconciles). The call switch answers its own billing's number instead: a
+     * whole unit, else the remainder of the balance in seconds, under its minimum 0 ({@code BalanceBillingService.reserveNextWindowSeconds}).
+     */
+    protected double renewWindowSeconds(C ctx, LevelAdmission level) { return renewThroughLedger(ctx, level); }
+
+    /** The base's own renewal of one tier, in seconds: the next window rated by the application and held through the ledger. */
+    abstract double renewThroughLedger(C ctx, LevelAdmission level);
 
     /** After the settlement · Did the call succeed? The default: it was answered and the service ran. */
     protected boolean succeeded(C ctx) { return ctx.activatedAtMs > 0; }

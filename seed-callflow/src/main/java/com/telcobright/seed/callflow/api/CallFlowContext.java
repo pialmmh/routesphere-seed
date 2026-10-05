@@ -8,6 +8,7 @@ import com.telcobright.statewalk.session.SessionContext;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 /**
  * Everything ONE call knows, whatever the application. The names are {@code CallOrSmsTask}'s and
@@ -92,6 +93,8 @@ public class CallFlowContext extends SessionContext {
     public volatile List<TierSettlement> settlements = List.of();
     /** Every reserve of this call was settled, exactly once. */
     public volatile boolean reservesClosed;
+    /** The base's own: the balance child's cut, armed for the end of a partial window (C14). Null = none armed. */
+    public transient volatile ScheduledFuture<?> balanceCut;
     /** The CDR of this call went to the sink. */
     public volatile boolean cdrPublished;
 
