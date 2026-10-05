@@ -200,6 +200,14 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     protected void onTeardown(C ctx, CallMachine machine) { }
 
     /**
+     * Does a balance child settle this call? True = the call switch's shape: the child holds the tiers from ADMITTED on, renews them
+     * every reserve period while the call is ACTIVE and settles them when TEARING_DOWN asks, answering the supervisor with the per-tier
+     * results (C14, C16–C18). False, the default = the ad's shape: TEARING_DOWN settles inline. Either way the settle rule runs exactly
+     * once per tier, and a call that ends on another path (a deadline, a kill) is settled by the same rule at its end.
+     */
+    protected boolean settlesAsync() { return false; }
+
+    /**
      * The settle rule · What this tier finally pays. The base applies it exactly once per tier, on every end path. The
      * default is the call's rule for a pre-rated event: an answered call pays what it reserved, an unanswered call pays
      * nothing. A call rated by duration returns its rate × {@code ctx.durationSec}.

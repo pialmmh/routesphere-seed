@@ -18,9 +18,12 @@ final class CallSettlement<C extends CallFlowContext> {
 
     CallSettlement(CallFlow<C> flow) { this.flow = flow; }
 
+    /** Once per call: the balance child's SETTLING and the supervisor's end both come here, and the second finds it done. */
     void settle(C ctx) {
-        if (ctx.reservesClosed) return;
-        ctx.reservesClosed = true;
+        synchronized (ctx) {
+            if (ctx.reservesClosed) return;
+            ctx.reservesClosed = true;
+        }
         fixBilledDuration(ctx);
         List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
         for (LevelAdmission level : ctx.levels) settlements.add(settleLevel(ctx, level));

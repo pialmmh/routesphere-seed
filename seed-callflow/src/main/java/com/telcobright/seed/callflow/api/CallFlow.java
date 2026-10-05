@@ -136,11 +136,20 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     // TEARING_DOWN · the end
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
-    /** TEARING_DOWN: stop the service, then settle every tier. */
+    /**
+     * TEARING_DOWN: stop the service, then settle every tier — here, or in the balance child when the application settles
+     * asynchronously (the supervisor then asks the child with {@code SettleRequest} and takes its {@code Settled}).
+     */
     public final void teardown(C ctx, CallMachine machine) {
         guarded(ctx, "STOP_SERVICE", () -> stopService(ctx, machine));
-        guarded(ctx, "SETTLE", () -> settle(ctx));
+        if (!balanceChildSettles()) guarded(ctx, "SETTLE", () -> settle(ctx));
     }
+
+    /** True = the balance child settles this call ({@link CallFlowSteps#settlesAsync}): TEARING_DOWN asks it and waits for its answer. */
+    public final boolean balanceChildSettles() { return settlesAsync(); }
+
+    /** True = this call has a balance child: it settles asynchronously, or it renews its reserve every period. */
+    public final boolean usesBalanceChild() { return balanceChildSettles() || kit.settings().reservePeriodSec() > 0; }
 
     /**
      * Every tier pays what the settle rule says, and the rest of its reserve goes back. It runs exactly once per call,

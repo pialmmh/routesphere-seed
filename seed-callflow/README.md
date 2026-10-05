@@ -107,7 +107,8 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `nextAttempt` | the v1 ritual on `ctx.routePlan`: RETRY_SAME = the same hop again; REROUTE = the next hop while one is left and the attempts are under the plan's cap (3); the attempt is recorded first; the same reserve, nothing re-admitted | | its own: the next route | |
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
-| end | `onTeardown` | nothing | hang up both legs | | |
+| end | `settlesAsync` | false: TEARING_DOWN settles inline | true: the balance child settles and answers | | |
+| | `onTeardown` | nothing | hang up both legs | | |
 | | `billedDuration` | the signaling's, else the time since the answer | from the hangup | | the seconds watched |
 | | `chargeAtSettle` | answered: the reserve. Else nothing | rate × minutes | | the owner's "unshown" rule |
 | | (settle, slot, CDR) | fixed | | | |
@@ -160,6 +161,11 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 - A later tier's refusal gives the earlier tiers back.
 - A ledger fault is `BILLING_SYSTEM_ERROR`. It is never shown as a balance cause.
 - The settle rule (`chargeAtSettle`) runs **exactly once per tier, on every end path**. No path refunds by its own rule.
+- Who runs it: `settlesAsync()` false (the default, the ad) — TEARING_DOWN settles inline. True (the call switch) — a balance child
+  (`internal.LevelBalanceTracker`, spawned at ADMITTED beside the signaling) holds the tiers for the whole call, renews them every
+  reserve period while ACTIVE, settles them when TEARING_DOWN asks (`SettleRequest`) and answers `Settled` with the per-tier results.
+  A re-route retires the signaling child only; the balance child and its reserve live on. A call that ends on another path (a
+  deadline, a kill) is settled by the supervisor's end with the same rule, once.
 - A settlement the ledger did not take is logged as `OWED` with its reference. The CDR is still published and marked.
 - The orchestrix ledger (`Ledgers.orchestrix`) asks road 16 once, and once more with the same reference when it got no
   answer and time is left. Defaults: connect 500 ms, read 1,500 ms.
@@ -181,9 +187,9 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 ```
 api/           CallFlow · CallFlowSteps · CallFlowEngine · CallFlowContext · CallCause · CallState · CdrEvent · TierRate …
 spi/           LedgerPort · CdrSink · TenantLookup            (the host implements these)
-publishes/     Preprocessed · ReserveTick
+publishes/     Preprocessed · BudgetStart                     (SignalingProgress/Done/Failed · ServiceEnd · SettleRequest · Settled are the library's)
 dependencies/  CallFlowKit · CallFlowSettings · CdrSinks      (everything is handed in)
-internal/      CallFlowSupervisor (the machine) · ChannelSlots · CdrAssembler · KafkaCdrSink · FileCdrJournal …
+internal/      CallFlowSupervisor (the machine) · LevelBalanceTracker (the balance child) · ChannelSlots · CdrAssembler · KafkaCdrSink · FileCdrJournal …
 testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder
 ```
 

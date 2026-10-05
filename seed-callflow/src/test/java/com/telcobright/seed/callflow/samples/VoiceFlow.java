@@ -146,6 +146,10 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
         return level.getRate().multiply(BigDecimal.valueOf(minutes));
     }
 
+    /** The call switch's shape: a balance child holds the tiers, renews them while the call runs and settles them when it ends. */
+    @Override
+    protected boolean settlesAsync() { return true; }
+
     /** A long call reserves one more minute every period. */
     @Override
     protected TierRate rateNextWindow(Call call, LevelAdmission level) {
