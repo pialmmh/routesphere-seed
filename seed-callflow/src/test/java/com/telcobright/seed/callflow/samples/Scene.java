@@ -92,7 +92,9 @@ public final class Scene {
             Map.of("10.0.0.7", 701, "10.0.0.3", 703, "10.0.0.9", 9, "10.0.0.2", 702, "10.0.0.4", 704),
             Map.of("res_44#701", new BigDecimal("0.60"), "res_44#702", new BigDecimal("0.60"), "res_44#703", new BigDecimal("0.60"),
                 "res_44#704", new BigDecimal("0.60"), "btcl#44", new BigDecimal("0.40"), "btcl#9", new BigDecimal("0.50")),
-            List.of(new VoiceFlow.Route("017", "GP-trunk", 5), new VoiceFlow.Route("018", "Robi-trunk", 5)));
+            List.of(new VoiceFlow.Route("017", "GP-trunk", 5), new VoiceFlow.Route("017", "GP-backup", 6),
+                new VoiceFlow.Route("017", "GP-third", 7), new VoiceFlow.Route("017", "GP-never-reached", 8),
+                new VoiceFlow.Route("018", "Robi-trunk", 5)));
     }
 
     public SmsFlow sms(CallFlowSettings settings) {

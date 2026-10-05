@@ -102,8 +102,9 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | (reserve) | `LedgerPort.reserve`, inside the admission's budget — fixed | | | |
 | | `resolveRoute` (root) | none | dialplan | SMS routes | already routed |
 | | `confirmAdmission` | nothing | | | claim the quota |
-| ADMITTED | `startSignaling` | — (must say) | the ESL leg | the submit | the view |
-| | `nextAttempt` | no retry | | next route | |
+| ADMITTED | `startSignaling` | — (must say) | the ESL leg, over the plan's hop | the submit | the view |
+| | `rerouteActionFor` (a failure before the answer) | FAIL_TERMINAL | the v1 table (C12): busy, no answer, rejected, absent, timer → REROUTE; temporary failure, congestion → RETRY_SAME | | |
+| | `nextAttempt` | the v1 ritual on `ctx.routePlan`: RETRY_SAME = the same hop again; REROUTE = the next hop while one is left and the attempts are under the plan's cap (3); the attempt is recorded first; the same reserve, nothing re-admitted | | its own: the next route | |
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
 | end | `onTeardown` | nothing | hang up both legs | | |

@@ -280,8 +280,16 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     public void publish(StatemachineEvent event) { publishEvent(event); }
 
     @Override
-    public void spawnChild(String childType, Object childContext) { resolver.spawnChild(childType, childContext); }
+    public void spawnChild(String childType, Object childContext) {
+        getContext().spawnedChildren.add(childType);
+        resolver.spawnChild(childType, childContext);
+    }
 
+    /** Only the children the application spawned for the attempt: the base's own balance child outlives every attempt. */
     @Override
-    public void retireChildren() { resolver.cleanupChildren(); }
+    public void retireChildren() {
+        C ctx = getContext();
+        for (String type : ctx.spawnedChildren) resolver.cleanupChild(type);
+        ctx.spawnedChildren.clear();
+    }
 }

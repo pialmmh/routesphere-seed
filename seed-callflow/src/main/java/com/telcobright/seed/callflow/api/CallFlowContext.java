@@ -6,6 +6,8 @@ import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.statewalk.session.SessionContext;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Everything ONE call knows, whatever the application. The names are {@code CallOrSmsTask}'s and
@@ -65,9 +67,18 @@ public class CallFlowContext extends SessionContext {
     public volatile String outgoingRoute;
     /** The supplier: the partner of the outgoing route. */
     public volatile Integer outPartnerId;
+    /**
+     * The hops routing found, in order, and the cursor on the one being tried — what the re-route ritual (C12) advances.
+     * Null = one implicit hop: a failed attempt may be retried on it, never re-routed.
+     */
+    public volatile RoutePlan<?> routePlan;
 
     // ── the life ────────────────────────────────────────────────────────────
 
+    /** The wire the signaling speaks ({@code ESL}, {@code SMPP}, {@code HTTP}) — the first word of {@code rerouteActionFor}. Null = unnamed. */
+    public volatile String protocol;
+    /** The child types the application spawned for the current attempt (through {@code CallMachine.spawnChild}): a retry retires exactly these. */
+    public final Set<String> spawnedChildren = ConcurrentHashMap.newKeySet();
     /** The first progress report of the signaling (ringing). 0 = none. */
     public volatile long progressAtMs;
     /** The call was answered (an SMS: delivered; an ad: shown). 0 = never — the CDR's answer time is then null. */

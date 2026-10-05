@@ -94,14 +94,26 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         guarded(ctx, "onProgress", () -> onProgress(ctx, phase));
     }
 
-    /** The signaling failed. True = another attempt started; false = the call fails with that cause. */
+    /**
+     * The signaling failed before the answer (C12). The attempt is recorded, then the application's rule decides
+     * ({@link CallFlowSteps#nextAttempt}: by default the v1 table on the route plan). True = the attempt's children are retired and the
+     * signaling starts again on the plan's hop — on the same admission: nothing is re-admitted or re-reserved, and the base's balance
+     * child lives on. False = the call fails with that cause.
+     */
     public final boolean retry(C ctx, String failureCause, CallMachine machine) {
+        recordFailedAttempt(ctx, failureCause);
         if (!safely(ctx, "nextAttempt", () -> nextAttempt(ctx, failureCause), false)) return false;
         ctx.attempts++;
-        ctx.history.note(name(), "attempt " + ctx.attempts + " after: " + failureCause);
+        ctx.history.note(name(), "attempt " + ctx.attempts + " after: " + failureCause + (ctx.routePlan == null ? "" : " — " + ctx.routePlan));
         machine.retireChildren();
         startSignaling(ctx, machine);
         return true;
+    }
+
+    /** Every failed attempt is recorded before the policy sees it, as v1 did: on the plan (which hop, what cause, when) and in the history. */
+    private void recordFailedAttempt(C ctx, String failureCause) {
+        if (ctx.routePlan != null) ctx.routePlan.record(failureCause, kit.clock().millis());
+        ctx.history.note(name(), "attempt " + ctx.attempts + " failed: " + failureCause);
     }
 
     public final void answered(C ctx, Object grant) {

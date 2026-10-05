@@ -164,8 +164,34 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     /** ACTIVE · The service runs. */
     protected void onActive(C ctx, CallMachine machine) { }
 
-    /** The signaling failed: try again (another route)? True = the children are retired and {@link #startSignaling} runs again. */
-    protected boolean nextAttempt(C ctx, String failureCause) { return false; }
+    /**
+     * ADMITTED · The signaling failed before the answer: what the call does next — the call switch's v1 policy (C12), by the wire
+     * ({@code ctx.protocol}) and the cause. The default fails the call. The call switch answers its table: busy, no answer,
+     * rejected, absent, a timer → the next hop; a temporary failure, congestion → the same hop again; anything else → the end.
+     */
+    protected RerouteAction rerouteActionFor(String protocol, String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /**
+     * The signaling failed: try again? True = the children of the attempt are retired and {@link #startSignaling} runs again — on the
+     * same admission: nothing is re-admitted or re-reserved. The default is the v1 ritual ({@link #rerouteByTable}): {@link #rerouteActionFor}
+     * decides and the route plan advances. An application with a rule of its own overrides this.
+     */
+    protected boolean nextAttempt(C ctx, String failureCause) { return rerouteByTable(ctx, failureCause); }
+
+    /**
+     * The v1 ritual, as {@code RequestMachineFactory.handleSignalingFailure} ran it: RETRY_SAME tries the same hop again (as often as the
+     * ADMITTED deadline allows — v1 put no count on it either); REROUTE moves the plan to its next hop while there is one and the attempts
+     * made are under the plan's cap ({@link RoutePlan#maxAttempts}, v1's 3); FAIL_TERMINAL ends the call with the cause.
+     */
+    protected final boolean rerouteByTable(C ctx, String failureCause) {
+        RerouteAction action = rerouteActionFor(ctx.protocol, failureCause);
+        if (action == null) action = RerouteAction.FAIL_TERMINAL;
+        return switch (action) {
+            case RETRY_SAME -> true;
+            case REROUTE -> ctx.routePlan != null && ctx.attempts < ctx.routePlan.maxAttempts() && ctx.routePlan.advance();
+            case FAIL_TERMINAL -> false;
+        };
+    }
 
     /**
      * Stop the service and answer the wire — exactly once per call, on EVERY end path, whatever state the call was in
