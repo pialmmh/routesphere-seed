@@ -49,11 +49,12 @@ class CallFlowHeldTierTest {
             dryRunSeen = call.dryRun;
             if ("refuse".equals(leafVerdict)) throw new LedgerPort.LedgerRefusal("NO_BALANCE_INT_OUT", "no cash account can fund a call abroad");
             if ("fault".equals(leafVerdict)) throw new LedgerPort.LedgerFault("the WAL writer is down");
+            boolean zeroRated = "held-zero".equals(leafVerdict);
             LevelAdmission level = new LevelAdmission(levelIndex, tier, partner, null);
-            level.setRate(new BigDecimal("0.60"));
+            level.setRate(zeroRated ? BigDecimal.ZERO : new BigDecimal("0.60"));
             level.setUom(call.dryRun ? "SKIPPED" : "BDT");
-            level.setReservedAmount(call.dryRun ? BigDecimal.ZERO : new BigDecimal("0.60"));
-            if (!call.dryRun) level.incrementReservationCount();
+            level.setReservedAmount(call.dryRun || zeroRated ? BigDecimal.ZERO : new BigDecimal("0.60"));
+            if (!call.dryRun) level.incrementReservationCount();                     // the step's reserve was made — of the rate, even a zero one
             heldLevel = level;
             return TierRate.held(level);
         }
@@ -125,6 +126,26 @@ class CallFlowHeldTierTest {
         assertThat(verdict.accepted()).isFalse();
         assertThat(verdict.rejectCause()).isEqualTo(CallCause.BILLING_SYSTEM_ERROR);
         assertThat(call.systemFault).isEqualTo(CallCause.BILLING_SYSTEM_ERROR);
+    }
+
+    @Test
+    void aHeldTierOfZero_isStillSettledOnce_theSwitchsZeroReserveRowMustDieAtSettle() {
+        SteppedVoice voice = voice("held-zero");
+        VoiceFlow.Call call = call("h-7");
+        voice.preprocess(call);
+        assertThat(voice.admit(call, StepMode.LIVE).accepted()).isTrue();
+        assertThat(call.levels.get(0).getTotalReserved()).isEqualByComparingTo("0");
+        assertThat(call.levels.get(0).getReservationCount()).isEqualTo(1);
+
+        voice.settle(call);
+
+        assertThat(scene.ledger.timesAsked("settle")).as("both tiers reach the ledger's settle: the zero one too").isEqualTo(2);
+        assertThat(call.settlements.get(0).closed()).isTrue();
+        assertThat(call.settlements.get(0).charged()).isEqualByComparingTo("0");
+
+        VoiceFlow.Call mock = call("h-8");
+        voice.simulate(mock);
+        assertThat(mock.levels.get(0).getReservationCount()).as("a dry run's mock counts no reservation").isZero();
     }
 
     @Test

@@ -56,7 +56,14 @@ final class CallSettlement<C extends CallFlowContext> {
         return TierSettlement.owed(level, charged == null ? BigDecimal.ZERO : charged, why.toString());
     }
 
+    /**
+     * A tier the ledger was asked to hold — money, or a counted reservation of zero: the call switch's step reserves the rate even
+     * when it is zero and its settlement must run once for every such tier, unconditionally, because the reserve row dies there
+     * (a zero-rated tier skipped at settle leaves its row behind: BTCL, 2026-09-28). The base's own reserve never holds zero.
+     */
     static boolean holdsReserve(LevelAdmission level) {
-        return level.getDebitReference() != null && level.getTotalReserved() != null && level.getTotalReserved().signum() > 0;
+        if (level.getDebitReference() == null) return false;
+        boolean money = level.getTotalReserved() != null && level.getTotalReserved().signum() > 0;
+        return money || level.getReservationCount() > 0;
     }
 }
