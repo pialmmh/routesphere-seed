@@ -1,6 +1,5 @@
 package com.telcobright.seed.callflow.internal;
 
-import com.telcobright.seed.callflow.api.CallCause;
 import com.telcobright.seed.callflow.api.CallFlow;
 import com.telcobright.seed.callflow.api.CallFlowContext;
 import com.telcobright.seed.callflow.dependencies.CallFlowSettings;
@@ -109,14 +108,22 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
         if (seconds >= periodSec) return;
         if (seconds <= 0) {
             cut(ctx, "a tier can pay nothing more");
+            transitionTo(WINDING_DOWN);                         // no more renewals, whoever ends the call
             return;
         }
         if (armFinalCut(ctx, seconds)) transitionTo(WINDING_DOWN);
     }
 
+    /**
+     * The money ended: the application says how the call ends ({@code cutForBalance}) — now, with the cause it names (the default:
+     * BALANCE_EXHAUSTED), or by the wire after the application cut the service itself (the call switch: both legs killed; the hangup
+     * FreeSWITCH reports ends the call and the settlement runs on the real talk time).
+     */
     private void cut(C ctx, String why) {
         ctx.history.note(TYPE, "balance exhausted: " + why);
-        publishEvent(new ServiceEnd(CallCause.BALANCE_EXHAUSTED));
+        String cause = flow.cutForBalanceNow(ctx);
+        if (cause != null) publishEvent(new ServiceEnd(cause));
+        else ctx.history.note(TYPE, "the application cut the service on the wire: the wire's end ends the call");
     }
 
     /** The call switch's final window: the cut comes when the credit ends, not at the next tick. False = no timer: the next tick decides. */

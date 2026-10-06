@@ -205,6 +205,14 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     @Override
     final double renewThroughLedger(C ctx, LevelAdmission level) { return admission.renewThroughLedger(ctx, level); }
 
+    /**
+     * The money ended (C14), asked by the balance child: the cause to end the call with now, or null when the application cut the service
+     * on the wire and its end will end the call ({@link CallFlowSteps#cutForBalance}). A hook that throws ends the call now, as the default.
+     */
+    public final String cutForBalanceNow(C ctx) {
+        return safely(ctx, "cutForBalance", () -> cutForBalance(ctx), CallCause.BALANCE_EXHAUSTED);
+    }
+
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // TEARING_DOWN · the end
     // ═════════════════════════════════════════════════════════════════════════════════════════════
