@@ -19,10 +19,15 @@ import java.util.concurrent.TimeUnit;
  * the supervisor with the per-tier results (C18). It outlives every signaling attempt: a re-route retires the signaling child only.
  *
  * <pre>
- *   HOLDING ──BudgetStart──► RENEWING ──(one tick per period: every tier renews; the narrowest window decides)
- *      │                        │   the period: on · 0: cut now · less: WINDING_DOWN, the cut armed for when the money ends
- *      └───── SettleRequest ────┴──────────────────────────────────► SETTLING ──Settled──► CLOSED
+ *   HOLDING ──BudgetStart──► [FIRST_RENEWAL] ──(the first tick, at the initial delay)──► RENEWING ──(one tick per period: every
+ *      │                           │                                                    │   tier renews; the narrowest window decides)
+ *      │                           │   the period: on · 0: cut now · less: WINDING_DOWN, the cut armed for when the money ends
+ *      └───── SettleRequest ───────┴────────────────────────────────────────────────────┴────────► SETTLING ──Settled──► CLOSED
  * </pre>
+ *
+ * <p>FIRST_RENEWAL (B10) is entered only when the first renewal is not one period after the answer
+ * ({@link CallFlowSettings#firstRenewalSec}): the call switch renews first at 58 s, "just under one unit so the renewal precedes its
+ * expiry", then every 60 s. With no initial delay set the child goes straight to RENEWING, as before B10.
  *
  * <p>The renewal is the call switch's (C14): a tier that cannot hold a whole window may hold the remainder, and the call is then
  * cut at the moment that credit ends — not at the next tick — so the caller spends the last partial unit instead of being cut with
@@ -38,6 +43,7 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
 
     public static final String TYPE = "LevelBalanceTracker";
     static final String HOLDING = "HOLDING";
+    static final String FIRST_RENEWAL = "FIRST_RENEWAL";
     static final String RENEWING = "RENEWING";
     static final String WINDING_DOWN = "WINDING_DOWN";
     static final String SETTLING = "SETTLING";
@@ -45,23 +51,33 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
 
     private final CallFlow<C> flow;
     private final long periodSec;
+    private final long firstRenewalSec;
 
     public LevelBalanceTracker(CallFlow<C> flow) {
         this.flow = flow;
         this.periodSec = flow.kit().settings().reservePeriodSec();
+        this.firstRenewalSec = flow.kit().settings().firstRenewalSec();
     }
 
     @Override
     protected StateMap defineStates() {
         CallFlowSettings s = flow.kit().settings();
         long lifetimeSec = s.globalTimeoutSec();           // longer than the longest healthy call, by the settings' own rule
-        StateMap.Builder.StateBuilder renewing = StateMap.builder()
+        StateMap.Builder.StateBuilder first = StateMap.builder()
             .initialState(HOLDING)
 
             .state(HOLDING)
                 .interim()
                 .timeout(lifetimeSec, TimeUnit.SECONDS, CLOSED)
                 .stay(BudgetStart.class, (self, e) -> me(self).startCadence())
+                .on(SettleRequest.class, SETTLING)
+
+            .state(FIRST_RENEWAL)
+                .interim();
+        first = periodSec > 0
+            ? first.timeoutStay(firstRenewalSec, TimeUnit.SECONDS, self -> me(self).firstRenewal())
+            : first.timeout(lifetimeSec, TimeUnit.SECONDS, CLOSED);        // never entered: with no period there is no cadence
+        StateMap.Builder.StateBuilder renewing = first
                 .on(SettleRequest.class, SETTLING)
 
             .state(RENEWING)
@@ -92,26 +108,41 @@ public final class LevelBalanceTracker<C extends CallFlowContext> extends Machin
     @SuppressWarnings("unchecked")
     private static <C extends CallFlowContext> LevelBalanceTracker<C> me(Object self) { return (LevelBalanceTracker<C>) self; }
 
-    /** ACTIVE: the cadence starts — the first renewal comes one period after the answer, as the call switch's did. */
+    /**
+     * ACTIVE: the cadence starts. The first renewal comes {@code firstRenewalSec} after the answer — one period unless an initial
+     * delay is set (B10: the call switch's 58 s) — then one every period.
+     */
     private void startCadence() {
-        if (periodSec > 0) transitionTo(RENEWING);
+        if (periodSec <= 0) return;
+        transitionTo(firstRenewalSec == periodSec ? RENEWING : FIRST_RENEWAL);
+    }
+
+    /** B10 · The first tick: the same renewal as every other; when the cadence goes on, the next ticks come every period. */
+    private void firstRenewal() {
+        if (renew()) transitionTo(RENEWING);
     }
 
     /**
      * One tick of the cadence (C14): every tier renews; the narrowest window decides. The period = the cadence goes on. 0 = the call
      * is cut now. Less than the period = no more renewals; the cut is armed for the moment the money ends.
+     *
+     * @return true = the cadence goes on (the next tick decides); false = no more renewals, or nothing to renew
      */
-    private void renew() {
+    private boolean renew() {
         C ctx = getContext();
-        if (ctx == null || ctx.reservesClosed) return;
+        if (ctx == null || ctx.reservesClosed) return false;
         double seconds = flow.renewReserves(ctx);
-        if (seconds >= periodSec) return;
+        if (seconds >= periodSec) return true;
         if (seconds <= 0) {
             cut(ctx, "a tier can pay nothing more");
             transitionTo(WINDING_DOWN);                         // no more renewals, whoever ends the call
-            return;
+            return false;
         }
-        if (armFinalCut(ctx, seconds)) transitionTo(WINDING_DOWN);
+        if (armFinalCut(ctx, seconds)) {
+            transitionTo(WINDING_DOWN);
+            return false;
+        }
+        return true;                                            // no timer to arm the cut: the next tick decides
     }
 
     /**

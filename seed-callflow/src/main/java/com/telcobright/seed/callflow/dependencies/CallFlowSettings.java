@@ -19,17 +19,27 @@ import com.telcobright.seed.callflow.api.CallFlowTimings;
  *                         ADMITTING deadline minus this reserve. Every ledger call gets the smaller of its own timeout and
  *                         what is left of the budget; when the budget is spent only a free candidate is still tried.
  *                         The reserve is the time kept for that free candidate and for the answer
+ * @param reserveInitialDelaySec when the FIRST renewal comes after the answer; the next ones come every {@code reservePeriodSec}.
+ *                         0 = one period (the default — every flow before B10 unchanged). The call switch sets it from
+ *                         {@code routesphere.billing.periodic-reserve.initial-delay-seconds} (58: "just under one unit so the
+ *                         renewal precedes its expiry"). Without a reserve period it has no effect
  */
 public record CallFlowSettings(int pool, int threads, long globalTimeoutSec, CallFlowTimings timings, long reservePeriodSec,
-                               long slotReconcileSec, boolean debug, long admissionReserveMs) {
+                               long slotReconcileSec, boolean debug, long admissionReserveMs, long reserveInitialDelaySec) {
 
     /** The reserve of {@link #defaults()}: half a second. */
     public static final long DEFAULT_ADMISSION_RESERVE_MS = 500;
 
+    /** The shape before B10: the first renewal one period after the answer. */
+    public CallFlowSettings(int pool, int threads, long globalTimeoutSec, CallFlowTimings timings, long reservePeriodSec,
+                            long slotReconcileSec, boolean debug, long admissionReserveMs) {
+        this(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, 0);
+    }
+
     /** The shape before the admission budget: the default reserve. */
     public CallFlowSettings(int pool, int threads, long globalTimeoutSec, CallFlowTimings timings, long reservePeriodSec,
                             long slotReconcileSec, boolean debug) {
-        this(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, DEFAULT_ADMISSION_RESERVE_MS);
+        this(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, DEFAULT_ADMISSION_RESERVE_MS, 0);
     }
 
     public CallFlowSettings {
@@ -37,6 +47,7 @@ public record CallFlowSettings(int pool, int threads, long globalTimeoutSec, Cal
         if (threads <= 0) throw new IllegalArgumentException("threads must be positive");
         if (timings == null) throw new IllegalArgumentException("timings are required");
         if (reservePeriodSec < 0 || slotReconcileSec < 0) throw new IllegalArgumentException("a period cannot be negative");
+        if (reserveInitialDelaySec < 0) throw new IllegalArgumentException("the first renewal's delay cannot be negative (0 = one period)");
         if (timings != null && (admissionReserveMs < 0 || admissionReserveMs >= timings.admittingSec() * 1000)) {
             throw new IllegalArgumentException("admissionReserveMs (" + admissionReserveMs + " ms) must be zero or more and shorter than the ADMITTING deadline ("
                 + timings.admittingSec() + " s): it would leave the paid tries no time at all");
@@ -51,41 +62,49 @@ public record CallFlowSettings(int pool, int threads, long globalTimeoutSec, Cal
 
     /** A pool of 1000, the call switch's deadlines, the killer at two hours, no periodic reserve, slots checked each minute. */
     public static CallFlowSettings defaults() {
-        return new CallFlowSettings(1000, 2, 7200, CallFlowTimings.defaults(), 0, 60, false, DEFAULT_ADMISSION_RESERVE_MS);
+        return new CallFlowSettings(1000, 2, 7200, CallFlowTimings.defaults(), 0, 60, false, DEFAULT_ADMISSION_RESERVE_MS, 0);
     }
 
     public CallFlowSettings withPool(int newPool) {
-        return new CallFlowSettings(newPool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs);
+        return new CallFlowSettings(newPool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withThreads(int newThreads) {
-        return new CallFlowSettings(pool, newThreads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs);
+        return new CallFlowSettings(pool, newThreads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withGlobalTimeoutSec(long seconds) {
-        return new CallFlowSettings(pool, threads, seconds, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs);
+        return new CallFlowSettings(pool, threads, seconds, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withTimings(CallFlowTimings newTimings) {
-        return new CallFlowSettings(pool, threads, globalTimeoutSec, newTimings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs);
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, newTimings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withReservePeriodSec(long seconds) {
-        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, seconds, slotReconcileSec, debug, admissionReserveMs);
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, seconds, slotReconcileSec, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withSlotReconcileSec(long seconds) {
-        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, seconds, debug, admissionReserveMs);
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, seconds, debug, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withDebug(boolean on) {
-        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, on, admissionReserveMs);
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, on, admissionReserveMs, reserveInitialDelaySec);
     }
 
     public CallFlowSettings withAdmissionReserveMs(long millis) {
-        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, millis);
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, millis, reserveInitialDelaySec);
+    }
+
+    /** B10 · The first renewal after the answer comes this many seconds after it; 0 = one period. */
+    public CallFlowSettings withReserveInitialDelaySec(long seconds) {
+        return new CallFlowSettings(pool, threads, globalTimeoutSec, timings, reservePeriodSec, slotReconcileSec, debug, admissionReserveMs, seconds);
     }
 
     /** The budget of one admission: the ADMITTING deadline minus the reserve. */
     public long admissionBudgetMs() { return timings.admittingSec() * 1000 - admissionReserveMs; }
+
+    /** B10 · When the first renewal comes after the answer: the initial delay when one is set, else one reserve period. */
+    public long firstRenewalSec() { return reserveInitialDelaySec > 0 ? reserveInitialDelaySec : reservePeriodSec; }
 }

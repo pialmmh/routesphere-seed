@@ -179,6 +179,9 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
   (`renewWindowSeconds`) and the narrowest decides — the period: the call goes on; 0: cut now (`ServiceEnd(BALANCE_EXHAUSTED)`);
   less: no more renewals, the cut is armed for the moment the money ends, so the last partial unit is spent and not stranded. The
   cut is never a settlement: the end settles on the real talk time.
+- The first tick (B10): `CallFlowSettings.reserveInitialDelaySec` after the answer when it is set, then one per period. 0, the
+  default, = one period, as before — the ad (no period) and every other flow are unchanged. The call switch sets it from
+  `routesphere.billing.periodic-reserve.initial-delay-seconds` (58 s: "just under one unit so the renewal precedes its expiry").
 
 ## 7 · The CDR
 
