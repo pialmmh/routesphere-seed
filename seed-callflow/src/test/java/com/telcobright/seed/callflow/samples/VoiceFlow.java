@@ -9,18 +9,23 @@ import com.telcobright.seed.callflow.api.CallFlowContext;
 import com.telcobright.seed.callflow.api.CallMachine;
 import com.telcobright.seed.callflow.api.CdrEvent;
 import com.telcobright.seed.callflow.api.EntryPartner;
+import com.telcobright.seed.callflow.api.RerouteAction;
+import com.telcobright.seed.callflow.api.RoutePlan;
 import com.telcobright.seed.callflow.api.TierRate;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
  * A voice call on the base — the shape the call switch takes when it moves onto it. What is the call's own:
  * the partner is found by the source address; the rate is per minute and admission reserves one minute; the root
- * tenant filters the digits and resolves the route by the dialed prefix; the settlement charges the minutes talked;
- * a long call renews its reserve every period.
+ * tenant filters the digits and resolves the route by the dialed prefix — every route that serves it, in order, as the
+ * call's route plan; a failed attempt follows the switch's v1 table (busy → the next hop, a temporary failure → the same
+ * hop again); the settlement charges the minutes talked; a long call renews its reserve every period.
  */
 public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
 
@@ -30,6 +35,9 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
         public volatile String dialed;
         public volatile String caller;
         public volatile boolean legsKilled;
+
+        @SuppressWarnings("unchecked")
+        public RoutePlan<Route> plan() { return (RoutePlan<Route>) routePlan; }
     }
 
     /** A route of the root tenant: the dialed prefix it serves, its name, its supplier. */
@@ -59,6 +67,7 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
     protected String buildTask(Call call) {
         if (call.dialed == null || call.dialed.isBlank()) return "INVALID_NUMBER";
         call.taskType = "VOICE";
+        call.protocol = "ESL";
         call.originatingCallingNumber = call.caller;
         call.originatingCalledNumber = call.dialed;
         call.callerIp = call.sourceIp;
@@ -86,15 +95,31 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
         return null;
     }
 
+    /** Every route of the root that serves the dialed prefix, in order, is a hop; the first is tried first. */
     @Override
     protected String resolveRoute(Call call, Tenant root) {
-        for (Route route : routes) {
-            if (!call.dialed.startsWith(route.prefix())) continue;
-            call.outgoingRoute = route.name();
-            call.outPartnerId = route.supplierId();
-            return null;
-        }
-        return CallCause.NO_ROUTE;
+        List<Route> hops = new ArrayList<>();
+        for (Route route : routes) if (call.dialed.startsWith(route.prefix())) hops.add(route);
+        if (hops.isEmpty()) return CallCause.NO_ROUTE;
+        call.routePlan = RoutePlan.of(hops);
+        takeHop(call, hops.get(0));
+        return null;
+    }
+
+    private static void takeHop(Call call, Route hop) {
+        call.outgoingRoute = hop.name();
+        call.outPartnerId = hop.supplierId();
+    }
+
+    /** The call switch's v1 table (C12): busy and the like go to the next hop, a temporary failure tries the same hop again. */
+    @Override
+    protected RerouteAction rerouteActionFor(String protocol, String cause) {
+        if (cause == null) return RerouteAction.FAIL_TERMINAL;
+        return switch (cause) {
+            case "CALL_REJECTED", "USER_BUSY", "NO_ANSWER", "SUBSCRIBER_ABSENT", "RECOVERY_ON_TIMER_EXPIRE" -> RerouteAction.REROUTE;
+            case "NORMAL_TEMPORARY_FAILURE", "SWITCH_CONGESTION" -> RerouteAction.RETRY_SAME;
+            default -> RerouteAction.FAIL_TERMINAL;
+        };
     }
 
     @Override
@@ -106,8 +131,12 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
         routes.forwardTo(Wire.TYPE, Wire.Defer.class);
     }
 
+    /** One leg on the wire, over the hop the plan points at (the next one after a re-route). */
     @Override
-    protected void startSignaling(Call call, CallMachine machine) { machine.spawnChild(Wire.TYPE, new Wire.Leg(call)); }
+    protected void startSignaling(Call call, CallMachine machine) {
+        if (call.plan() != null) takeHop(call, call.plan().current());
+        machine.spawnChild(Wire.TYPE, new Wire.Leg(call));
+    }
 
     /** Every started minute is charged; an unanswered call pays nothing. */
     @Override
@@ -116,6 +145,10 @@ public class VoiceFlow extends CallFlow<VoiceFlow.Call> {
         long minutes = Math.max(1, (long) Math.ceil(call.durationSec / 60.0));
         return level.getRate().multiply(BigDecimal.valueOf(minutes));
     }
+
+    /** The call switch's shape: a balance child holds the tiers, renews them while the call runs and settles them when it ends. */
+    @Override
+    protected boolean settlesAsync() { return true; }
 
     /** A long call reserves one more minute every period. */
     @Override

@@ -18,9 +18,12 @@ final class CallSettlement<C extends CallFlowContext> {
 
     CallSettlement(CallFlow<C> flow) { this.flow = flow; }
 
+    /** Once per call: the balance child's SETTLING and the supervisor's end both come here, and the second finds it done. */
     void settle(C ctx) {
-        if (ctx.reservesClosed) return;
-        ctx.reservesClosed = true;
+        synchronized (ctx) {
+            if (ctx.reservesClosed) return;
+            ctx.reservesClosed = true;
+        }
         fixBilledDuration(ctx);
         List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
         for (LevelAdmission level : ctx.levels) settlements.add(settleLevel(ctx, level));
@@ -53,7 +56,14 @@ final class CallSettlement<C extends CallFlowContext> {
         return TierSettlement.owed(level, charged == null ? BigDecimal.ZERO : charged, why.toString());
     }
 
+    /**
+     * A tier the ledger was asked to hold — money, or a counted reservation of zero: the call switch's step reserves the rate even
+     * when it is zero and its settlement must run once for every such tier, unconditionally, because the reserve row dies there
+     * (a zero-rated tier skipped at settle leaves its row behind: BTCL, 2026-09-28). The base's own reserve never holds zero.
+     */
     static boolean holdsReserve(LevelAdmission level) {
-        return level.getDebitReference() != null && level.getTotalReserved() != null && level.getTotalReserved().signum() > 0;
+        if (level.getDebitReference() == null) return false;
+        boolean money = level.getTotalReserved() != null && level.getTotalReserved().signum() > 0;
+        return money || level.getReservationCount() > 0;
     }
 }

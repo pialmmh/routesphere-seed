@@ -117,15 +117,26 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
      */
     protected Partner identifyPartner(C ctx, Tenant childTier, Tenant tier) { return resellerPartnerOf(childTier, tier); }
 
-    /** ADMITTING, at every tier · The partner must be active. */
+    /**
+     * ADMITTING, at every tier, first · The partner must be active: a status that is set and is not {@code ACTIVE} (in any case)
+     * refuses with {@code PARTNER_DEACTIVATED} — the call switch's live rule ({@code DefaultAdmissionService.admitAtLevel}, before
+     * its {@code CheckAuthorizationStep}). No status passes.
+     */
     protected String checkPartner(C ctx, Tenant tier, Partner partner, int levelIndex) {
         boolean active = partner.getStatus() == null || "ACTIVE".equalsIgnoreCase(partner.getStatus());
         return active ? null : CallCause.PARTNER_DEACTIVATED;
     }
 
     /**
-     * ADMITTING, at every tier · The application's own authorization, after the partner's channel slot was taken at the
-     * leaf (a call: the DID must be the partner's; the SIP account's own cap).
+     * ADMITTING, at every tier, BEFORE the partner's channel slot · The application's checks that must refuse without taking a slot
+     * (a call: the calling DID must be one the partner owns — {@code INVALID_DID}; a cap of 0 refuses as the cap). The call switch
+     * checks the DID before it counts the channel, so a partner at its cap that presents a foreign DID is refused for the DID.
+     */
+    protected String authorizeBeforeSlot(C ctx, Tenant tier, Partner partner, int levelIndex) { return null; }
+
+    /**
+     * ADMITTING, at every tier, AFTER the partner's channel slot was taken at the leaf · The application's own authorization (a call:
+     * the SIP account's own cap, {@code RETAIL_CHANNEL_LIMIT_REACHED}). A refusal here gives the slot back.
      */
     protected String authorize(C ctx, Tenant tier, Partner partner, int levelIndex) { return null; }
 
@@ -155,7 +166,7 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
         return ctx.lastRefusal != null ? ctx.lastRefusal : CallCause.NO_CANDIDATE;
     }
 
-    /** ADMITTED / RINGING · The signaling reported a phase (ringing, early media). */
+    /** ADMITTED · The signaling reported a phase (ringing, early media). The base stamped the first one ({@code progressAtMs}: the PDD). */
     protected void onProgress(C ctx, String phase) { }
 
     /** The signaling answered: copy what it granted onto the context. */
@@ -164,14 +175,48 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     /** ACTIVE · The service runs. */
     protected void onActive(C ctx, CallMachine machine) { }
 
-    /** The signaling failed: try again (another route)? True = the children are retired and {@link #startSignaling} runs again. */
-    protected boolean nextAttempt(C ctx, String failureCause) { return false; }
+    /**
+     * ADMITTED · The signaling failed before the answer: what the call does next — the call switch's v1 policy (C12), by the wire
+     * ({@code ctx.protocol}) and the cause. The default fails the call. The call switch answers its table: busy, no answer,
+     * rejected, absent, a timer → the next hop; a temporary failure, congestion → the same hop again; anything else → the end.
+     */
+    protected RerouteAction rerouteActionFor(String protocol, String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /**
+     * The signaling failed: try again? True = the children of the attempt are retired and {@link #startSignaling} runs again — on the
+     * same admission: nothing is re-admitted or re-reserved. The default is the v1 ritual ({@link #rerouteByTable}): {@link #rerouteActionFor}
+     * decides and the route plan advances. An application with a rule of its own overrides this.
+     */
+    protected boolean nextAttempt(C ctx, String failureCause) { return rerouteByTable(ctx, failureCause); }
+
+    /**
+     * The v1 ritual, as {@code RequestMachineFactory.handleSignalingFailure} ran it: RETRY_SAME tries the same hop again (as often as the
+     * ADMITTED deadline allows — v1 put no count on it either); REROUTE moves the plan to its next hop while there is one and the attempts
+     * made are under the plan's cap ({@link RoutePlan#maxAttempts}, v1's 3); FAIL_TERMINAL ends the call with the cause.
+     */
+    protected final boolean rerouteByTable(C ctx, String failureCause) {
+        RerouteAction action = rerouteActionFor(ctx.protocol, failureCause);
+        if (action == null) action = RerouteAction.FAIL_TERMINAL;
+        return switch (action) {
+            case RETRY_SAME -> true;
+            case REROUTE -> ctx.routePlan != null && ctx.attempts < ctx.routePlan.maxAttempts() && ctx.routePlan.advance();
+            case FAIL_TERMINAL -> false;
+        };
+    }
 
     /**
      * Stop the service and answer the wire — exactly once per call, on EVERY end path, whatever state the call was in
      * (a call: hang up both legs, or play the no-balance announcement).
      */
     protected void onTeardown(C ctx, CallMachine machine) { }
+
+    /**
+     * Does a balance child settle this call? True = the call switch's shape: the child holds the tiers from ADMITTED on, renews them
+     * every reserve period while the call is ACTIVE and settles them when TEARING_DOWN asks, answering the supervisor with the per-tier
+     * results (C14, C16–C18). False, the default = the ad's shape: TEARING_DOWN settles inline. Either way the settle rule runs exactly
+     * once per tier, and a call that ends on another path (a deadline, a kill) is settled by the same rule at its end.
+     */
+    protected boolean settlesAsync() { return false; }
 
     /**
      * The settle rule · What this tier finally pays. The base applies it exactly once per tier, on every end path. The
@@ -195,9 +240,22 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
 
     /**
      * ACTIVE, every reserve period · What this tier reserves for the next window of a long call. Null = this tier does
-     * not renew. Only asked when the settings name a reserve period.
+     * not renew. Asked by the default {@link #renewWindowSeconds}; an application that answers the renewal itself never sees it.
      */
     protected TierRate rateNextWindow(C ctx, LevelAdmission level) { return null; }
+
+    /**
+     * ACTIVE, every reserve period · Renew this tier's reserve for the next window and answer how many seconds of service it funds
+     * (C14): the whole period = the next unit is held; less = only that much could be held — the call is cut when it ends; 0 =
+     * nothing is left. The default rates the window with {@link #rateNextWindow} and holds it through the kit's ledger: held → the
+     * period; a tier that does not renew, or is zero-rated → the period (the cadence goes on); refused → 0; a ledger FAULT → the
+     * period (a fault never cuts a call: the settlement reconciles). The call switch answers its own billing's number instead: a
+     * whole unit, else the remainder of the balance in seconds, under its minimum 0 ({@code BalanceBillingService.reserveNextWindowSeconds}).
+     */
+    protected double renewWindowSeconds(C ctx, LevelAdmission level) { return renewThroughLedger(ctx, level); }
+
+    /** The base's own renewal of one tier, in seconds: the next window rated by the application and held through the ledger. */
+    abstract double renewThroughLedger(C ctx, LevelAdmission level);
 
     /** After the settlement · Did the call succeed? The default: it was answered and the service ran. */
     protected boolean succeeded(C ctx) { return ctx.activatedAtMs > 0; }
@@ -207,7 +265,7 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
         return switch (state) {
             case CallState.PREPROCESSING -> CallCause.PREPROCESS_TIMEOUT;
             case CallState.ADMITTING -> CallCause.ADMISSION_TIMEOUT;
-            case CallState.ADMITTED, CallState.RINGING -> CallCause.NO_ANSWER;
+            case CallState.ADMITTED -> CallCause.NO_ANSWER;
             case CallState.ACTIVE -> CallCause.MAX_DURATION_REACHED;
             case CallState.TEARING_DOWN -> CallCause.SETTLE_TIMEOUT;
             default -> CallCause.INTERNAL_ERROR;

@@ -40,6 +40,11 @@ public final class CallCause {
     // ── the machine ──
     /** The registry's global timeout killed a machine that no state timeout had ended. */
     public static final String HUNG_MACHINE = "HUNG_MACHINE";
+    /**
+     * The process that ran the call stopped while the call was in the air (R1-6): the next start published its record from the
+     * journal of the calls in the air — a call that was handed over, every tier charged what it reserved.
+     */
+    public static final String LOST_AT_RESTART = "LOST_AT_RESTART";
     public static final String SYSTEM_SHUTDOWN = "SYSTEM_SHUTDOWN";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 

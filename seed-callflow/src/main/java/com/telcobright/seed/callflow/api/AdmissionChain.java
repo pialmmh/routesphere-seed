@@ -62,6 +62,7 @@ final class AdmissionChain<C extends CallFlowContext> {
     /** The candidates that pay share one budget: the state's deadline minus the reserve kept for a free candidate. A dry run has none. */
     private void openBudget(C ctx, StepMode mode) {
         ctx.budgetSpent = false;
+        ctx.dryRun = mode == StepMode.SIMULATE;
         ctx.admissionDeadlineMs = mode == StepMode.SIMULATE ? Long.MAX_VALUE
             : flow.kit().clock().millis() + flow.kit().settings().admissionBudgetMs();
     }
@@ -139,10 +140,17 @@ final class AdmissionChain<C extends CallFlowContext> {
         return flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, childTier, tier));
     }
 
-    /** One tier: the partner is known and active, holds its slot, passes the tier's rules, is rated and reserved. */
+    /**
+     * One tier, in the call switch's order ({@code DefaultAdmissionService.admitAtLevel}): the partner is known
+     * ({@code PARTNER_NOT_FOUND}) and active ({@code PARTNER_DEACTIVATED}) → the checks that take no slot (a call: {@code INVALID_DID})
+     * → the partner's channel slot at the leaf ({@code CHANNEL_LIMIT_REACHED}) → the checks after the slot (a call: the SIP account's
+     * cap) → the root's rules (a call: {@code DIGIT_FILTER_DENIED}) → rated and reserved. The first refusal ends the walk; the caller
+     * gives back everything taken before it.
+     */
     private String admitAtLevel(C ctx, Walk walk, Tenant tier, Partner partner, int levelIndex) {
         if (partner == null) return CallCause.PARTNER_NOT_FOUND;
         String refusal = flow.step(ctx, "CHECK_PARTNER", () -> flow.checkPartner(ctx, tier, partner, levelIndex));
+        if (refusal == null) refusal = flow.step(ctx, "AUTHORIZE_BEFORE_SLOT", () -> flow.authorizeBeforeSlot(ctx, tier, partner, levelIndex));
         if (refusal == null && levelIndex == 0) refusal = takeChannelSlot(ctx, walk, tier, partner);
         if (refusal == null) refusal = flow.step(ctx, "AUTHORIZE", () -> flow.authorize(ctx, tier, partner, levelIndex));
         if (refusal == null && tier == walk.root) refusal = flow.step(ctx, "ROOT_RULES", () -> flow.applyRootRules(ctx, tier, partner));
@@ -155,14 +163,38 @@ final class AdmissionChain<C extends CallFlowContext> {
         return flow.slots().acquire(ctx.sessionKey, tier.getDbName(), partner) ? null : CallCause.CHANNEL_LIMIT_REACHED;
     }
 
+    /**
+     * The tier is rated by the application and reserved by the base — or, when the application's own step did both in one move
+     * ({@link TierRate#held}), taken as that step left it. A rating hook may refuse with the ledger's own words: a
+     * {@link LedgerPort.LedgerRefusal} is the cause, a {@link LedgerPort.LedgerFault} is {@code BILLING_SYSTEM_ERROR}, never a balance case.
+     */
     private String rateAndReserve(C ctx, Walk walk, Tenant tier, Partner partner, int levelIndex) {
-        TierRate rate = flow.isFree(ctx) ? TierRate.free() : flow.step(ctx, "RATE", () -> flow.rateAtLevel(ctx, tier, partner, levelIndex));
+        TierRate rate;
+        try {
+            rate = flow.isFree(ctx) ? TierRate.free() : flow.step(ctx, "RATE", () -> flow.rateAtLevel(ctx, tier, partner, levelIndex));
+        } catch (LedgerPort.LedgerRefusal refused) {
+            return refused.code();
+        } catch (LedgerPort.LedgerFault fault) {
+            return ledgerFault(ctx, levelIndex, tier.getDbName(), partner.getIdPartner(), fault);
+        }
         if (rate == null) return CallCause.UNRATED;
+        if (rate.held() != null) return takeHeld(ctx, walk, rate.held(), levelIndex);
         LevelAdmission level = levelOf(tier, partner, levelIndex, rate);
         String refusal = walk.simulated() ? null
             : reserve(ctx, level, rate.reserveAmount(), referenceOf(ctx, walk.tryNo, levelIndex), flow.noBalanceCause(ctx), flow.admissionTimeLeftMs(ctx));
         if (refusal == null) walk.levels.add(level);
         return refusal;
+    }
+
+    /**
+     * The application's own step admitted the tier (the call switch's C6: {@code ReserveBalanceStep} rates, chooses the account —
+     * package minutes before money, the reserve being the affordability test — and holds one unit, all in one move): the base takes
+     * its level as the tier's, names the reference the settlement and a release will use, and asks its ledger nothing for it.
+     */
+    private String takeHeld(C ctx, Walk walk, LevelAdmission held, int levelIndex) {
+        if (held.getDebitReference() == null) held.setDebitReference(referenceOf(ctx, walk.tryNo, levelIndex));
+        walk.levels.add(held);
+        return null;
     }
 
     private static LevelAdmission levelOf(Tenant tier, Partner partner, int levelIndex, TierRate rate) {
@@ -230,9 +262,13 @@ final class AdmissionChain<C extends CallFlowContext> {
     }
 
     private String ledgerFault(C ctx, LevelAdmission level, RuntimeException fault) {
+        return ledgerFault(ctx, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), fault);
+    }
+
+    private String ledgerFault(C ctx, int levelIndex, String dbName, Integer partnerId, RuntimeException fault) {
         ctx.systemFault = CallCause.BILLING_SYSTEM_ERROR;
         flow.log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), ctx.sessionKey,
-            level.getLevelIndex(), level.getDbName(), level.getPartnerId(), fault.getMessage());
+            levelIndex, dbName, partnerId, fault.getMessage());
         return CallCause.BILLING_SYSTEM_ERROR;
     }
 
@@ -262,21 +298,18 @@ final class AdmissionChain<C extends CallFlowContext> {
     /** A renewal runs while the call is answered, outside any admission: the ledger's own timeout bounds it. */
     private static final long RENEWAL_HAS_NO_BUDGET = Long.MAX_VALUE;
 
-    /** Null = the call goes on. Else the cause to end it with: a tier cannot pay the next window. */
-    String reserveNextWindow(C ctx) {
-        for (LevelAdmission level : ctx.levels) {
-            String cause = extendReserve(ctx, level);
-            if (cause != null) return cause;
-        }
-        return null;
-    }
-
-    /** A ledger FAULT never cuts a call: the settlement reconciles when the call ends. */
-    private String extendReserve(C ctx, LevelAdmission level) {
-        TierRate next = flow.safely(ctx, "rateNextWindow", () -> flow.rateNextWindow(ctx, level), null);
-        if (next == null || !next.reserves() || level.getDebitReference() == null) return null;
+    /**
+     * The default renewal of one tier (C14), in seconds: the next window as the application rates it, held through the ledger under
+     * {@code …#W<n>}. The period = held, or nothing to hold (the tier does not renew, is zero-rated, never reserved); 0 = the ledger
+     * refused. A ledger FAULT never cuts a call: the settlement reconciles when the call ends. The base has no "remainder": a ledger
+     * that can fund part of a window is the application's own (the call switch's billing answers the seconds itself).
+     */
+    double renewThroughLedger(C ctx, LevelAdmission level) {
+        double period = flow.kit().settings().reservePeriodSec();
+        TierRate next = flow.rateNextWindow(ctx, level);
+        if (next == null || !next.reserves() || level.getDebitReference() == null) return period;
         String reference = level.getDebitReference() + "#W" + (level.getReservationCount() + 1);
         String refusal = reserve(ctx, level, next.reserveAmount(), reference, CallCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
-        return CallCause.BILLING_SYSTEM_ERROR.equals(refusal) ? null : refusal;
+        return refusal == null || CallCause.BILLING_SYSTEM_ERROR.equals(refusal) ? period : 0;
     }
 }

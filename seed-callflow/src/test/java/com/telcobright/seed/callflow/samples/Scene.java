@@ -6,6 +6,7 @@ import com.telcobright.seed.callflow.api.CallFlowTimings;
 import com.telcobright.seed.callflow.api.CallMachine;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.seed.callflow.dependencies.CallFlowSettings;
+import com.telcobright.seed.callflow.spi.CallJournal;
 import com.telcobright.seed.callflow.spi.TenantLookup;
 import com.telcobright.seed.callflow.testkit.InMemoryLedger;
 import com.telcobright.seed.callflow.testkit.RecordingCdrSink;
@@ -59,6 +60,7 @@ public final class Scene {
     public final RecordingCdrSink cdrs = new RecordingCdrSink();
     public final List<SdrRecord> sessionRecords = new CopyOnWriteArrayList<>();
     private Clock clock = Clock.system(DHAKA);
+    private CallJournal journal = CallJournal.NONE;
 
     /** The clock of every flow built from now on: a test of a deadline hands in a clock it moves by hand. */
     public Scene withClock(Clock clock) {
@@ -66,8 +68,15 @@ public final class Scene {
         return this;
     }
 
+    /** The journal of the calls in the air of every flow built from now on (R1-6). */
+    public Scene withJournal(CallJournal journal) {
+        this.journal = journal;
+        return this;
+    }
+
     public CallFlowKit kit(CallFlowSettings settings) {
         return CallFlowKit.builder()
+            .journal(journal)
             .tenants(TenantLookup.of(root))
             .ledger(ledger)
             .cdrSink(cdrs)
@@ -92,7 +101,9 @@ public final class Scene {
             Map.of("10.0.0.7", 701, "10.0.0.3", 703, "10.0.0.9", 9, "10.0.0.2", 702, "10.0.0.4", 704),
             Map.of("res_44#701", new BigDecimal("0.60"), "res_44#702", new BigDecimal("0.60"), "res_44#703", new BigDecimal("0.60"),
                 "res_44#704", new BigDecimal("0.60"), "btcl#44", new BigDecimal("0.40"), "btcl#9", new BigDecimal("0.50")),
-            List.of(new VoiceFlow.Route("017", "GP-trunk", 5), new VoiceFlow.Route("018", "Robi-trunk", 5)));
+            List.of(new VoiceFlow.Route("017", "GP-trunk", 5), new VoiceFlow.Route("017", "GP-backup", 6),
+                new VoiceFlow.Route("017", "GP-third", 7), new VoiceFlow.Route("017", "GP-never-reached", 8),
+                new VoiceFlow.Route("018", "Robi-trunk", 5)));
     }
 
     public SmsFlow sms(CallFlowSettings settings) {

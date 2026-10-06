@@ -43,7 +43,8 @@ class CallFlowKitTest {
         CallFlowSettings defaults = CallFlowSettings.defaults();
 
         assertThat(defaults.pool()).isEqualTo(1000);
-        assertThat(defaults.timings()).isEqualTo(new CallFlowTimings(3, 5, 30, 90, 3600, 10));
+        assertThat(defaults.timings()).as("120 s before the answer: the switch's 30 s to the first progress + 90 s of ringing, in one window")
+            .isEqualTo(new CallFlowTimings(3, 5, 120, 90, 3600, 10));
         assertThat(defaults.reservePeriodSec()).isZero();
         assertThat(defaults.withPool(50).withDebug(true).pool()).isEqualTo(50);
         assertThat(new CallFlowTimings(3, 5, 30, 0, 3600, 10).hasRingingPhase()).isFalse();

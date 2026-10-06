@@ -13,9 +13,15 @@ public interface CallMachine {
     /** Send an event onto this call's bus: the supervisor handles it itself or forwards it to a child, by its routes. */
     void publish(StatemachineEvent event);
 
-    /** Start a child machine of a registered type with its own context (it shares the call's history by reference). */
+    /**
+     * Start a child machine of a registered type with its own context (it shares the call's history by reference). The base remembers
+     * the type as the attempt's: a retry retires it.
+     */
     void spawnChild(String childType, Object childContext);
 
-    /** Retire every live child of this call — before a signaling retry starts new ones. */
+    /**
+     * Retire the children the application spawned for this attempt (its signaling) — before another attempt starts new ones. The base's
+     * own balance child is not among them: it outlives every attempt.
+     */
     void retireChildren();
 }

@@ -5,8 +5,9 @@ import com.telcobright.seed.callflow.api.CallFlow;
 import com.telcobright.seed.callflow.api.CallFlowContext;
 import com.telcobright.seed.callflow.api.CallFlowTimings;
 import com.telcobright.seed.callflow.api.CallMachine;
+import com.telcobright.seed.callflow.api.TierSettlement;
+import com.telcobright.seed.callflow.publishes.BudgetStart;
 import com.telcobright.seed.callflow.publishes.Preprocessed;
-import com.telcobright.seed.callflow.publishes.ReserveTick;
 import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.registry.InternalEventResolver;
@@ -15,12 +16,15 @@ import com.telcobright.statewalk.session.AdmissionVerdict;
 import com.telcobright.statewalk.session.SdrRecord;
 import com.telcobright.statewalk.session.events.AdmissionDecided;
 import com.telcobright.statewalk.session.events.ServiceEnd;
+import com.telcobright.statewalk.session.events.SettleRequest;
+import com.telcobright.statewalk.session.events.Settled;
 import com.telcobright.statewalk.session.events.SignalingDeferred;
 import com.telcobright.statewalk.session.events.SignalingDone;
 import com.telcobright.statewalk.session.events.SignalingFailed;
 import com.telcobright.statewalk.session.events.SignalingProgress;
 import com.telcobright.statewalk.state.StateMap;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static com.telcobright.seed.callflow.api.CallState.ACTIVE;
@@ -29,13 +33,25 @@ import static com.telcobright.seed.callflow.api.CallState.ADMITTING;
 import static com.telcobright.seed.callflow.api.CallState.DEFERRED;
 import static com.telcobright.seed.callflow.api.CallState.FAILED;
 import static com.telcobright.seed.callflow.api.CallState.PREPROCESSING;
-import static com.telcobright.seed.callflow.api.CallState.RINGING;
 import static com.telcobright.seed.callflow.api.CallState.SUCCEEDED;
 import static com.telcobright.seed.callflow.api.CallState.TEARING_DOWN;
 
 /**
  * The machine of ONE call — the same class for every application. It only maps states and events onto the steps of its
  * {@link CallFlow}; it decides nothing itself.
+ *
+ * <p><b>The graph is generic.</b> {@code PREPROCESSING → ADMITTING → ADMITTED → ACTIVE → TEARING_DOWN → SUCCEEDED | FAILED}
+ * (and {@code DEFERRED}, an end by design before any service) — the library's session graph with the base's preprocessing in
+ * front. No protocol word is a state of it: ringing, early media, playing, submitting live in the application's own signaling
+ * child, which reports them as {@code SignalingProgress} — a stay in ADMITTED, the first one stamped for the PDD. ADMITTED's one
+ * deadline bounds the whole pre-answer phase; a protocol's own windows (the carrier's silence, the far end's ringing) are the
+ * child's deadlines.
+ *
+ * <p><b>The balance child.</b> A call that settles asynchronously, or renews its reserve every period, gets a
+ * {@link LevelBalanceTracker} at ADMITTED.entry, beside its signaling (C9). It is the base's own: a signaling retry never retires
+ * it. ACTIVE.entry tells it to start its cadence ({@link BudgetStart}); TEARING_DOWN asks it to settle ({@code SettleRequest}) and
+ * takes its {@code Settled} — the per-tier results onto the call (C18), then the success rule. A call with neither has no child
+ * and settles inline in TEARING_DOWN, as the ad does.
  *
  * <p><b>Pooling.</b> A machine is taken from the pool for one call and goes back when the call reaches a final state.
  * Its only field is the flow, final and shared: a machine carries NOTHING of a call, so there is nothing a reset could
@@ -71,7 +87,11 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         routes.selfHandle(SignalingFailed.class);
         routes.selfHandle(SignalingDeferred.class);
         routes.selfHandle(ServiceEnd.class);
-        routes.selfHandle(ReserveTick.class);
+        routes.selfHandle(Settled.class);
+        if (flow.usesBalanceChild()) {
+            routes.forwardTo(LevelBalanceTracker.TYPE, BudgetStart.class);
+            routes.forwardTo(LevelBalanceTracker.TYPE, SettleRequest.class);
+        }
         flow.defineRoutes(routes);
     }
 
@@ -80,7 +100,6 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     @Override
     protected StateMap defineStates() {
         CallFlowTimings t = flow.timings();
-        long ringingSec = t.hasRingingPhase() ? t.ringingSec() : t.admittedSec();
         return StateMap.builder()
             .initialState(PREPROCESSING)
 
@@ -103,17 +122,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
             .state(ADMITTED)
                 .interim()
                 .timeout(t.admittedSec(), TimeUnit.SECONDS, FAILED)
-                .onEntry(self -> me(self).signal())
-                .on(SignalingDone.class, ACTIVE, null, (self, e) -> me(self).answered((SignalingDone) e))
-                .on(SignalingProgress.class, RINGING, (self, e) -> me(self).hasRingingPhase(), (self, e) -> me(self).progress((SignalingProgress) e))
-                .stay(SignalingProgress.class, (self, e) -> me(self).progress((SignalingProgress) e))
-                .stay(SignalingFailed.class, (self, e) -> me(self).signalingFailed((SignalingFailed) e))
-                .on(SignalingDeferred.class, DEFERRED, null, (self, e) -> me(self).endWith(((SignalingDeferred) e).cause()))
-                .stay(ServiceEnd.class, (self, e) -> me(self).abortBeforeAnswer((ServiceEnd) e))
-
-            .state(RINGING)
-                .interim()
-                .timeout(ringingSec, TimeUnit.SECONDS, FAILED)
+                .onEntry(self -> me(self).admitted())
                 .on(SignalingDone.class, ACTIVE, null, (self, e) -> me(self).answered((SignalingDone) e))
                 .stay(SignalingProgress.class, (self, e) -> me(self).progress((SignalingProgress) e))
                 .stay(SignalingFailed.class, (self, e) -> me(self).signalingFailed((SignalingFailed) e))
@@ -124,13 +133,14 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
                 .interim()
                 .timeout(t.activeMaxSec(), TimeUnit.SECONDS, FAILED)
                 .onEntry(self -> me(self).activate())
-                .stay(ReserveTick.class, (self, e) -> me(self).renewReserve())
                 .on(ServiceEnd.class, TEARING_DOWN, null, (self, e) -> me(self).endWith(((ServiceEnd) e).cause()))
 
             .state(TEARING_DOWN)
                 .interim()
                 .timeout(t.tearingDownSec(), TimeUnit.SECONDS, FAILED)
                 .onEntry(self -> me(self).teardown())
+                .on(Settled.class, SUCCEEDED, (self, e) -> me(self).settled((Settled) e))
+                .on(Settled.class, FAILED)
 
             .state(SUCCEEDED)
                 .finalState()
@@ -165,6 +175,12 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         publishEvent(new AdmissionDecided(verdict.accepted(), verdict.rejectCause()));
     }
 
+    /** C9: the balance child first — it holds the tiers for the whole call — then the signaling. */
+    private void admitted() {
+        if (flow.usesBalanceChild()) resolver.spawnChild(LevelBalanceTracker.TYPE, getContext());
+        signal();
+    }
+
     private void signal() {
         try {
             flow.signal(getContext(), this);
@@ -173,8 +189,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         }
     }
 
-    private boolean hasRingingPhase() { return flow.timings().hasRingingPhase(); }
-
+    /** Ringing, early media, a beacon: a stay in ADMITTED. The first one is the PDD; the deadline of ADMITTED is not re-armed. */
     private void progress(SignalingProgress report) { flow.progress(getContext(), report.phase()); }
 
     private void signalingFailed(SignalingFailed failure) {
@@ -192,24 +207,30 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
 
     private void answered(SignalingDone done) { flow.answered(getContext(), done.grant()); }
 
+    /** C13: the service runs; the balance child may start its cadence (C14). */
     private void activate() {
         flow.active(getContext(), this);
-        if (flow.kit().settings().reservePeriodSec() > 0) resolver.spawnChild(ReserveClock.TYPE, new ReserveClock.Started(getContext().activatedAtMs));
+        if (flow.usesBalanceChild()) publishEvent(new BudgetStart());
     }
 
-    private void renewReserve() {
-        C ctx = getContext();
-        String cause = flow.reserveNextWindow(ctx);
-        if (cause == null) return;
-        endWith(cause);
-        transitionTo(TEARING_DOWN);
-    }
-
+    /** C15/C16: stop the service, then settle — inline, or by asking the balance child and waiting for its answer. */
     private void teardown() {
         C ctx = getContext();
         flow.teardown(ctx, this);
         if (ctx.endCause == null) ctx.endCause = CallCause.NORMAL_CLEARING;
+        if (flow.balanceChildSettles()) {
+            publishEvent(new SettleRequest());
+            return;
+        }
         transitionTo(flow.succeededNow(ctx) ? SUCCEEDED : FAILED);
+    }
+
+    /** C18: the balance child settled — the per-tier results are the call's; then the success rule decides the end. */
+    @SuppressWarnings("unchecked")
+    private boolean settled(Settled done) {
+        C ctx = getContext();
+        if (done.totals() instanceof List<?> tiers) ctx.settlements = (List<TierSettlement>) tiers;
+        return flow.succeededNow(ctx);
     }
 
     /** The first cause a call is given is its cause: a later one never replaces it. */
@@ -286,8 +307,16 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     public void publish(StatemachineEvent event) { publishEvent(event); }
 
     @Override
-    public void spawnChild(String childType, Object childContext) { resolver.spawnChild(childType, childContext); }
+    public void spawnChild(String childType, Object childContext) {
+        getContext().spawnedChildren.add(childType);
+        resolver.spawnChild(childType, childContext);
+    }
 
+    /** Only the children the application spawned for the attempt: the base's own balance child outlives every attempt. */
     @Override
-    public void retireChildren() { resolver.cleanupChildren(); }
+    public void retireChildren() {
+        C ctx = getContext();
+        for (String type : ctx.spawnedChildren) resolver.cleanupChild(type);
+        ctx.spawnedChildren.clear();
+    }
 }

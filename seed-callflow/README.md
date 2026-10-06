@@ -6,13 +6,17 @@ multi-tenant pipeline; each application says only its own steps.
 Design: `pialmmh/routesphere` `docs/architecture/call-flow-base.md`. The CDR contract: `docs/architecture/ad-is-a-call.md` §4.
 
 ```
-launch ─► PREPROCESSING ─► ADMITTING ─► ADMITTED ─► (RINGING) ─► ACTIVE ─► TEARING_DOWN ─► SUCCEEDED
- (pool)   tenant           per candidate:  signaling   progress     service    stop, SETTLE     │
-          task             entry partner                                        every tier       ▼
-          candidates       tenant chain ▲ leaf→root                                         one CDR message
-                           check · slot · rate · RESERVE                                    a record per tier
-                           route · confirm                          any refusal, deadline or kill ─► FAILED (same end)
+launch ─► PREPROCESSING ─► ADMITTING ─► ADMITTED ─────────► ACTIVE ─► TEARING_DOWN ─► SUCCEEDED
+ (pool)   tenant           per candidate:  signaling          service    stop, SETTLE     │
+          task             entry partner   (progress = a stay:            every tier       ▼
+          candidates       tenant chain ▲ leaf→root   ringing, early media)           one CDR message
+                           check · slot · rate · RESERVE                                a record per tier
+                           route · confirm                      any refusal, deadline or kill ─► FAILED (same end)
 ```
+
+The graph is the library's session graph with the base's preprocessing in front. It is generic: no protocol word (ringing,
+playing, submitting) is a state of it — those live in the application's signaling child and arrive as `SignalingProgress`, a
+stay in ADMITTED whose first report is the PDD. ADMITTED's one deadline bounds the whole pre-answer phase.
 
 ## 1 · The three classes you meet
 
@@ -90,19 +94,23 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `identifyEntryPartner` | — (must say) | by source IP / SIP account | by user | the advertiser |
 | | `identifyPartner` (above the leaf) | the parent's partner that stands for the child tenant: the id the child's database name ends with (`res_233` → 233, `res_233_2` → 2), else the partner named as the child — the call switch's live rule; no partner type is asked | | | |
 | | `checkPartner` | status ACTIVE | | | |
+| | `authorizeBeforeSlot` | nothing | the calling DID must be the partner's (`INVALID_DID`) | | |
 | | (channel slot) | the partner's cap, at the leaf — fixed | | | |
-| | `authorize` | nothing more | DID, account cap | | |
+| | `authorize` (after the slot) | nothing more | the SIP account's own cap | | |
 | | `applyRootRules` (root only) | none | digit filter | | |
 | | `isFree` | no | | | the house ad |
 | | `rateAtLevel` | — (must say) | per minute, 1 minute | per part, all parts | per view, whole |
 | | (reserve) | `LedgerPort.reserve`, inside the admission's budget — fixed | | | |
 | | `resolveRoute` (root) | none | dialplan | SMS routes | already routed |
 | | `confirmAdmission` | nothing | | | claim the quota |
-| ADMITTED | `startSignaling` | — (must say) | the ESL leg | the submit | the view |
-| | `nextAttempt` | no retry | | next route | |
+| ADMITTED | `startSignaling` | — (must say) | the ESL leg, over the plan's hop | the submit | the view |
+| | `rerouteActionFor` (a failure before the answer) | FAIL_TERMINAL | the v1 table (C12): busy, no answer, rejected, absent, timer → REROUTE; temporary failure, congestion → RETRY_SAME | | |
+| | `nextAttempt` | the v1 ritual on `ctx.routePlan`: RETRY_SAME = the same hop again; REROUTE = the next hop while one is left and the attempts are under the plan's cap (3); the attempt is recorded first; the same reserve, nothing re-admitted | | its own: the next route | |
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
-| end | `onTeardown` | nothing | hang up both legs | | |
+| | `renewWindowSeconds` (C14, in seconds) | the default: `rateNextWindow` held through the ledger → the period; refused → 0; no rate, zero-rated or a ledger fault → the period | the switch's own billing: a whole unit, else the remainder in seconds, under its minimum 0 | | |
+| end | `settlesAsync` | false: TEARING_DOWN settles inline | true: the balance child settles and answers | | |
+| | `onTeardown` | nothing | hang up both legs | | |
 | | `billedDuration` | the signaling's, else the time since the answer | from the hangup | | the seconds watched |
 | | `chargeAtSettle` | answered: the reserve. Else nothing | rate × minutes | | the owner's "unshown" rule |
 | | (settle, slot, CDR) | fixed | | | |
@@ -155,6 +163,11 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 - A later tier's refusal gives the earlier tiers back.
 - A ledger fault is `BILLING_SYSTEM_ERROR`. It is never shown as a balance cause.
 - The settle rule (`chargeAtSettle`) runs **exactly once per tier, on every end path**. No path refunds by its own rule.
+- Who runs it: `settlesAsync()` false (the default, the ad) — TEARING_DOWN settles inline. True (the call switch) — a balance child
+  (`internal.LevelBalanceTracker`, spawned at ADMITTED beside the signaling) holds the tiers for the whole call, renews them every
+  reserve period while ACTIVE, settles them when TEARING_DOWN asks (`SettleRequest`) and answers `Settled` with the per-tier results.
+  A re-route retires the signaling child only; the balance child and its reserve live on. A call that ends on another path (a
+  deadline, a kill) is settled by the supervisor's end with the same rule, once.
 - A settlement the ledger did not take is logged as `OWED` with its reference. The CDR is still published and marked.
 - The orchestrix ledger (`Ledgers.orchestrix`) asks road 16 once, and once more with the same reference when it got no
   answer and time is left. Defaults: connect 500 ms, read 1,500 ms.
@@ -162,6 +175,10 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
   certain. `unsure`: a reserve the ledger did not answer in time; the money may have moved after the switch stopped
   waiting, so an officer looks the reference up first.
 - Reserve references: `<call>#L<tier>`; a later candidate `<call>#<try>#L<tier>`; a renewal `…#W<n>`.
+- The renewal (C14), one tick per reserve period from the balance child: every tier answers how many seconds it can still fund
+  (`renewWindowSeconds`) and the narrowest decides — the period: the call goes on; 0: cut now (`ServiceEnd(BALANCE_EXHAUSTED)`);
+  less: no more renewals, the cut is armed for the moment the money ends, so the last partial unit is spent and not stranded. The
+  cut is never a settlement: the end settles on the real talk time.
 
 ## 7 · The CDR
 
@@ -176,9 +193,9 @@ Three verbs on `spi.LedgerPort`: **reserve** at admission, **settle** at the end
 ```
 api/           CallFlow · CallFlowSteps · CallFlowEngine · CallFlowContext · CallCause · CallState · CdrEvent · TierRate …
 spi/           LedgerPort · CdrSink · TenantLookup            (the host implements these)
-publishes/     Preprocessed · ReserveTick
+publishes/     Preprocessed · BudgetStart                     (SignalingProgress/Done/Failed · ServiceEnd · SettleRequest · Settled are the library's)
 dependencies/  CallFlowKit · CallFlowSettings · CdrSinks      (everything is handed in)
-internal/      CallFlowSupervisor (the machine) · ChannelSlots · CdrAssembler · KafkaCdrSink · FileCdrJournal …
+internal/      CallFlowSupervisor (the machine) · LevelBalanceTracker (the balance child) · ChannelSlots · CdrAssembler · KafkaCdrSink · FileCdrJournal …
 testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder
 ```
 

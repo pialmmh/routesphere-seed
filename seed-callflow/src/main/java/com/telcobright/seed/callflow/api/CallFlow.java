@@ -1,11 +1,13 @@
 package com.telcobright.seed.callflow.api;
 
+import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.seed.callflow.internal.ChannelSlots;
 import com.telcobright.seed.callflow.internal.FlowCounters;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.session.AdmissionVerdict;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -18,7 +20,7 @@ import java.util.function.Supplier;
  *   ADMITTING       per candidate: identify the entry partner
  *                                  → the tenant chain, leaf to root: check, authorize, rate, RESERVE
  *                                  → resolve the route → confirm          (a refusal gives every reserve back)
- *   ADMITTED        start the signaling            (RINGING on progress; a failed attempt may be retried)
+ *   ADMITTED        start the signaling            (progress — ringing, early media — is a stay; a failed attempt may be retried)
  *   ACTIVE          the service runs               (a long call renews its reserve)
  *   TEARING_DOWN    stop the service → SETTLE every tier
  *   the end         settle if not yet settled → free the slot → publish ONE CDR message, a record per tier
@@ -80,7 +82,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     public final AdmissionVerdict admit(C ctx, StepMode mode) { return admission.admitFirstCandidate(ctx, mode); }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // ADMITTED · RINGING · ACTIVE
+    // ADMITTED · ACTIVE
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     public final void signal(C ctx, CallMachine machine) {
@@ -88,19 +90,89 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         startSignaling(ctx, machine);
     }
 
+    /** The signaling reported progress (C11): the first report is the PDD; the call stays ADMITTED, its deadline untouched. */
     public final void progress(C ctx, String phase) {
         if (ctx.progressAtMs == 0) ctx.progressAtMs = kit.clock().millis();
         guarded(ctx, "onProgress", () -> onProgress(ctx, phase));
     }
 
-    /** The signaling failed. True = another attempt started; false = the call fails with that cause. */
+    /**
+     * The signaling failed before the answer (C12). The attempt is recorded, then the application's rule decides
+     * ({@link CallFlowSteps#nextAttempt}: by default the v1 table on the route plan). True = the attempt's children are retired and the
+     * signaling starts again on the plan's hop — on the same admission: nothing is re-admitted or re-reserved, and the base's balance
+     * child lives on. False = the call fails with that cause.
+     */
     public final boolean retry(C ctx, String failureCause, CallMachine machine) {
+        recordFailedAttempt(ctx, failureCause);
         if (!safely(ctx, "nextAttempt", () -> nextAttempt(ctx, failureCause), false)) return false;
         ctx.attempts++;
-        ctx.history.note(name(), "attempt " + ctx.attempts + " after: " + failureCause);
+        ctx.history.note(name(), "attempt " + ctx.attempts + " after: " + failureCause + (ctx.routePlan == null ? "" : " — " + ctx.routePlan));
         machine.retireChildren();
         startSignaling(ctx, machine);
         return true;
+    }
+
+    /** Every failed attempt is recorded before the policy sees it, as v1 did: on the plan (which hop, what cause, when) and in the history. */
+    private void recordFailedAttempt(C ctx, String failureCause) {
+        if (ctx.routePlan != null) ctx.routePlan.record(failureCause, kit.clock().millis());
+        ctx.history.note(name(), "attempt " + ctx.attempts + " failed: " + failureCause);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // R1-6 · the calls in the air: every reserve ends in a record or goes back, a process death included
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The application hands the call to its user (an ad's start road hands the session to the phone): the call's line is written
+     * to the journal of the calls in the air FIRST — on this thread, one append — then {@code theFact} is asked (the application's
+     * own decision: is the call still there to hand over?).
+     *
+     * @return true = handed over. False = do not hand it over: its line could not be written (the cause is in the call's history;
+     *         the caller refuses the call as a system fault and its reserves go back), or the fact said no (the call ended first;
+     *         its line is done again at once — its own end publishes its record)
+     */
+    public final boolean handOver(C ctx, BooleanSupplier theFact) {
+        if (!journalTheHandOver(ctx)) return false;
+        if (theFact.getAsBoolean()) return true;
+        kit.journal().done(ctx.sessionKey);
+        return false;
+    }
+
+    private boolean journalTheHandOver(C ctx) {
+        if (!kit.journal().keeps()) return true;
+        try {
+            kit.journal().handedOver(ctx.sessionKey, kit.clock().millis(), cdr.lostRecordsOf(ctx));
+            return true;
+        } catch (RuntimeException e) {
+            counters.journalRefused.incrementAndGet();
+            ctx.history.note(name(), "its line in the journal of the calls in the air (" + kit.journal().where() + ") could not be written: " + e.getMessage()
+                + " — not handed over, refused as a system fault; its reserves go back");
+            return false;
+        }
+    }
+
+    /**
+     * What the switch learned of a call in the air since its hand-over: its answer, the seconds it is billed for so far. The next
+     * start's record of the call says them if the process dies before the call's end. Never fails the call.
+     */
+    public final void noteInTheAir(String callId, long answeredAtMs, double billedSec) {
+        try {
+            kit.journal().noted(callId, kit.clock().millis(), answeredAtMs, billedSec);
+        } catch (RuntimeException e) {
+            log.warn("[{}] {} | the journal of the calls in the air did not take what was learned of the call (its record after a death would say less): {}",
+                name(), callId, e.toString());
+        }
+    }
+
+    /**
+     * Before the first call of a start (the engine asks it): the record of every call a stopped process left in the air is published
+     * — handed over, ended {@link CallCause#LOST_AT_RESTART}, every tier charged what it reserved. One WARN with the count and the sums.
+     */
+    public final void publishWhatWasLeftInTheAir() {
+        CallCdr.LeftInTheAir left = cdr.publishLeftovers();
+        if (left.calls() == 0) return;
+        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved — {} in money and {} in units over every tier",
+            name(), left.calls(), kit.journal().where(), CallCause.LOST_AT_RESTART, left.money().toPlainString(), left.units().toPlainString());
     }
 
     public final void answered(C ctx, Object grant) {
@@ -114,20 +186,43 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     }
 
     /**
-     * A long call renews its reserve at every tier. Null = the call goes on. Else the cause to end it with: a tier
-     * cannot pay the next window. A ledger FAULT never cuts a call: the settlement reconciles when the call ends.
+     * ACTIVE, every reserve period (C14): every tier renews its window; the narrowest answer, in seconds, is how long the call may
+     * still run. The period = the call goes on; 0 = a tier can pay nothing more; between = a partial window, to be cut when it ends.
+     * A tier that answers 0 ends the asking (the rest are not renewed for a call that is over). A hook that throws never cuts a
+     * call. Asked by the balance child, on the call's own bus, so a renewal never runs beside the settlement of the same call.
      */
-    public final String reserveNextWindow(C ctx) { return admission.reserveNextWindow(ctx); }
+    public final double renewReserves(C ctx) {
+        double period = kit.settings().reservePeriodSec();
+        if (ctx.reservesClosed) return period;
+        double narrowest = period;
+        for (LevelAdmission level : ctx.levels) {
+            narrowest = Math.min(narrowest, safely(ctx, "renewWindowSeconds", () -> renewWindowSeconds(ctx, level), period));
+            if (narrowest <= 0) break;
+        }
+        return narrowest;
+    }
+
+    @Override
+    final double renewThroughLedger(C ctx, LevelAdmission level) { return admission.renewThroughLedger(ctx, level); }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // TEARING_DOWN · the end
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
-    /** TEARING_DOWN: stop the service, then settle every tier. */
+    /**
+     * TEARING_DOWN: stop the service, then settle every tier — here, or in the balance child when the application settles
+     * asynchronously (the supervisor then asks the child with {@code SettleRequest} and takes its {@code Settled}).
+     */
     public final void teardown(C ctx, CallMachine machine) {
         guarded(ctx, "STOP_SERVICE", () -> stopService(ctx, machine));
-        guarded(ctx, "SETTLE", () -> settle(ctx));
+        if (!balanceChildSettles()) guarded(ctx, "SETTLE", () -> settle(ctx));
     }
+
+    /** True = the balance child settles this call ({@link CallFlowSteps#settlesAsync}): TEARING_DOWN asks it and waits for its answer. */
+    public final boolean balanceChildSettles() { return settlesAsync(); }
+
+    /** True = this call has a balance child: it settles asynchronously, or it renews its reserve every period. */
+    public final boolean usesBalanceChild() { return balanceChildSettles() || kit.settings().reservePeriodSec() > 0; }
 
     /**
      * Every tier pays what the settle rule says, and the rest of its reserve goes back. It runs exactly once per call,

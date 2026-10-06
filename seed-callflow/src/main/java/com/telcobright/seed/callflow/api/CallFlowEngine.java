@@ -3,7 +3,7 @@ package com.telcobright.seed.callflow.api;
 import com.telcobright.seed.callflow.dependencies.CallFlowSettings;
 import com.telcobright.seed.callflow.internal.CallFlowSupervisor;
 import com.telcobright.seed.callflow.internal.FlowCounters;
-import com.telcobright.seed.callflow.internal.ReserveClock;
+import com.telcobright.seed.callflow.internal.LevelBalanceTracker;
 import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.machine.Machine;
 import com.telcobright.statewalk.registry.DispatchResult;
@@ -50,12 +50,14 @@ public final class CallFlowEngine<C extends CallFlowContext> implements AutoClos
 
     private CallFlowEngine(Builder<C> builder) {
         this.flow = builder.flow;
+        flow.publishWhatWasLeftInTheAir();               // R1-6: before the first call, the calls a stopped process left in the air
         this.registry = buildRegistry(builder);
         counters().machinesBuilt.decrementAndGet();      // the registry built one sample to check the type; it never serves a call
         this.housekeeping = startSlotReconciler();
         CallFlowSettings s = flow.kit().settings();
-        log.info("[{}] call flow up: a pool of {} machines, deadlines {}, hung-machine killer at {} s, reserve period {} s, children {}",
-            flow.name(), s.pool(), s.timings(), builder.killerAfterSec, s.reservePeriodSec(), builder.children.keySet());
+        log.info("[{}] call flow up: a pool of {} machines, deadlines {}, hung-machine killer at {} s, reserve period {} s, children {}, balance child {}",
+            flow.name(), s.pool(), s.timings(), builder.killerAfterSec, s.reservePeriodSec(), builder.children.keySet(),
+            flow.usesBalanceChild() ? (flow.balanceChildSettles() ? "settles" : "renews only") : "none (settles inline)");
         sayAdmissionBudget(s);
     }
 
@@ -200,7 +202,7 @@ public final class CallFlowEngine<C extends CallFlowContext> implements AutoClos
         StatemachineRegistry.Builder<C> registryBuilder = StatemachineRegistry.<C>builder(flow.name())
             .supervisor(flow.name(), this::newMachine, s.pool());
         builder.children.forEach((type, factory) -> registryBuilder.child(type, factory, s.pool()));
-        if (s.reservePeriodSec() > 0) registryBuilder.child(ReserveClock.TYPE, () -> new ReserveClock(s.reservePeriodSec()), s.pool());
+        if (flow.usesBalanceChild()) registryBuilder.child(LevelBalanceTracker.TYPE, () -> new LevelBalanceTracker<>(flow), s.pool());
         return registryBuilder
             .threads(s.threads())
             .maxConcurrent(s.pool())

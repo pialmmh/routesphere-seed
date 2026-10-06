@@ -1,13 +1,14 @@
 package com.telcobright.seed.callflow.api;
 
 /**
- * The states of a call — the same graph for every application:
+ * The states of a call — the same graph for every application, the library's session graph with the base's preprocessing in
+ * front. No protocol word (ringing, playing, submitting) is a state: those are the signaling child's, reported as progress.
  *
  * <pre>
- *   PREPROCESSING → ADMITTING → ADMITTED → (RINGING) → ACTIVE → TEARING_DOWN → SUCCEEDED
- *        │              │           │           │          │           │
- *        └──────────────┴───────────┴───────────┴──────────┴───────────┴────→ FAILED
- *                                   └───────────┴─ ended before any service, by design → DEFERRED
+ *   PREPROCESSING → ADMITTING → ADMITTED → ACTIVE → TEARING_DOWN → SUCCEEDED
+ *        │              │           │          │           │
+ *        └──────────────┴───────────┴──────────┴───────────┴────→ FAILED
+ *                                   └─ ended before any service, by design → DEFERRED
  * </pre>
  */
 public final class CallState {
@@ -18,10 +19,8 @@ public final class CallState {
     public static final String PREPROCESSING = "PREPROCESSING";
     /** The partner is identified, every tier is authorized, rated and reserved, the route is resolved. */
     public static final String ADMITTING = "ADMITTING";
-    /** The signaling runs; nothing came back yet. */
+    /** The signaling runs: the answer is awaited; the far end's progress (ringing, early media) is a stay here. */
     public static final String ADMITTED = "ADMITTED";
-    /** The far end reported progress; the answer is awaited in its own, longer window. */
-    public static final String RINGING = "RINGING";
     /** Answered: the service runs. */
     public static final String ACTIVE = "ACTIVE";
     /** The service is stopped and every tier is settled. */
