@@ -121,6 +121,89 @@ class CallFlowRenewalTest {
         assertThat(cdrOf("b9-2")).allSatisfy(cdr -> assertThat(cdr.hangupCause).isEqualTo(CallCause.NORMAL_CLEARING));
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // B10 — the first renewal at the initial delay (the call switch: 58 s), then every period (60 s)
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /** The sample voice flow whose leaf tier notes the moment of every renewal and holds a whole window each time. */
+    private VoiceFlow notingTicks(CallFlowSettings settings, List<Long> ticks) {
+        return new VoiceFlow(scene.kit(settings), Map.of("10.0.0.7", 701),
+            Map.of("res_44#701", new BigDecimal("0.60"), "btcl#44", new BigDecimal("0.40")), List.of(new VoiceFlow.Route("017", "GP-trunk", 5))) {
+            @Override
+            protected double renewWindowSeconds(Call call, LevelAdmission level) {
+                if (level.getLevelIndex() == 0) ticks.add(System.currentTimeMillis());
+                return settings.reservePeriodSec();
+            }
+        };
+    }
+
+    @Test
+    void B10_theFirstRenewalComesAtTheInitialDelay_58s_thenEvery60s() throws Exception {
+        CallFlowSettings settings = Scene.settings(4, 3600, 7200).withReservePeriodSec(60).withReserveInitialDelaySec(58);
+        List<Long> ticks = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CallFlowEngine<VoiceFlow.Call> engine = engineOf(notingTicks(settings, ticks));
+        ManualTimers timers = ManualTimers.installOn(engine.registry());
+        answered(engine, "b10-1");
+
+        assertThat(timers.armed(60_000)).as("no tick is armed at the period before the first renewal").isZero();
+        timers.fire(timers.newest(58_000));                                             // the first tick, 58 s after the answer
+        engine.awaitSettled("b10-1", 5, TimeUnit.SECONDS);
+        assertThat(ticks).hasSize(1);
+        timers.fire(timers.newest(60_000));                                             // then one every 60 s
+        engine.awaitSettled("b10-1", 5, TimeUnit.SECONDS);
+        timers.fire(timers.newest(60_000));
+        engine.awaitSettled("b10-1", 5, TimeUnit.SECONDS);
+
+        assertThat(ticks).as("three renewals: at 58 s, 118 s, 178 s").hasSize(3);
+        assertThat(timers.armed(58_000)).as("the initial delay is armed once").isEqualTo(1);
+        assertThat(engine.stateOf("b10-1")).isEqualTo(CallState.ACTIVE);
+    }
+
+    @Test
+    void B10_withoutAnInitialDelay_theFirstRenewalIsOnePeriodAfterTheAnswer_asBefore() throws Exception {
+        CallFlowSettings settings = Scene.settings(4, 3600, 7200).withReservePeriodSec(60);
+        List<Long> ticks = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CallFlowEngine<VoiceFlow.Call> engine = engineOf(notingTicks(settings, ticks));
+        ManualTimers timers = ManualTimers.installOn(engine.registry());
+        answered(engine, "b10-2");
+
+        assertThat(settings.firstRenewalSec()).isEqualTo(60);
+        timers.fire(timers.newest(60_000));
+        engine.awaitSettled("b10-2", 5, TimeUnit.SECONDS);
+
+        assertThat(ticks).as("the first renewal, one period after the answer").hasSize(1);
+        assertThat(timers.armed(58_000)).isZero();
+    }
+
+    @Test
+    void B10_onRealTimers_theFirstTickAtTheInitialDelay_theNextAPeriodLater() throws Exception {
+        CallFlowSettings settings = Scene.settings(4).withReservePeriodSec(2).withReserveInitialDelaySec(1);
+        List<Long> ticks = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CallFlowEngine<VoiceFlow.Call> engine = engineOf(notingTicks(settings, ticks));
+        VoiceFlow.Call call = answered(engine, "b10-3");
+
+        Scene.await("two renewals", () -> ticks.size() >= 2);
+        tell(engine, "b10-3", new Wire.Hangup(CallCause.NORMAL_CLEARING, 3.2));
+
+        assertThat(ticks.get(0) - call.activatedAtMs).as("the first tick at the initial delay, 1 s").isBetween(900L, 1600L);
+        assertThat(ticks.get(1) - ticks.get(0)).as("the next one period later, 2 s").isBetween(1900L, 2600L);
+        assertThat(cdrOf("b10-3")).allSatisfy(cdr -> assertThat(cdr.hangupCause).isEqualTo(CallCause.NORMAL_CLEARING));
+        assertThat(scene.ledger.openReserves()).isZero();
+    }
+
+    @Test
+    void B10_theSettings_defaultToOnePeriod_keepTheDelayThroughEveryWith_andRefuseANegativeOne() {
+        CallFlowSettings before = Scene.settings(4).withReservePeriodSec(60);
+        assertThat(before.reserveInitialDelaySec()).as("the old constructors: no initial delay").isZero();
+        assertThat(before.firstRenewalSec()).isEqualTo(60);
+        CallFlowSettings b10 = before.withReserveInitialDelaySec(58);
+        assertThat(b10.firstRenewalSec()).isEqualTo(58);
+        assertThat(b10.withPool(9).withReservePeriodSec(30).withDebug(true).reserveInitialDelaySec()).isEqualTo(58);
+        assertThat(CallFlowSettings.defaults().firstRenewalSec()).as("no period, no cadence").isZero();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> before.withReserveInitialDelaySec(-1))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static VoiceFlow.Call answered(CallFlowEngine<VoiceFlow.Call> engine, String id) throws Exception {
         VoiceFlow.Call call = Scene.call(id, "10.0.0.7", "01712345678");
         assertThat(engine.launch(call).launched()).isTrue();
