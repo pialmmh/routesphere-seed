@@ -94,8 +94,9 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `identifyEntryPartner` | — (must say) | by source IP / SIP account | by user | the advertiser |
 | | `identifyPartner` (above the leaf) | the parent's partner that stands for the child tenant: the id the child's database name ends with (`res_233` → 233, `res_233_2` → 2), else the partner named as the child — the call switch's live rule; no partner type is asked | | | |
 | | `checkPartner` | status ACTIVE | | | |
+| | `authorizeBeforeSlot` | nothing | the calling DID must be the partner's (`INVALID_DID`) | | |
 | | (channel slot) | the partner's cap, at the leaf — fixed | | | |
-| | `authorize` | nothing more | DID, account cap | | |
+| | `authorize` (after the slot) | nothing more | the SIP account's own cap | | |
 | | `applyRootRules` (root only) | none | digit filter | | |
 | | `isFree` | no | | | the house ad |
 | | `rateAtLevel` | — (must say) | per minute, 1 minute | per part, all parts | per view, whole |

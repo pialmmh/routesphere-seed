@@ -117,15 +117,26 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
      */
     protected Partner identifyPartner(C ctx, Tenant childTier, Tenant tier) { return resellerPartnerOf(childTier, tier); }
 
-    /** ADMITTING, at every tier · The partner must be active. */
+    /**
+     * ADMITTING, at every tier, first · The partner must be active: a status that is set and is not {@code ACTIVE} (in any case)
+     * refuses with {@code PARTNER_DEACTIVATED} — the call switch's live rule ({@code DefaultAdmissionService.admitAtLevel}, before
+     * its {@code CheckAuthorizationStep}). No status passes.
+     */
     protected String checkPartner(C ctx, Tenant tier, Partner partner, int levelIndex) {
         boolean active = partner.getStatus() == null || "ACTIVE".equalsIgnoreCase(partner.getStatus());
         return active ? null : CallCause.PARTNER_DEACTIVATED;
     }
 
     /**
-     * ADMITTING, at every tier · The application's own authorization, after the partner's channel slot was taken at the
-     * leaf (a call: the DID must be the partner's; the SIP account's own cap).
+     * ADMITTING, at every tier, BEFORE the partner's channel slot · The application's checks that must refuse without taking a slot
+     * (a call: the calling DID must be one the partner owns — {@code INVALID_DID}; a cap of 0 refuses as the cap). The call switch
+     * checks the DID before it counts the channel, so a partner at its cap that presents a foreign DID is refused for the DID.
+     */
+    protected String authorizeBeforeSlot(C ctx, Tenant tier, Partner partner, int levelIndex) { return null; }
+
+    /**
+     * ADMITTING, at every tier, AFTER the partner's channel slot was taken at the leaf · The application's own authorization (a call:
+     * the SIP account's own cap, {@code RETAIL_CHANNEL_LIMIT_REACHED}). A refusal here gives the slot back.
      */
     protected String authorize(C ctx, Tenant tier, Partner partner, int levelIndex) { return null; }
 

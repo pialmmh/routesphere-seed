@@ -140,10 +140,17 @@ final class AdmissionChain<C extends CallFlowContext> {
         return flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, childTier, tier));
     }
 
-    /** One tier: the partner is known and active, holds its slot, passes the tier's rules, is rated and reserved. */
+    /**
+     * One tier, in the call switch's order ({@code DefaultAdmissionService.admitAtLevel}): the partner is known
+     * ({@code PARTNER_NOT_FOUND}) and active ({@code PARTNER_DEACTIVATED}) → the checks that take no slot (a call: {@code INVALID_DID})
+     * → the partner's channel slot at the leaf ({@code CHANNEL_LIMIT_REACHED}) → the checks after the slot (a call: the SIP account's
+     * cap) → the root's rules (a call: {@code DIGIT_FILTER_DENIED}) → rated and reserved. The first refusal ends the walk; the caller
+     * gives back everything taken before it.
+     */
     private String admitAtLevel(C ctx, Walk walk, Tenant tier, Partner partner, int levelIndex) {
         if (partner == null) return CallCause.PARTNER_NOT_FOUND;
         String refusal = flow.step(ctx, "CHECK_PARTNER", () -> flow.checkPartner(ctx, tier, partner, levelIndex));
+        if (refusal == null) refusal = flow.step(ctx, "AUTHORIZE_BEFORE_SLOT", () -> flow.authorizeBeforeSlot(ctx, tier, partner, levelIndex));
         if (refusal == null && levelIndex == 0) refusal = takeChannelSlot(ctx, walk, tier, partner);
         if (refusal == null) refusal = flow.step(ctx, "AUTHORIZE", () -> flow.authorize(ctx, tier, partner, levelIndex));
         if (refusal == null && tier == walk.root) refusal = flow.step(ctx, "ROOT_RULES", () -> flow.applyRootRules(ctx, tier, partner));
