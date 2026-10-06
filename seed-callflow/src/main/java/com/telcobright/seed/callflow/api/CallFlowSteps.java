@@ -257,6 +257,14 @@ public abstract class CallFlowSteps<C extends CallFlowContext> {
     /** The base's own renewal of one tier, in seconds: the next window rated by the application and held through the ledger. */
     abstract double renewThroughLedger(C ctx, LevelAdmission level);
 
+    /**
+     * ACTIVE · The money ended (C14): a tier could pay nothing more, or the final partial window just ran out. The cause to end the call
+     * with now — the default, {@code BALANCE_EXHAUSTED} — or null when the application cuts the service on the wire itself and the wire's
+     * end will end the call (the call switch, v2's word: both legs killed, {@code balanceCutoff} noted, the hangup FreeSWITCH reports is
+     * the cause and the settlement runs on the real talk time). Either way the balance child renews nothing more.
+     */
+    protected String cutForBalance(C ctx) { return CallCause.BALANCE_EXHAUSTED; }
+
     /** After the settlement · Did the call succeed? The default: it was answered and the service ran. */
     protected boolean succeeded(C ctx) { return ctx.activatedAtMs > 0; }
 

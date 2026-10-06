@@ -55,10 +55,70 @@ class CallFlowRenewalTest {
         };
     }
 
+    /** The same, but the application carries the cut out on the wire itself (B9, the call switch's word): it notes it and ends nothing. */
+    private VoiceFlow scriptedVoiceCuttingOnTheWire(CallFlowSettings settings, Deque<Object> leafAnswers, List<String> cuts) {
+        return new VoiceFlow(scene.kit(settings), Map.of("10.0.0.7", 701),
+            Map.of("res_44#701", new BigDecimal("0.60"), "btcl#44", new BigDecimal("0.40")), List.of(new VoiceFlow.Route("017", "GP-trunk", 5))) {
+            @Override
+            protected double renewWindowSeconds(Call call, LevelAdmission level) {
+                if (level.getLevelIndex() != 0) return settings.reservePeriodSec();
+                Object answer = leafAnswers.pollFirst();
+                return answer == null ? settings.reservePeriodSec() : (Double) answer;
+            }
+
+            @Override
+            protected String cutForBalance(Call call) {
+                cuts.add(call.sessionKey + " at " + System.currentTimeMillis());
+                call.legsKilled = true;                                                 // the switch would kill both legs here
+                return null;
+            }
+        };
+    }
+
     private CallFlowEngine<VoiceFlow.Call> engineOf(VoiceFlow flow) {
         CallFlowEngine<VoiceFlow.Call> engine = CallFlowEngine.of(flow).child(Wire.TYPE, Wire::new).start();
         engines.add(engine);
         return engine;
+    }
+
+    @Test
+    void B9_aCutTheApplicationCarriesOutOnTheWire_leavesTheCallToTheWiresEnd_noMoreRenewals_theEndSettlesTheRealTime() throws Exception {
+        CallFlowSettings settings = Scene.settings(4).withReservePeriodSec(1);
+        List<String> cuts = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CallFlowEngine<VoiceFlow.Call> engine = engineOf(scriptedVoiceCuttingOnTheWire(settings, new ArrayDeque<>(List.of(0.0)), cuts));
+        VoiceFlow.Call call = answered(engine, "b9-1");
+
+        Scene.await("the cut", () -> !cuts.isEmpty());
+        Thread.sleep(1300);                                                              // past the next tick: nothing renews, nothing ends the call
+
+        assertThat(engine.stateOf("b9-1")).as("the wire has not ended it yet").isEqualTo(CallState.ACTIVE);
+        assertThat(call.legsKilled).isTrue();
+        assertThat(cuts).hasSize(1);
+        tell(engine, "b9-1", new Wire.Hangup(CallCause.NORMAL_CLEARING, 1.2));          // FreeSWITCH reports the killed leg's hangup
+
+        List<CdrEvent> tiers = cdrOf("b9-1");
+        assertThat(tiers).allSatisfy(cdr -> assertThat(cdr.hangupCause).as("the wire's cause, not BALANCE_EXHAUSTED").isEqualTo(CallCause.NORMAL_CLEARING));
+        assertThat(tiers.get(0).inPartnerCost).isEqualByComparingTo("0.60");
+        Scene.await("the session record", () -> scene.sessionRecords.stream().anyMatch(r -> r.sessionKey().equals("b9-1")));
+        assertThat(scene.sessionRecords.stream().filter(r -> r.sessionKey().equals("b9-1")).findFirst().orElseThrow().outcome())
+            .as("NORMAL_CLEARING: the call succeeded, as v2's").isEqualTo(CallState.SUCCEEDED);
+        assertThat(scene.ledger.openReserves()).isZero();
+    }
+
+    @Test
+    void B9_theFinalWindowsCut_isTheApplicationsToCarryOut_too() throws Exception {
+        CallFlowSettings settings = Scene.settings(4).withReservePeriodSec(1);
+        List<String> cuts = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CallFlowEngine<VoiceFlow.Call> engine = engineOf(scriptedVoiceCuttingOnTheWire(settings, new ArrayDeque<>(List.of(0.4)), cuts));
+        VoiceFlow.Call call = answered(engine, "b9-2");
+
+        Scene.await("the cut", () -> !cuts.isEmpty());
+
+        long cutAfterMs = Long.parseLong(cuts.get(0).substring(cuts.get(0).lastIndexOf(' ') + 1)) - call.activatedAtMs;
+        assertThat(cutAfterMs).as("at the end of the final window (~1.4 s), not at a tick").isBetween(1300L, 1950L);
+        assertThat(engine.stateOf("b9-2")).isEqualTo(CallState.ACTIVE);
+        tell(engine, "b9-2", new Wire.Hangup(CallCause.NORMAL_CLEARING, 1.4));
+        assertThat(cdrOf("b9-2")).allSatisfy(cdr -> assertThat(cdr.hangupCause).isEqualTo(CallCause.NORMAL_CLEARING));
     }
 
     private static VoiceFlow.Call answered(CallFlowEngine<VoiceFlow.Call> engine, String id) throws Exception {
