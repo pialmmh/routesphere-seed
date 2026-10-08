@@ -43,8 +43,8 @@ class KafkaCdrSinkIT {
         AdFlow ad = scene.ad(Scene.settings(2), true);
         AdFlow.View view = Scene.view("ad-kafka-1", "dhaka-zone");
         assertThat(ad.preprocess(view)).isNull();
-        assertThat(ad.admit(view, StepMode.LIVE).accepted()).isTrue();
-        ad.end(view, CallState.FAILED, Scene.NO_MACHINE);
+        assertThat(ad.admission(view, StepMode.LIVE).accepted()).isTrue();
+        ad.close(view, CallState.FAILED, Scene.NO_MACHINE);
         List<CdrEvent> tiers = scene.cdrs.of("ad-kafka-1").get(0).tiers();
 
         try (CdrSink kafka = CdrSinks.kafka(BOOTSTRAP, topic, "seed-callflow-it")) {

@@ -114,7 +114,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
             .state(ADMITTING)
                 .interim()
                 .timeout(t.admittingSec(), TimeUnit.SECONDS, FAILED)
-                .onEntry(self -> me(self).admit())
+                .onEntry(self -> me(self).admission())
                 .on(AdmissionDecided.class, ADMITTED, (self, e) -> ((AdmissionDecided) e).accepted())
                 .on(AdmissionDecided.class, FAILED, null, (self, e) -> me(self).endWith(((AdmissionDecided) e).cause()))
                 .stay(ServiceEnd.class, (self, e) -> me(self).abortBeforeAnswer((ServiceEnd) e))
@@ -132,13 +132,13 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
             .state(ACTIVE)
                 .interim()
                 .timeout(t.activeMaxSec(), TimeUnit.SECONDS, FAILED)
-                .onEntry(self -> me(self).activate())
+                .onEntry(self -> me(self).established())
                 .on(ServiceEnd.class, TEARING_DOWN, null, (self, e) -> me(self).endWith(((ServiceEnd) e).cause()))
 
             .state(TEARING_DOWN)
                 .interim()
                 .timeout(t.tearingDownSec(), TimeUnit.SECONDS, FAILED)
-                .onEntry(self -> me(self).teardown())
+                .onEntry(self -> me(self).complete())
                 .on(Settled.class, SUCCEEDED, (self, e) -> me(self).settled((Settled) e))
                 .on(Settled.class, FAILED)
 
@@ -170,8 +170,8 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         publishEvent(new Preprocessed(refusal == null, refusal));
     }
 
-    private void admit() {
-        AdmissionVerdict verdict = flow.admit(getContext(), StepMode.LIVE);
+    private void admission() {
+        AdmissionVerdict verdict = flow.admission(getContext(), StepMode.LIVE);
         publishEvent(new AdmissionDecided(verdict.accepted(), verdict.rejectCause()));
     }
 
@@ -195,7 +195,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     private void signalingFailed(SignalingFailed failure) {
         boolean retrying;
         try {
-            retrying = flow.retry(getContext(), failure.cause(), this);
+            retrying = flow.rerouting(getContext(), failure.cause(), this);
         } catch (RuntimeException e) {
             failNow(CallCause.INTERNAL_ERROR, "the retry could not start: " + e);
             return;
@@ -208,15 +208,15 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
     private void answered(SignalingDone done) { flow.answered(getContext(), done.grant()); }
 
     /** C13: the service runs; the balance child may start its cadence (C14). */
-    private void activate() {
-        flow.active(getContext(), this);
+    private void established() {
+        flow.established(getContext(), this);
         if (flow.usesBalanceChild()) publishEvent(new BudgetStart());
     }
 
     /** C15/C16: stop the service, then settle — inline, or by asking the balance child and waiting for its answer. */
-    private void teardown() {
+    private void complete() {
         C ctx = getContext();
-        flow.teardown(ctx, this);
+        flow.complete(ctx, this);
         if (ctx.endCause == null) ctx.endCause = CallCause.NORMAL_CLEARING;
         if (flow.balanceChildSettles()) {
             publishEvent(new SettleRequest());
@@ -278,7 +278,7 @@ public final class CallFlowSupervisor<C extends CallFlowContext> extends Supervi
         C ctx = getContext();
         if (ctx == null || ctx.outcome != null) return;        // already closed, or a forced end raced the reset
         stampEnd(ctx, outcome, flow.kit().clock().millis());
-        flow.end(ctx, outcome, this);
+        if (FAILED.equals(outcome)) flow.failed(ctx, this); else flow.close(ctx, outcome, this);
         writeSessionRecord(ctx, outcome);
     }
 

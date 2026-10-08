@@ -1,6 +1,7 @@
 package com.telcobright.seed.callflow.api;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.seed.callflow.internal.ChannelSlots;
 import com.telcobright.seed.callflow.internal.FlowCounters;
@@ -13,7 +14,8 @@ import java.util.function.Supplier;
 /**
  * The base call processing pipeline: the ONE flow every application's call runs — a voice call, an SMS, an ad view.
  * An application extends this class and says only its own steps ({@link CallFlowSteps}); everything below is the same
- * for all of them and cannot be overridden.
+ * for all of them and cannot be overridden. The owner's five verbs (2026-10-05) are the base's named steps: {@link #admission},
+ * {@link #routing}, {@link #rerouting}, {@link #established}, {@link #complete} — and {@link #failed} / {@link #close} for the end.
  *
  * <pre>
  *   PREPROCESSING   resolve the tenant → build the task → select the candidates
@@ -79,7 +81,13 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
      * partner → the tenant chain leaf to root (check, slot, authorize, root rules, rate, reserve) → the route → confirm.
      * {@code SIMULATE} walks and rates the same way and moves nothing.
      */
-    public final AdmissionVerdict admit(C ctx, StepMode mode) { return admission.admitFirstCandidate(ctx, mode); }
+    public final AdmissionVerdict admission(C ctx, StepMode mode) { return admission.admitFirstCandidate(ctx, mode); }
+
+    /**
+     * ADMITTING, after every tier reserved · ROUTING: the route resolved at the root (C8) — the application's {@link CallFlowSteps#resolveRoute}
+     * as one named step of the base, so the trace reads {@code RESOLVE_ROUTE} for every flow. {@code root} is null for a free call with no partner.
+     */
+    public final String routing(C ctx, Tenant root) { return step(ctx, "RESOLVE_ROUTE", () -> resolveRoute(ctx, root)); }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // ADMITTED · ACTIVE
@@ -102,7 +110,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
      * signaling starts again on the plan's hop — on the same admission: nothing is re-admitted or re-reserved, and the base's balance
      * child lives on. False = the call fails with that cause.
      */
-    public final boolean retry(C ctx, String failureCause, CallMachine machine) {
+    public final boolean rerouting(C ctx, String failureCause, CallMachine machine) {
         recordFailedAttempt(ctx, failureCause);
         if (!safely(ctx, "nextAttempt", () -> nextAttempt(ctx, failureCause), false)) return false;
         ctx.attempts++;
@@ -189,7 +197,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         guarded(ctx, "onAnswered", () -> onAnswered(ctx, grant));
     }
 
-    public final void active(C ctx, CallMachine machine) {
+    public final void established(C ctx, CallMachine machine) {
         ctx.activatedAtMs = kit.clock().millis();
         guarded(ctx, "onActive", () -> onActive(ctx, machine));
     }
@@ -230,7 +238,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
      * TEARING_DOWN: stop the service, then settle every tier — here, or in the balance child when the application settles
      * asynchronously (the supervisor then asks the child with {@code SettleRequest} and takes its {@code Settled}).
      */
-    public final void teardown(C ctx, CallMachine machine) {
+    public final void complete(C ctx, CallMachine machine) {
         guarded(ctx, "STOP_SERVICE", () -> stopService(ctx, machine));
         if (!balanceChildSettles()) guarded(ctx, "SETTLE", () -> settle(ctx));
     }
@@ -251,7 +259,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
      * The end of every call, whatever its outcome: the service is stopped, every tier is settled, the slot is free, the
      * CDR is published, the application closes its own. No step's failure stops the next.
      */
-    public final void end(C ctx, String outcome, CallMachine machine) {
+    public final void close(C ctx, String outcome, CallMachine machine) {
         guarded(ctx, "STOP_SERVICE", () -> stopService(ctx, machine));
         guarded(ctx, "SETTLE", () -> settle(ctx));
         guarded(ctx, "RELEASE_SLOT", () -> slots.release(ctx.sessionKey));
@@ -259,6 +267,9 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         guarded(ctx, "ON_ENDED", () -> onEnded(ctx, outcome));
         counters.ended.incrementAndGet();
     }
+
+    /** FAILED · the owner's {@code failed()}: the same close as every end — the service stopped, every reserve settled or given back, the slot free, the record published. */
+    public final void failed(C ctx, CallMachine machine) { close(ctx, CallState.FAILED, machine); }
 
     private void stopService(C ctx, CallMachine machine) {
         if (ctx.tornDown) return;
@@ -292,7 +303,7 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
         ctx.traced = true;
         String refusal = preprocess(ctx);
         if (refusal != null) return DryRun.of(false, refusal, ctx);
-        AdmissionVerdict verdict = admit(ctx, StepMode.SIMULATE);
+        AdmissionVerdict verdict = admission(ctx, StepMode.SIMULATE);
         return DryRun.of(verdict.accepted(), verdict.rejectCause(), ctx);
     }
 

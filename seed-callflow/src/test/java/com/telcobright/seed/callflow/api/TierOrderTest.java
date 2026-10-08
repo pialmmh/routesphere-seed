@@ -101,7 +101,7 @@ class TierOrderTest {
 
     private static AdmissionVerdict admit(VoiceFlow flow, VoiceFlow.Call call) {
         assertThat(flow.preprocess(call)).isNull();
-        return flow.admit(call, StepMode.LIVE);
+        return flow.admission(call, StepMode.LIVE);
     }
 
     private Partner partner(String tenantDb, int id) {
@@ -177,7 +177,7 @@ class TierOrderTest {
         assertThat(second.rejectCause()).isEqualTo("RETAIL_CHANNEL_LIMIT_REACHED");
         assertThat(slotsOf(voice).activeOf("res_44", 701)).as("the second call's partner slot was taken, then given back").isEqualTo(1);
         assertThat(voice.accountActive(OWN_DID)).isEqualTo(1);
-        voice.end(first, CallState.FAILED, Scene.NO_MACHINE);
+        voice.close(first, CallState.FAILED, Scene.NO_MACHINE);
         assertThat(slotsOf(voice).activeOf("res_44", 701)).isZero();
         assertThat(voice.accountActive(OWN_DID)).isZero();
     }
@@ -210,7 +210,7 @@ class TierOrderTest {
         assertThat(scene.ledger.journal()).extracting(InMemoryLedger.Entry::verb, InMemoryLedger.Entry::reference)
             .as("the leaf reserved; the root refused before ITS reserve; the leaf given back").containsExactly(tuple("reserve", "o-11#L0"), tuple("release", "o-11#L0"));
         assertThat(slotsOf(voice).activeOf("res_44", 701)).isZero();
-        voice.end(call, CallState.FAILED, Scene.NO_MACHINE);
+        voice.close(call, CallState.FAILED, Scene.NO_MACHINE);
         assertThat(voice.accountActive(OWN_DID)).as("the account given back at the end, as v2 releases it at FAILED").isZero();
     }
 

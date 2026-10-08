@@ -36,12 +36,12 @@ class CdrWireTest {
         AdFlow.View view = Scene.view("ad-wire-1", "dhaka-zone");
         view.createdAtMs = Instant.parse("2026-10-03T04:00:00Z").toEpochMilli();          // 10:00:00 in Dhaka
         assertThat(ad.preprocess(view)).isNull();
-        assertThat(ad.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(ad.admission(view, StepMode.LIVE).accepted()).isTrue();
         if (shown) view.answeredAtMs = Instant.parse("2026-10-03T04:00:02Z").toEpochMilli();
         view.durationSec = shown ? 15 : 0;
         view.endCause = shown ? "NORMAL_CLEARING" : "NOT_SHOWN";
         view.endedAtMs = Instant.parse("2026-10-03T04:00:17Z").toEpochMilli();
-        ad.end(view, shown ? CallState.SUCCEEDED : CallState.FAILED, Scene.NO_MACHINE);
+        ad.close(view, shown ? CallState.SUCCEEDED : CallState.FAILED, Scene.NO_MACHINE);
         return JSON.readTree(scene.cdrs.of("ad-wire-1").get(0).json());
     }
 

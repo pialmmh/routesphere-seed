@@ -33,12 +33,12 @@ class CallFlowAdmissionTest {
 
     private AdmissionVerdict admit(VoiceFlow.Call call) {
         assertThat(voice.preprocess(call)).isNull();
-        return voice.admit(call, StepMode.LIVE);
+        return voice.admission(call, StepMode.LIVE);
     }
 
     private AdmissionVerdict admit(AdFlow.View view) {
         assertThat(ad.preprocess(view)).isNull();
-        return ad.admit(view, StepMode.LIVE);
+        return ad.admission(view, StepMode.LIVE);
     }
 
     private static BigDecimal money(String amount) { return new BigDecimal(amount); }
@@ -180,7 +180,7 @@ class CallFlowAdmissionTest {
         assertThat(admit(second).rejectCause()).isEqualTo(CallCause.CHANNEL_LIMIT_REACHED);
 
         first.outcome = CallState.FAILED;
-        voice.end(first, CallState.FAILED, Scene.NO_MACHINE);
+        voice.close(first, CallState.FAILED, Scene.NO_MACHINE);
         VoiceFlow.Call third = Scene.call("c-22", "10.0.0.3", "01712345678");
         assertThat(admit(third).accepted()).isTrue();
     }
@@ -288,7 +288,7 @@ class CallFlowAdmissionTest {
         VoiceFlow traced = scene.voice(Scene.settings(2).withDebug(true));
         VoiceFlow.Call loud = Scene.call("c-40", "10.0.0.7", "01712345678");
         assertThat(traced.preprocess(loud)).isNull();
-        assertThat(traced.admit(loud, StepMode.LIVE).accepted()).isTrue();
+        assertThat(traced.admission(loud, StepMode.LIVE).accepted()).isTrue();
         VoiceFlow.Call quiet = Scene.call("c-41", "10.0.0.9", "01712345678");
         assertThat(admit(quiet).accepted()).isTrue();
         VoiceFlow.Call refused = Scene.call("c-42", "10.0.0.7", "01912345678");
@@ -314,7 +314,7 @@ class CallFlowAdmissionTest {
         VoiceFlow.Call call = Scene.call("c-30", "10.0.0.7", "01712345678");
         assertThat(broken.preprocess(call)).isNull();
 
-        AdmissionVerdict verdict = broken.admit(call, StepMode.LIVE);
+        AdmissionVerdict verdict = broken.admission(call, StepMode.LIVE);
 
         assertThat(verdict.rejectCause()).isEqualTo(CallCause.INTERNAL_ERROR);
         assertThat(scene.ledger.balanceOf("res_44", 701)).isEqualByComparingTo("100.00");

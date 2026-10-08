@@ -48,12 +48,12 @@ class CallFlowBudgetTest {
 
     private AdmissionVerdict admit(VoiceFlow.Call call) {
         assertThat(voice.preprocess(call)).isNull();
-        return voice.admit(call, StepMode.LIVE);
+        return voice.admission(call, StepMode.LIVE);
     }
 
     private AdmissionVerdict admit(AdFlow.View view) {
         assertThat(ad.preprocess(view)).isNull();
-        return ad.admit(view, StepMode.LIVE);
+        return ad.admission(view, StepMode.LIVE);
     }
 
     private long elapsedSince(Instant start) { return clock.millis() - start.toEpochMilli(); }

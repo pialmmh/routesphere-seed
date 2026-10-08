@@ -97,7 +97,7 @@ final class AdmissionChain<C extends CallFlowContext> {
     private String walkCandidate(C ctx, Walk walk) {
         EntryPartner entry = flow.step(ctx, "IDENTIFY_ENTRY_PARTNER", () -> flow.identifyEntryPartner(ctx));
         String refusal = entry == null ? admitWithoutPartner(ctx) : admitThroughTenantChain(ctx, entry, walk);
-        if (refusal == null) refusal = flow.step(ctx, "RESOLVE_ROUTE", () -> flow.resolveRoute(ctx, walk.root));
+        if (refusal == null) refusal = flow.routing(ctx, walk.root);
         if (refusal == null) refusal = confirm(ctx, walk);
         return refusal;
     }

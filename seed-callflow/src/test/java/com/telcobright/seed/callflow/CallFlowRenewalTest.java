@@ -287,7 +287,7 @@ class CallFlowRenewalTest {
         VoiceFlow voice = scene.voice(Scene.settings(4).withReservePeriodSec(60));
         VoiceFlow.Call call = Scene.call("rw-5", "10.0.0.7", "01712345678");
         assertThat(voice.preprocess(call)).isNull();
-        assertThat(voice.admit(call, StepMode.LIVE).accepted()).isTrue();
+        assertThat(voice.admission(call, StepMode.LIVE).accepted()).isTrue();
 
         assertThat(voice.renewReserves(call)).as("the second minute is held at both tiers").isEqualTo(60.0);
         assertThat(voice.renewReserves(call)).as("the third cannot be: 0.30 is left of 1.50").isZero();
@@ -305,7 +305,7 @@ class CallFlowRenewalTest {
         };
         VoiceFlow.Call call = Scene.call("rw-6", "10.0.0.7", "01712345678");
         assertThat(free.preprocess(call)).isNull();
-        assertThat(free.admit(call, StepMode.LIVE).accepted()).isTrue();
+        assertThat(free.admission(call, StepMode.LIVE).accepted()).isTrue();
         long reservesBefore = scene.ledger.count("reserve");
 
         assertThat(free.renewReserves(call)).as("a zero-rated tier and a tier that does not renew both keep the cadence").isEqualTo(60.0);
@@ -316,7 +316,7 @@ class CallFlowRenewalTest {
         VoiceFlow.Call faulting = Scene.call("rw-7", "10.0.0.7", "01712345678");
         scene.ledger.heal();
         assertThat(voice.preprocess(faulting)).isNull();
-        assertThat(voice.admit(faulting, StepMode.LIVE).accepted()).isTrue();
+        assertThat(voice.admission(faulting, StepMode.LIVE).accepted()).isTrue();
         scene.ledger.faultOn("res_44", 701);
 
         assertThat(voice.renewReserves(faulting)).as("a ledger fault never cuts a call").isEqualTo(60.0);

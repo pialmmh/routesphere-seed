@@ -70,7 +70,7 @@ class CallFlowHeldTierTest {
         VoiceFlow.Call call = call("h-1");
 
         assertThat(voice.preprocess(call)).isNull();
-        AdmissionVerdict verdict = voice.admit(call, StepMode.LIVE);
+        AdmissionVerdict verdict = voice.admission(call, StepMode.LIVE);
 
         assertThat(verdict.accepted()).isTrue();
         assertThat(voice.dryRunSeen).isFalse();
@@ -92,7 +92,7 @@ class CallFlowHeldTierTest {
         VoiceFlow.Call call = call("h-2");
         voice.preprocess(call);
 
-        AdmissionVerdict verdict = voice.admit(call, StepMode.LIVE);
+        AdmissionVerdict verdict = voice.admission(call, StepMode.LIVE);
 
         assertThat(verdict.accepted()).isFalse();
         assertThat(verdict.rejectCause()).isEqualTo(CallCause.INSUFFICIENT_BALANCE);
@@ -107,7 +107,7 @@ class CallFlowHeldTierTest {
         VoiceFlow.Call call = call("h-3");
         voice.preprocess(call);
 
-        AdmissionVerdict verdict = voice.admit(call, StepMode.LIVE);
+        AdmissionVerdict verdict = voice.admission(call, StepMode.LIVE);
 
         assertThat(verdict.accepted()).isFalse();
         assertThat(verdict.rejectCause()).isEqualTo("NO_BALANCE_INT_OUT");
@@ -121,7 +121,7 @@ class CallFlowHeldTierTest {
         VoiceFlow.Call call = call("h-4");
         voice.preprocess(call);
 
-        AdmissionVerdict verdict = voice.admit(call, StepMode.LIVE);
+        AdmissionVerdict verdict = voice.admission(call, StepMode.LIVE);
 
         assertThat(verdict.accepted()).isFalse();
         assertThat(verdict.rejectCause()).isEqualTo(CallCause.BILLING_SYSTEM_ERROR);
@@ -133,7 +133,7 @@ class CallFlowHeldTierTest {
         SteppedVoice voice = voice("held-zero");
         VoiceFlow.Call call = call("h-7");
         voice.preprocess(call);
-        assertThat(voice.admit(call, StepMode.LIVE).accepted()).isTrue();
+        assertThat(voice.admission(call, StepMode.LIVE).accepted()).isTrue();
         assertThat(call.levels.get(0).getTotalReserved()).isEqualByComparingTo("0");
         assertThat(call.levels.get(0).getReservationCount()).isEqualTo(1);
 
@@ -165,7 +165,7 @@ class CallFlowHeldTierTest {
 
         VoiceFlow.Call live = call("h-6");
         voice.preprocess(live);
-        voice.admit(live, StepMode.LIVE);
+        voice.admission(live, StepMode.LIVE);
         assertThat(live.dryRun).isFalse();
     }
 }

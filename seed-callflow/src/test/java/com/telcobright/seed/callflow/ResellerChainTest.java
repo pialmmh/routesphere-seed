@@ -90,7 +90,7 @@ class ResellerChainTest {
 
     private AdmissionVerdict admit(VoiceFlow flow, VoiceFlow.Call call) {
         assertThat(flow.preprocess(call)).isNull();
-        return flow.admit(call, StepMode.LIVE);
+        return flow.admission(call, StepMode.LIVE);
     }
 
     @AfterEach

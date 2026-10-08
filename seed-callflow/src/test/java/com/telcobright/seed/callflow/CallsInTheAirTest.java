@@ -40,7 +40,7 @@ class CallsInTheAirTest {
         AdFlow.View view = Scene.view(id, "dhaka-zone");
         view.createdAtMs = Instant.parse("2026-10-05T04:00:00Z").toEpochMilli();
         assertThat(flow.preprocess(view)).isNull();
-        assertThat(flow.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(flow.admission(view, StepMode.LIVE).accepted()).isTrue();
         assertThat(flow.handOver(view, () -> true)).as("handed over").isTrue();
         return view;
     }
@@ -64,7 +64,7 @@ class CallsInTheAirTest {
         AdFlow.View ended = handedOver(first, "air-3");
         ended.endedAtMs = Instant.parse("2026-10-05T04:00:20Z").toEpochMilli();
         ended.endCause = "NOT_SHOWN";
-        first.end(ended, CallState.FAILED, Scene.NO_MACHINE);                        // its own end published its record before the kill
+        first.close(ended, CallState.FAILED, Scene.NO_MACHINE);                        // its own end published its record before the kill
         assertThat(journal.inTheAir()).isEqualTo(2);
         Path left = whatAKillLeaves(dir.resolve("air.jsonl"));
 
@@ -127,7 +127,7 @@ class CallsInTheAirTest {
         AdFlow flow = scene.withJournal(refusing).ad(Scene.settings(4), true);
         AdFlow.View view = Scene.view("air-r1", "dhaka-zone");
         assertThat(flow.preprocess(view)).isNull();
-        assertThat(flow.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(flow.admission(view, StepMode.LIVE).accepted()).isTrue();
         boolean[] asked = {false};
 
         assertThat(flow.handOver(view, () -> asked[0] = true)).as("not handed over").isFalse();
@@ -143,7 +143,7 @@ class CallsInTheAirTest {
         AdFlow flow = scene.withJournal(journal).ad(Scene.settings(4), true);
         AdFlow.View view = Scene.view("air-f1", "dhaka-zone");
         assertThat(flow.preprocess(view)).isNull();
-        assertThat(flow.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(flow.admission(view, StepMode.LIVE).accepted()).isTrue();
         assertThat(journal.inTheAir()).as("F9: its reserves are on its line from the first reserve").isEqualTo(1);
 
         assertThat(flow.handOver(view, () -> false)).as("the fact said no: its end took it first").isFalse();
@@ -182,7 +182,7 @@ class CallsInTheAirTest {
         AdFlow.View view = Scene.view("f9-1", "dhaka-zone");
         view.createdAtMs = Instant.parse("2026-10-08T03:20:11Z").toEpochMilli();
         assertThat(first.preprocess(view)).isNull();
-        assertThat(first.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(first.admission(view, StepMode.LIVE).accepted()).isTrue();
         assertThat(whatTheKillLeft[0]).as("the copy was taken at tier 0's reserve").isNotNull();
         assertThat(before.ledger.balanceOf("res_44", 702)).as("the dead process's reserve stands with the ledger").isEqualByComparingTo("99.50");
         assertThat(before.ledger.balanceOf("btcl", 44)).isEqualByComparingTo("99.60");
@@ -232,7 +232,7 @@ class CallsInTheAirTest {
         AdFlow.View view = Scene.view("f9-u1", "paying-zone");
         view.createdAtMs = Instant.parse("2026-10-08T03:20:11Z").toEpochMilli();
         assertThat(first.preprocess(view)).isNull();
-        assertThat(first.admit(view, StepMode.LIVE).accepted()).as("nobody can pay at the root").isFalse();
+        assertThat(first.admission(view, StepMode.LIVE).accepted()).as("nobody can pay at the root").isFalse();
         assertThat(before.ledger.count("release")).as("the switch released every candidate's tier 0 itself").isGreaterThanOrEqualTo(1);
         long releasedByTheSwitch = before.ledger.count("release");
         Path left = whatAKillLeaves(file);                                                // killed before the end published the record
@@ -287,7 +287,7 @@ class CallsInTheAirTest {
         for (int i = 0; i < warm + n; i++) {
             AdFlow.View view = Scene.view("cost-" + i, "dhaka-zone");
             assertThat(flow.preprocess(view)).isNull();
-            assertThat(flow.admit(view, StepMode.LIVE).accepted()).isTrue();
+            assertThat(flow.admission(view, StepMode.LIVE).accepted()).isTrue();
             views.add(view);
         }
         for (AdFlow.View view : views.subList(0, warm)) { flow.handOver(view, () -> true); journal.done(view.sessionKey); }   // the JIT's warm-up
