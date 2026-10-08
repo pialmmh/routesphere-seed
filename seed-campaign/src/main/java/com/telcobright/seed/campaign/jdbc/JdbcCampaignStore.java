@@ -22,6 +22,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -468,13 +470,19 @@ public final class JdbcCampaignStore implements CampaignStore {
 
     // ── a start repairs what a dead process left ────────────────────────────
 
-    private static final String CLOSE_WHAT_IS_NOT_FINAL = """
-        UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, END_TIME_MILLIS = ?, HANGUP_CAUSE = ?
-        WHERE TASK_TYPE = ? AND tenantName = ? AND STATE NOT IN (?, ?)""";
-    private static final String COUNT_THE_TASKS = """
-        SELECT CAMPAIGN_ID, SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END), SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END),
-          SUM(CASE WHEN STATE IN (?, ?) THEN 0 ELSE 1 END)
-        FROM campaign_task WHERE TASK_TYPE = ? GROUP BY CAMPAIGN_ID""";
+    /**
+     * ARCH-0067 item 2 (prime-context PC-0014 §8 #4): the start's repair names the OPEN states — every {@link TaskState} whose
+     * {@code terminal()} is false — as an {@code IN} list, so the index of W42 ({@code ix_campaign_task_repair_at_start}: TASK_TYPE, STATE,
+     * CAMPAIGN_ID) is sought; a {@code NOT IN} cannot seek it. The list is DERIVED from the enum, in its order, never written by hand: a
+     * state added later is in it the day it is added ({@code RepairSeeksTheIndexTest} and {@code StoreBatchAndRepairTest} hold it to the enum).
+     */
+    static final List<Integer> OPEN_STATE_CODES = Arrays.stream(TaskState.values()).filter(s -> !s.terminal()).map(TaskState::code).toList();
+    private static final String OPEN_STATES_IN = "STATE IN (" + String.join(", ", Collections.nCopies(OPEN_STATE_CODES.size(), "?")) + ")";
+    static final String CLOSE_WHAT_IS_NOT_FINAL = "UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, END_TIME_MILLIS = ?, HANGUP_CAUSE = ?"
+        + " WHERE TASK_TYPE = ? AND tenantName = ? AND " + OPEN_STATES_IN;
+    static final String COUNT_THE_TASKS = "SELECT CAMPAIGN_ID, SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END), SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END),"
+        + " SUM(CASE WHEN " + OPEN_STATES_IN + " THEN 1 ELSE 0 END)"
+        + " FROM campaign_task WHERE TASK_TYPE = ? GROUP BY CAMPAIGN_ID";
     private static final String COUNTERS_ON_THE_ROWS = "SELECT CAMPAIGN_ID, COALESCE(SENT_TASK_COUNT, 0), COALESCE(FAILED_TASK_COUNT, 0),"
         + " COALESCE(PENDING_TASK_COUNT, 0) FROM campaign WHERE CAMPAIGN_TYPE = ? FOR UPDATE";
     private static final String SET_ON_THE_ROW = "UPDATE campaign SET SENT_TASK_COUNT = ?, FAILED_TASK_COUNT = ?, PENDING_TASK_COUNT = ?,"
@@ -538,10 +546,16 @@ public final class JdbcCampaignStore implements CampaignStore {
             ps.setString(5, cause);
             ps.setString(6, kind.name());
             ps.setString(7, tenantName);
-            ps.setInt(8, TaskState.FAILED.code());
-            ps.setInt(9, TaskState.SENT.code());
+            bindTheOpenStates(ps, 8);
             return ps.executeUpdate();
         }
+    }
+
+    /** The open states' codes bound from {@code first} on; the next free index. */
+    private static int bindTheOpenStates(PreparedStatement ps, int first) throws SQLException {
+        int i = first;
+        for (int code : OPEN_STATE_CODES) ps.setInt(i++, code);
+        return i;
     }
 
     /** Campaign → {sent, failed, not final} as the task rows of this kind say (every tenant's rows: a campaign's counter is one). */
@@ -550,9 +564,8 @@ public final class JdbcCampaignStore implements CampaignStore {
         try (PreparedStatement ps = c.prepareStatement(COUNT_THE_TASKS)) {
             ps.setInt(1, TaskState.SENT.code());
             ps.setInt(2, TaskState.FAILED.code());
-            ps.setInt(3, TaskState.SENT.code());
-            ps.setInt(4, TaskState.FAILED.code());
-            ps.setString(5, kind.name());
+            int next = bindTheOpenStates(ps, 3);
+            ps.setString(next, kind.name());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) counted.put(rs.getInt(1), new int[] {rs.getInt(2), rs.getInt(3), rs.getInt(4)});
             }

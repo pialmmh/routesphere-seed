@@ -10,6 +10,7 @@ import com.telcobright.seed.campaign.jdbc.JdbcCampaignStore.Counters;
 import com.telcobright.seed.campaign.spi.CampaignStore;
 import com.telcobright.seed.campaign.spi.StoreChange;
 import com.telcobright.seed.campaign.spi.StoreRepair;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -21,6 +22,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -199,6 +201,43 @@ class StoreBatchAndRepairTest {
         StoreRepair again = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start.plusSeconds(1));
         assertThat(again.nothing()).as("a store that is right is left alone").isTrue();
         assertThat(again.words()).isEmpty();
+    }
+
+    // ── ARCH-0067 item 2: the repair seeks the index — STATE IN the open states, derived from TaskState ──
+
+    /** One task in EVERY state of the enum: the start closes exactly the non-terminal ones and the counters count them as the rows say. */
+    @ParameterizedTest
+    @EnumSource(Dialect.class)
+    void a_start_closes_every_non_terminal_state_of_the_enum_and_leaves_every_terminal_one(Dialect d) throws Exception {
+        for (Counters where : Counters.values()) everyStateOfTheEnum(CampaignCounterTableTest.open(d), d, where);
+    }
+
+    static void everyStateOfTheEnum(DataSource ds, Dialect d, Counters where) throws Exception {
+        JdbcCampaignStore store = CampaignCounterTableTest.store(ds, d, where);
+        for (TaskState state : TaskState.values()) {
+            store.insertTask(task("s-" + state.code(), "wroot", 42));
+            try (Connection c = ds.getConnection(); var st = c.createStatement()) {
+                st.execute("UPDATE campaign_task SET STATE = " + state.code() + " WHERE uniqueId = 's-" + state.code() + "'");
+            }
+        }
+        int[] before = where == Counters.CAMPAIGN_ROW ? counters(ds, where, 42) : new int[3];     // the counter table has no row before the repair makes it
+        Instant start = T0.plusSeconds(600);
+
+        StoreRepair repair = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start);
+
+        List<TaskState> open = Arrays.stream(TaskState.values()).filter(s -> !s.terminal()).toList();
+        assertThat(repair.tasksClosed()).as("every non-terminal state closed: " + open).isEqualTo(open.size());
+        for (TaskState state : TaskState.values()) {
+            int closed = rows(ds, "uniqueId = 's-" + state.code() + "' AND STATE = " + TaskState.FAILED.code() + " AND HANGUP_CAUSE = 'LOST_AT_RESTART'");
+            assertThat(closed).as(state + (state.terminal() ? " is terminal: left as it is" : " is open: closed LOST_AT_RESTART")).isEqualTo(state.terminal() ? 0 : 1);
+        }
+        int[] now = counters(ds, where, 42);
+        assertThat(now[2]).as("pending = the rows not final: none").isZero();
+        if (where == Counters.COUNTER_TABLE) {
+            assertThat(now).as("the counter table: SET from the rows — sent 1 (SENT's own), failed 1 + the closed ones").containsExactly(1, 1 + open.size(), 0);
+        } else {
+            assertThat(now).as("the campaign's own row (others write it too): sent and failed only raised").containsExactly(Math.max(before[0], 1), Math.max(before[1], 1 + open.size()), 0);
+        }
     }
 
     // ── a data source that counts ────────────────────────────────────────────
