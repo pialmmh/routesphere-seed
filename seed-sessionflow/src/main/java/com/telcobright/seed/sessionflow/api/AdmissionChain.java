@@ -24,8 +24,12 @@ import java.util.Optional;
 final class AdmissionChain<C extends SessionFlowContext> {
 
     private final SessionFlow<C> flow;
+    private final SpanRotation<C> rotation;
 
-    AdmissionChain(SessionFlow<C> flow) { this.flow = flow; }
+    AdmissionChain(SessionFlow<C> flow) {
+        this.flow = flow;
+        this.rotation = new SpanRotation<>(flow, this);
+    }
 
     /** The working state of one candidate's walk: the tiers reserved so far. It never leaves the walk. */
     private static final class Walk {
@@ -346,6 +350,12 @@ final class AdmissionChain<C extends SessionFlowContext> {
         if (next == null || !next.reserves() || level.getDebitReference() == null) return period;
         String reference = level.getDebitReference() + "#W" + (level.getReservationCount() + 1);
         String refusal = reserve(ctx, level, next.reserveAmount(), reference, SessionCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
-        return refusal == null || SessionCause.BILLING_SYSTEM_ERROR.equals(refusal) ? period : 0;
+        if (refusal == null || SessionCause.BILLING_SYSTEM_ERROR.equals(refusal)) return period;
+        return rotation.rotateOrCut(ctx, level, next) ? period : 0;                     // O4: the next account, or the money ended
+    }
+
+    /** A renewal's reserve for the rotation (O4): the fresh series' first window, under its own reference. Null = held. */
+    String reserveForRenewal(C ctx, LevelAdmission level, BigDecimal amount, String reference) {
+        return reserve(ctx, level, amount, reference, SessionCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
     }
 }

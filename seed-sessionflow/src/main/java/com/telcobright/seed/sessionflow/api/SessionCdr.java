@@ -47,15 +47,24 @@ final class SessionCdr<C extends SessionFlowContext> {
         String cause = flow.cdrCause(ctx, outcome);
         if (ctx.levels.isEmpty()) return unadmitted(ctx, serviceGroup, cause);
         List<CdrEvent> tiers = new ArrayList<>(ctx.levels.size());
-        for (int i = 0; i < ctx.levels.size(); i++) tiers.add(tier(ctx, i, serviceGroup, cause));
+        for (int i = 0; i < ctx.levels.size(); i++) tiers.addAll(tier(ctx, i, serviceGroup, cause));
         return tiers;
     }
 
-    private CdrEvent tier(C ctx, int index, int serviceGroup, String cause) {
+    /** One record per tier — and, for a tier that rotated its account (O4), one record per span: the closed ones, then the live one. */
+    private List<CdrEvent> tier(C ctx, int index, int serviceGroup, String cause) {
         LevelAdmission level = ctx.levels.get(index);
         TierSettlement settlement = index < ctx.settlements.size() ? ctx.settlements.get(index) : null;
-        CdrEvent cdr = assembler.tierRecord(ctx, level, settlement, serviceGroup, cause, flow.paysInMoney(level.getUom()));
-        return sealed(ctx, level, cdr);
+        boolean money = flow.paysInMoney(level.getUom());
+        if (!rotated(ctx, level)) return List.of(sealed(ctx, level, assembler.tierRecord(ctx, level, settlement, serviceGroup, cause, money)));
+        List<CdrEvent> spans = new ArrayList<>(ctx.closedSpans.size() + 1);
+        for (ClosedSpan span : ctx.closedSpans) spans.add(sealed(ctx, span.level(), assembler.spanRecord(ctx, span, serviceGroup, cause, money)));
+        spans.add(sealed(ctx, level, assembler.lastSpanRecord(ctx, level, settlement, serviceGroup, cause, money)));
+        return spans;
+    }
+
+    private static boolean rotated(SessionFlowContext ctx, LevelAdmission level) {
+        return !ctx.closedSpans.isEmpty() && ctx.closedSpans.get(0).level().getLevelIndex() == level.getLevelIndex();
     }
 
     /** Nobody was admitted (or the call was free and had no tier): one record on the tenant the call entered. */

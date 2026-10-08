@@ -108,6 +108,7 @@ A step that refuses returns the cause. Null means "passed". A step keeps nothing
 | | `nextAttempt` | the v1 ritual on `ctx.routePlan`: RETRY_SAME = the same hop again; REROUTE = the next hop while one is left and the attempts are under the plan's cap (3); the attempt is recorded first; the same reserve, nothing re-admitted | | its own: the next route | |
 | ACTIVE | `onActive` | nothing | recording | ends at once | credit window |
 | | `rateNextWindow` | no renewal | one more minute | | |
+| | `nextAccount` (O4) | none: the money ended | none | | the WiFi: the next queued purchase — the base settles the current account for everything it held, closes the span (one record of its own, `<sid>.<n>`) and opens a fresh series on the next account; the last span is charged by `ctx.spanSeconds()` |
 | | `renewWindowSeconds` (C14, in seconds) | the default: `rateNextWindow` held through the ledger → the period; refused → 0; no rate, zero-rated or a ledger fault → the period | the switch's own billing: a whole unit, else the remainder in seconds, under its minimum 0 | | |
 | end | `settlesAsync` | false: TEARING_DOWN settles inline | true: the balance child settles and answers | | |
 | | `onTeardown` | nothing | hang up both legs | | |
@@ -215,6 +216,7 @@ for nothing. `SessionFlowBudgetTest` is the example.
 
 ## 10 · History
 
+- 2026-10-09 — the owner's "session base class": seed-callflow → seed-sessionflow, `CallFlow` → `SessionFlow` and every Call-named base type → Session (B1, move-only; hooks, verbs, `Cdr*` and every string unchanged). B2: `SessionFlowContext.task` (a `CampaignTask` every session kind carries) closed by the base in `close()` — `CLOSE_TASK`, after the CDR — and handed to the kit's `TaskSink` (`CampaignService.closed(row)` keeps the counters); `CampaignKind.WIFI`. O4: `nextAccount(ctx, level)` — a tier whose account cannot fund the next window rotates onto the next one (the WiFi's one purchase per device, the next queued): the current account settled for everything it held and closed as a `ClosedSpan`, a fresh series on the next account, ONE CDR RECORD PER ACCOUNT (`<sid>.<n>`, the same `callId`; billing keys a record on the id and the tenant); the tiers above keep one record.
 - 2026-09-29 — the first shape, ad-only: `RoutedSessionSupervisor`, `ChainAdmission`, `AdBillingPort`, `LevelCdrWriter` (the switch wrote its
   own CDR rows).
 - 2026-10-03 — the base pipeline (`SessionFlow`); ad-sphere moved onto it (`AdCallFlow`) and the ad-only classes were removed. The orchestrix

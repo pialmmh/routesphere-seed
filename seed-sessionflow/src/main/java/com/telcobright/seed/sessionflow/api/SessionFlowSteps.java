@@ -265,6 +265,18 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
      */
     protected String cutForBalance(C ctx) { return SessionCause.BALANCE_EXHAUSTED; }
 
+    /**
+     * ACTIVE · A tier's account could not fund the next window (C14): the NEXT account to carry the session on, or null — the money
+     * ended (the default: a call has one account). The WiFi's B17: one purchase per device, the next queued; the ledger said the current
+     * purchase cannot hold one more minute, and the flow answers the next purchase's id (its own ask of the BSS). The base then
+     * ROTATES the tier: the current account is settled for everything it held (every window held was used), the tier's reserve series
+     * closes as a {@link ClosedSpan} — one record of its own at the end, {@code <sid>.<n>} — and a fresh series opens on the next
+     * account under {@code <sid>.<n+1>#L<tier>} with the window held at once; a next account that cannot fund its first window is the
+     * cut, as a null is. Only the tier whose account changes splits; the tiers above keep their one series and one record. An
+     * application that rotates charges the LAST span at the end by {@link SessionFlowContext#spanSeconds()}, not the whole duration.
+     */
+    protected Long nextAccount(C ctx, LevelAdmission level) { return null; }
+
     /** After the settlement · Did the call succeed? The default: it was answered and the service ran. */
     protected boolean succeeded(C ctx) { return ctx.activatedAtMs > 0; }
 

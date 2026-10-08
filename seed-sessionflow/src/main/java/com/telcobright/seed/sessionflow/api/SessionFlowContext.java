@@ -106,6 +106,21 @@ public class SessionFlowContext extends SessionContext {
     public volatile List<TierSettlement> settlements = List.of();
     /** Every reserve of this call was settled, exactly once. */
     public volatile boolean reservesClosed;
+    /**
+     * The reserve series a tier closed mid-session (O4, the WiFi's B17: the purchase could not fund the next window, the next one took
+     * over), in order — each settled for everything it held, each one record of its own ({@code <sid>.<n>}). Empty = nothing rotated.
+     */
+    public volatile List<ClosedSpan> closedSpans = List.of();
+    /** When the LIVE span of the rotating tier began (the last rotation). 0 = the session's own activation. */
+    public volatile long spanStartedAtMs;
+    /** The number of the live span: 1 when nothing rotated. */
+    public int spanNo() { return closedSpans.size() + 1; }
+    /** The seconds of the live span: the billed duration less the closed spans' seconds — the whole duration when nothing rotated. */
+    public double spanSeconds() {
+        double closed = 0;
+        for (ClosedSpan span : closedSpans) closed += span.seconds();
+        return Math.max(0, durationSec - closed);
+    }
     /** The base's own: the balance child's cut, armed for the end of a partial window (C14). Null = none armed. */
     public transient volatile ScheduledFuture<?> balanceCut;
     /** The CDR of this call went to the sink. */

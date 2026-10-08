@@ -94,6 +94,16 @@ public final class InMemoryLedger implements LedgerPort {
         return balances.getOrDefault(keyOf(tenant, partnerId), BigDecimal.ZERO);
     }
 
+    /** One ACCOUNT of a partner (a purchase), with its own balance: a tier charged on it ({@code chargeAccountId}) moves its money, not the partner's. */
+    public synchronized InMemoryLedger fundAccount(String tenant, int partnerId, long accountId, String amount) {
+        balances.put(accountKeyOf(tenant, partnerId, accountId), new BigDecimal(amount));
+        return this;
+    }
+
+    public synchronized BigDecimal balanceOfAccount(String tenant, int partnerId, long accountId) {
+        return balances.getOrDefault(accountKeyOf(tenant, partnerId, accountId), BigDecimal.ZERO);
+    }
+
     /** Reserves that were neither settled nor released. Zero when no call is live. */
     public synchronized int openReserves() { return heldByTier.size(); }
 
@@ -146,14 +156,15 @@ public final class InMemoryLedger implements LedgerPort {
         if (refusing.containsKey(key)) throw new LedgerRefusal(refusing.get(key), "scripted for " + key);
         Reservation seen = reservesByReference.get(reference);
         if (seen != null) return Optional.of(new Reservation(seen.account(), seen.uom(), seen.reserved(), seen.balanceBefore(), seen.balanceAfter(), true));
-        BigDecimal before = balances.getOrDefault(key, BigDecimal.ZERO);
+        String money = moneyKeyOf(level);
+        BigDecimal before = balances.getOrDefault(money, BigDecimal.ZERO);
         if (before.compareTo(amount) < 0) {
-            note("refused", reference, level, amount, "balance " + before);
+            note("refused", reference, level, amount, "balance " + before + " on " + money);
             return Optional.empty();
         }
         BigDecimal after = before.subtract(amount);
-        balances.put(key, after);
-        Reservation held = new Reservation(accountOf(key), units.getOrDefault(key, "BDT"), amount, before, after, false);
+        balances.put(money, after);
+        Reservation held = new Reservation(accountOf(money), units.getOrDefault(key, "BDT"), amount, before, after, false);
         reservesByReference.put(reference, held);
         heldByTier.merge(tierOf(reference), amount, BigDecimal::add);
         note("reserve", reference, level, amount, null);
@@ -167,7 +178,7 @@ public final class InMemoryLedger implements LedgerPort {
         TierSettlement done = closedTiers.get(tier);
         if (done != null) return done;
         if (settlementsFail) throw new LedgerFault("the ledger did not take the settlement (scripted) of " + tier);
-        String key = keyOf(level.getDbName(), level.getPartnerId());
+        String key = moneyKeyOf(level);
         BigDecimal held = heldByTier.remove(tier);
         if (held == null) held = BigDecimal.ZERO;
         BigDecimal after = balances.getOrDefault(key, BigDecimal.ZERO).add(held.subtract(charged));
@@ -184,7 +195,7 @@ public final class InMemoryLedger implements LedgerPort {
         String tier = level.getDebitReference();
         if (closedTiers.containsKey(tier)) return;
         if (settlementsFail) throw new LedgerFault("the ledger did not take the release (scripted) of " + tier);
-        String key = keyOf(level.getDbName(), level.getPartnerId());
+        String key = moneyKeyOf(level);
         BigDecimal held = heldByTier.remove(tier);
         if (held == null) held = BigDecimal.ZERO;
         BigDecimal after = balances.getOrDefault(key, BigDecimal.ZERO).add(held);
@@ -205,5 +216,19 @@ public final class InMemoryLedger implements LedgerPort {
 
     private static String keyOf(String tenant, int partnerId) { return tenant + "#" + partnerId; }
 
-    private static Long accountOf(String key) { return (long) Math.abs(key.hashCode() % 100_000); }
+    private static String accountKeyOf(String tenant, int partnerId, long accountId) { return keyOf(tenant, partnerId) + "@" + accountId; }
+
+    /** The balance a tier moves: the account it is charged on when that account is funded here, else the partner's. */
+    private String moneyKeyOf(LevelAdmission level) {
+        String partner = keyOf(level.getDbName(), level.getPartnerId());
+        if (level.getChargeAccountId() == null) return partner;
+        String account = partner + "@" + level.getChargeAccountId();
+        return balances.containsKey(account) ? account : partner;
+    }
+
+    /** A funded account answers its own id; a partner's balance answers a stable made-up one. */
+    private static Long accountOf(String key) {
+        int at = key.indexOf('@');
+        return at >= 0 ? Long.parseLong(key.substring(at + 1)) : (long) Math.abs(key.hashCode() % 100_000);
+    }
 }

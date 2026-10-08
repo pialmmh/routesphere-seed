@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.SessionFlowContext;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
+import com.telcobright.seed.sessionflow.api.ClosedSpan;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 
 import java.math.BigDecimal;
@@ -50,6 +51,38 @@ public final class CdrAssembler {
         cdr.packageAmount = paidInMoney ? BigDecimal.ZERO : charged;
         noteTier(cdr, level, settlement);
         return cdr;
+    }
+
+    /**
+     * O4 · The record of one CLOSED span of a tier that rotated its account: the same tier and partner, its own id {@code <sid>.<n>}
+     * (billing keys a record on the id and the tenant: one per purchase), its own account, charge, wall-clock and seconds; the session's
+     * cause, with the span's own end in the meta data. {@code callId} stays the session's: the spans correlate by it.
+     */
+    public CdrEvent spanRecord(SessionFlowContext ctx, ClosedSpan span, int serviceGroup, String hangupCause, boolean paidInMoney) {
+        CdrEvent cdr = tierRecord(ctx, span.level(), span.settlement(), serviceGroup, hangupCause, paidInMoney);
+        long answeredAt = span.spanNo() == 1 ? ctx.answeredAtMs : span.startedAtMs();
+        asSpan(cdr, ctx, span.level(), span.spanNo(), span.startedAtMs(), answeredAt, span.endedAtMs(), span.seconds());
+        cdr.meta.put("spanEnd", "NEXT_ACCOUNT");
+        return cdr;
+    }
+
+    /** O4 · The record of the LIVE span of a tier that rotated: {@code <sid>.<n>}, from the last rotation to the end. */
+    public CdrEvent lastSpanRecord(SessionFlowContext ctx, LevelAdmission level, TierSettlement settlement, int serviceGroup, String hangupCause,
+                                   boolean paidInMoney) {
+        CdrEvent cdr = tierRecord(ctx, level, settlement, serviceGroup, hangupCause, paidInMoney);
+        asSpan(cdr, ctx, level, ctx.spanNo(), ctx.spanStartedAtMs, ctx.spanStartedAtMs, ctx.endedAtMs, ctx.spanSeconds());
+        return cdr;
+    }
+
+    private void asSpan(CdrEvent cdr, SessionFlowContext ctx, LevelAdmission level, int spanNo, long startedAtMs, long answeredAtMs, long endedAtMs,
+                        double seconds) {
+        cdr.channelCallUuid = ctx.sessionKey + "." + spanNo;
+        cdr.startTime = wallClock(startedAtMs);
+        cdr.answerTime = wallClock(answeredAtMs);
+        cdr.endTime = wallClock(endedAtMs);
+        cdr.durationSec = BigDecimal.valueOf(seconds);
+        cdr.idPackageAccount = level.getPackageAccountId() != null ? level.getPackageAccountId() : level.getChargeAccountId();
+        cdr.meta.put("span", spanNo);
     }
 
     /** The one record of a call nobody was admitted for: on the tenant it entered, zero amounts, its cause. */

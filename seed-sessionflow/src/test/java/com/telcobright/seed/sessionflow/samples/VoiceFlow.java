@@ -17,6 +17,9 @@ import com.telcobright.statewalk.registry.InternalEventResolver;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,6 +54,8 @@ public class VoiceFlow extends SessionFlow<VoiceFlow.Call> {
      * @param partnerBySourceIp the entry partner of a source address
      * @param ratePerMinute     the rate per minute of a tier's partner, by {@code tenant#partner}
      */
+    private final Map<String, Deque<Long>> queuedAccounts = new ConcurrentHashMap<>();
+
     public VoiceFlow(SessionFlowKit kit, Map<String, Integer> partnerBySourceIp, Map<String, BigDecimal> ratePerMinute, Iterable<Route> routes) {
         super(kit);
         this.partnerBySourceIp = partnerBySourceIp;
@@ -138,12 +143,25 @@ public class VoiceFlow extends SessionFlow<VoiceFlow.Call> {
         machine.spawnChild(Wire.TYPE, new Wire.Leg(call));
     }
 
-    /** Every started minute is charged; an unanswered call pays nothing. */
+    /** Every started minute is charged; an unanswered call pays nothing. A tier that rotated its account (O4) charges its LAST span only. */
     @Override
     protected BigDecimal chargeAtSettle(Call call, LevelAdmission level) {
         if (!call.answered()) return BigDecimal.ZERO;
-        long minutes = Math.max(1, (long) Math.ceil(call.durationSec / 60.0));
+        double seconds = level.getLevelIndex() == 0 ? call.spanSeconds() : call.durationSec;
+        long minutes = Math.max(1, (long) Math.ceil(seconds / 60.0));
         return level.getRate().multiply(BigDecimal.valueOf(minutes));
+    }
+
+    /** B17 scripted: the accounts (purchases) queued for a partner, taken in order when the current one cannot fund the next window. */
+    public VoiceFlow queue(String tenant, int partnerId, Long... accounts) {
+        queuedAccounts.put(tenant + "#" + partnerId, new ArrayDeque<>(List.of(accounts)));
+        return this;
+    }
+
+    @Override
+    protected Long nextAccount(Call call, LevelAdmission level) {
+        Deque<Long> queued = queuedAccounts.get(level.getDbName() + "#" + level.getPartnerId());
+        return queued == null ? null : queued.pollFirst();
     }
 
     /** The call switch's shape: a balance child holds the tiers, renews them while the call runs and settles them when it ends. */
