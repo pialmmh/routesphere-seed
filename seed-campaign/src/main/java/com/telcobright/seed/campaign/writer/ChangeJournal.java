@@ -17,11 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The changes of ONE store that are not in it yet, on disk — one line per change, in the order they were told:
+ * The changes of ONE store on disk — one line per change, in the order they were told (ARCH-0065 F10: EVERY change is a line, written
+ * before it is queued, so a death of the process loses nothing the service told):
  *
  * <ul>
- *   <li>{@code <name>.jsonl} — the journal: a change that was told while the queue was full (a line instead of a wait), and what a
- *       stop found still unwritten.</li>
+ *   <li>{@code <name>.jsonl} — the journal: every change told since the file was last emptied; {@code <name>.applied} counts its lines
+ *       that are in the store (the writer marks them, batch by batch). A start replays the lines after that count; the file is emptied
+ *       when everything in it is applied.</li>
  *   <li>{@code <name>.replaying.jsonl} — the journal while its lines are being written into the store: it was the journal, set aside
  *       in one rename so that new lines start a new journal; {@code <name>.replaying.done} counts its lines already in the store.</li>
  *   <li>{@code <name>.rejected.jsonl} — a change the store refused by its own rules, with why: never written again by itself; an
@@ -37,6 +39,7 @@ final class ChangeJournal {
     private final Path main;
     private final Path replaying;
     private final Path done;
+    private final Path applied;
     private final Path rejected;
     private final ChangeCodec codec = new ChangeCodec();
 
@@ -44,6 +47,7 @@ final class ChangeJournal {
         this.main = dir.resolve(name + ".jsonl");
         this.replaying = dir.resolve(name + ".replaying.jsonl");
         this.done = dir.resolve(name + ".replaying.done");
+        this.applied = dir.resolve(name + ".applied");
         this.rejected = dir.resolve(name + ".rejected.jsonl");
         try {
             Files.createDirectories(dir);
@@ -89,6 +93,45 @@ final class ChangeJournal {
 
     /** Does the journal hold a line now? */
     boolean hasLines() { return Files.exists(main); }
+
+    // ── F10: the journal's lines are the changes told; the writer marks how many are in the store ──
+
+    /** The lines of the journal after the first {@code skip}: what a start replays, what the writer reads when the queue could not hold a change. */
+    Lines mainLines(long skip) { return new Lines(main, skip); }
+
+    /** That many lines of the journal, from its first, are in the store (one small file, written whole and renamed into place). */
+    void applied(long lines) {
+        Path next = applied.resolveSibling(applied.getFileName() + ".tmp");
+        write(next, Long.toString(lines), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        move(next, applied);
+    }
+
+    /** How many lines of the journal a stopped process had marked as in the store (0 = none, or the mark cannot be read). */
+    long appliedLines() {
+        if (!Files.exists(applied)) return 0;
+        try {
+            return Long.parseLong(Files.readString(applied, StandardCharsets.UTF_8).trim());
+        } catch (IOException | NumberFormatException e) {
+            log.warn("{} could not be read ({}): the journal is written into the store from its first line again — a task row is made once, the counters are set at the start", applied, e.toString());
+            return 0;
+        }
+    }
+
+    /** Everything in the journal is in the store: the file and its mark go. */
+    void emptied() {
+        delete(main);
+        delete(applied);
+    }
+
+    /** The journal's lines pushed to the disk (the writer does it once per batch it applied — never a teller). */
+    void fsync() {
+        if (!Files.exists(main)) return;
+        try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(main, StandardOpenOption.WRITE)) {
+            ch.force(false);
+        } catch (IOException e) {
+            log.warn("the journal {} could not be pushed to the disk ({}): a power cut could lose its last lines; a kill cannot", main, e.toString());
+        }
+    }
 
     /** The journal is set aside to be written into the store; new lines start a new journal. False = there is no journal. */
     boolean setAsideForReplay() {

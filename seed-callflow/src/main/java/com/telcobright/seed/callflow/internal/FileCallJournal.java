@@ -25,6 +25,9 @@ import java.util.Map;
  * The {@link CallJournal} in one file of JSON lines, appended to and never edited in place:
  *
  * <pre>
+ *   {"k":"a","id":"…","at":…,"r":[ …the entry tier at 0.00… ]}      the first reserve (F9): the record if the call is never handed over
+ *   {"k":"h","id":"…","at":…,"t":{tier,root,tenant,partnerId,account,uom,amount,ref}}   one reserve, as held
+ *   {"k":"u","id":"…","ref":"…"}                                     a reserve the switch gave back itself (a refused candidate)
  *   {"k":"v","id":"…","at":1791134779751,"r":[ …the records… ]}      the hand-over
  *   {"k":"n","id":"…","at":…,"ans":1791134780102,"sec":5.0}          what was learned since (the last one counts)
  *   {"k":"d","id":"…"}                                               the call's own record was published
@@ -50,9 +53,11 @@ public final class FileCallJournal implements CallJournal {
     private FileChannel channel;
     private long size;
 
-    private record Open(String handOver, String note) {
-        Open noted(String line) { return new Open(handOver, line); }
-        String lines() { return note == null ? handOver : handOver + note; }
+    /** The lines of one call in the air, as written: the reserve lines, the hand-over, the last note. */
+    private static final class Open {
+        final StringBuilder reserves = new StringBuilder();
+        String handOver, note;
+        String lines() { return reserves + (handOver == null ? "" : handOver) + (note == null ? "" : note); }
     }
 
     public FileCallJournal(Path file) { this(file, ROLL_BYTES); }
@@ -66,10 +71,35 @@ public final class FileCallJournal implements CallJournal {
     }
 
     @Override
+    public synchronized void reserved(String callId, long atMs, String records, Held held) {
+        Open call = open.get(callId);
+        if (call == null) {
+            call = new Open();
+            String first = "{\"k\":\"a\",\"id\":" + quoted(callId) + ",\"at\":" + atMs + ",\"r\":" + records + "}\n";
+            append(first);
+            call.reserves.append(first);
+            open.put(callId, call);
+        }
+        String line = "{\"k\":\"h\",\"id\":" + quoted(callId) + ",\"at\":" + atMs + ",\"t\":" + heldJson(held) + "}\n";
+        append(line);
+        call.reserves.append(line);
+    }
+
+    @Override
+    public synchronized void released(String callId, String reference) {
+        Open call = open.get(callId);
+        if (call == null) return;
+        String line = "{\"k\":\"u\",\"id\":" + quoted(callId) + ",\"ref\":" + quoted(reference) + "}\n";
+        append(line);
+        call.reserves.append(line);
+    }
+
+    @Override
     public synchronized void handedOver(String callId, long atMs, String records) {
         String line = "{\"k\":\"v\",\"id\":" + quoted(callId) + ",\"at\":" + atMs + ",\"r\":" + records + "}\n";
         append(line);
-        open.put(callId, new Open(line, null));
+        Open call = open.computeIfAbsent(callId, k -> new Open());
+        call.handOver = line;
     }
 
     @Override
@@ -78,7 +108,24 @@ public final class FileCallJournal implements CallJournal {
         if (was == null) return;
         String line = "{\"k\":\"n\",\"id\":" + quoted(callId) + ",\"at\":" + atMs + ",\"ans\":" + answeredAtMs + ",\"sec\":" + billedSec + "}\n";
         append(line);
-        open.put(callId, was.noted(line));
+        was.note = line;
+    }
+
+    private static String heldJson(Held h) {
+        try {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("tier", h.tier());
+            m.put("root", h.root());
+            m.put("tenant", h.tenant());
+            m.put("partnerId", h.partnerId());
+            m.put("account", h.account());
+            m.put("uom", h.uom());
+            m.put("amount", h.amount());
+            m.put("ref", h.reference());
+            return JSON.writeValueAsString(m);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("a reserve that is not JSON: " + h, e);
+        }
     }
 
     @Override
@@ -167,17 +214,27 @@ public final class FileCallJournal implements CallJournal {
         List<Leftover> out = new ArrayList<>();
         for (Map.Entry<String, Left> c : calls.entrySet()) {
             Left l = c.getValue();
-            if (l.done || l.records == null) continue;
-            out.add(new Leftover(c.getKey(), l.handedOverAt, l.records, l.answeredAt, l.billedSec, Math.max(l.handedOverAt, l.notedAt)));
-            open.put(c.getKey(), new Open(l.handOverLine, l.noteLine));
+            if (l.done) continue;
+            boolean handedOver = l.records != null;
+            String records = handedOver ? l.records : l.firstRecords;
+            if (records == null) continue;                                           // nothing to publish and nothing held: no line of use
+            long last = Math.max(Math.max(l.handedOverAt, l.notedAt), l.reservedAt);
+            out.add(new Leftover(c.getKey(), l.handedOverAt, records, l.answeredAt, l.billedSec, last, handedOver, new ArrayList<>(l.held.values())));
+            Open o = new Open();
+            o.reserves.append(l.reserveLines);
+            o.handOver = l.handOverLine;
+            o.note = l.noteLine;
+            open.put(c.getKey(), o);
         }
         return out;
     }
 
     /** The facts of one call, from its lines in their order. */
     private static final class Left {
-        String records, handOverLine, noteLine;
-        long handedOverAt, answeredAt, notedAt;
+        String records, firstRecords, handOverLine, noteLine;
+        final StringBuilder reserveLines = new StringBuilder();
+        final Map<String, Held> held = new LinkedHashMap<>();
+        long handedOverAt, answeredAt, notedAt, reservedAt;
         double billedSec;
         boolean done;
     }
@@ -189,6 +246,9 @@ public final class FileCallJournal implements CallJournal {
             if (id == null) return false;
             Left l = calls.computeIfAbsent(id, k -> new Left());
             switch (n.path("k").asText()) {
+                case "a" -> { l.firstRecords = n.path("r").toString(); l.reservedAt = n.path("at").asLong(); l.reserveLines.append(line).append('\n'); }
+                case "h" -> { Held h = heldOf(n.path("t")); l.held.put(h.reference(), h); l.reservedAt = n.path("at").asLong(); l.reserveLines.append(line).append('\n'); }
+                case "u" -> { l.held.remove(n.path("ref").asText()); l.reserveLines.append(line).append('\n'); }
                 case "v" -> { l.records = n.path("r").toString(); l.handedOverAt = n.path("at").asLong(); l.handOverLine = line + "\n"; }
                 case "n" -> { l.answeredAt = n.path("ans").asLong(); l.billedSec = n.path("sec").asDouble(); l.notedAt = n.path("at").asLong(); l.noteLine = line + "\n"; }
                 case "d" -> l.done = true;
@@ -198,6 +258,12 @@ public final class FileCallJournal implements CallJournal {
         } catch (JsonProcessingException notJson) {
             return false;
         }
+    }
+
+    private static Held heldOf(JsonNode t) {
+        return new Held(t.path("tier").asInt(), t.path("root").asText(null), t.path("tenant").asText(null), t.path("partnerId").asInt(),
+            t.path("account").isNumber() ? t.path("account").asLong() : null, t.path("uom").asText(null),
+            t.path("amount").isMissingNode() || t.path("amount").isNull() ? java.math.BigDecimal.ZERO : t.path("amount").decimalValue(), t.path("ref").asText(null));
     }
 
     /** Read as bytes: a line cut in the middle of a character is still read (and skipped), never a failure of the start. */

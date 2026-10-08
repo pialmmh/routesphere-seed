@@ -1,6 +1,7 @@
 package com.telcobright.seed.callflow.api;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.callflow.internal.CdrAssembler;
 import com.telcobright.seed.callflow.internal.CdrJson;
@@ -98,33 +99,78 @@ final class CallCdr<C extends CallFlowContext> {
         return CdrJson.ofCall(tiers);
     }
 
-    /** What the start published of the calls a stopped process left in the air. */
-    record LeftInTheAir(int calls, BigDecimal money, BigDecimal units) {
-        static final LeftInTheAir NOTHING = new LeftInTheAir(0, BigDecimal.ZERO, BigDecimal.ZERO);
+    /**
+     * What the start published of the calls a stopped process left in the air: {@code calls} handed over (charged as reserved);
+     * {@code neverHandedOver} with reserves and no hand-over (F9) — {@code returned} of their reserves given back ({@code returnedMoney}),
+     * {@code owed} not given back (the ledger refused or did not answer: one ERROR each, the reference in it).
+     */
+    record LeftInTheAir(int calls, BigDecimal money, BigDecimal units, int neverHandedOver, int returned, BigDecimal returnedMoney, int owed) {
+        static final LeftInTheAir NOTHING = new LeftInTheAir(0, BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, BigDecimal.ZERO, 0);
     }
 
     /**
-     * Before the first call: every call a stopped process left in the air is published as it was made at its hand-over, with the
-     * last facts the switch had learned of it — the end = the last moment it knew of the call, the answer, the seconds — and its line
-     * is done. A call whose record cannot be read stays in the journal for the next start (one ERROR).
+     * Before the first call: every call a stopped process left in the air is published — one HANDED OVER as it was made at its
+     * hand-over, with the last facts the switch had learned of it (the end = the last moment it knew of the call, the answer, the
+     * seconds); one with reserves and NO hand-over (F9) with every reserve given back first (the ledger's release by its reference —
+     * the ad's return road, else its owed journal; a release the ledger refuses is OWED: one ERROR with the reference) and its record
+     * the entry tier at 0.00 — and its line is done. A call whose record cannot be read stays in the journal for the next start (one ERROR).
      */
     LeftInTheAir publishLeftovers() {
         CallJournal journal = flow.kit().journal();
-        int calls = 0;
-        BigDecimal money = BigDecimal.ZERO, units = BigDecimal.ZERO;
+        int calls = 0, neverHandedOver = 0, returned = 0, owed = 0;
+        BigDecimal money = BigDecimal.ZERO, units = BigDecimal.ZERO, returnedMoney = BigDecimal.ZERO;
         for (CallJournal.Leftover left : journal.leftovers()) {
             List<CdrEvent> tiers = recordsOfLeftover(left);
             if (tiers.isEmpty()) continue;
+            if (!left.handedOver()) {
+                neverHandedOver++;
+                for (CallJournal.Held held : left.reserves()) {
+                    if (giveBack(left.callId(), held)) { returned++; returnedMoney = returnedMoney.add(held.amount() == null ? BigDecimal.ZERO : held.amount()); }
+                    else owed++;
+                }
+                for (CdrEvent cdr : tiers) { cdr.inPartnerCost = BigDecimal.ZERO; cdr.packageAmount = BigDecimal.ZERO; cdr.answerTime = null; cdr.durationSec = BigDecimal.ZERO; }
+            } else {
+                calls++;
+            }
             flow.kit().cdrSink().publish(left.callId(), tiers);
             flow.counters().cdrPublished.incrementAndGet();
             journal.done(left.callId());
-            calls++;
             for (CdrEvent cdr : tiers) {
                 money = money.add(cdr.inPartnerCost == null ? BigDecimal.ZERO : cdr.inPartnerCost);
                 units = units.add(cdr.packageAmount == null ? BigDecimal.ZERO : cdr.packageAmount);
             }
         }
-        return calls == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units);
+        return calls == 0 && neverHandedOver == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units, neverHandedOver, returned, returnedMoney, owed);
+    }
+
+    /**
+     * F9: one reserve of a call that was never handed over, given back through the kit's ledger by its reference — the tier found again
+     * in the call's own tree (the lookup by root and database name), else named by its database name alone; the partner the tier's own
+     * row, else a shell with the id. False = the ledger refused or did not answer: OWED, one ERROR naming the reference.
+     */
+    private boolean giveBack(String callId, CallJournal.Held held) {
+        try {
+            flow.kit().ledger().release(levelOf(held), CallCause.LOST_AT_RESTART);
+            return true;
+        } catch (RuntimeException e) {
+            flow.counters().owed.incrementAndGet();
+            flow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} of a call a stopped process left before its hand-over was NOT given back: {}",
+                flow.name(), callId, held.reference(), held.amount(), held.uom(), held.tier(), held.tenant(), held.partnerId(), e.toString());
+            return false;
+        }
+    }
+
+    private LevelAdmission levelOf(CallJournal.Held held) {
+        Tenant tier = flow.kit().tenants().tenantByDbName(held.root() == null ? held.tenant() : held.root(), held.tenant()).orElse(null);
+        if (tier == null) tier = new Tenant(held.tenant());
+        Partner partner = tier.getContext() == null || tier.getContext().getPartners() == null ? null : tier.getContext().getPartners().get(held.partnerId());
+        if (partner == null) { partner = new Partner(); partner.setIdPartner(held.partnerId()); }
+        LevelAdmission level = new LevelAdmission(held.tier(), tier, partner, null);
+        level.setDebitReference(held.reference());
+        level.setReservedAmount(held.amount() == null ? BigDecimal.ZERO : held.amount());
+        level.setChargeAccountId(held.account());
+        if (held.uom() != null) level.setUom(held.uom());
+        return level;
     }
 
     private List<CdrEvent> recordsOfLeftover(CallJournal.Leftover left) {

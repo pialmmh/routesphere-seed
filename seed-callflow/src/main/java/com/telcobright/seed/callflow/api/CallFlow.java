@@ -152,6 +152,13 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
     }
 
     /**
+     * F9: the record the next start publishes for this call if the process dies after a reserve and before the hand-over — the entry
+     * tier at 0.00, ended LOST_AT_RESTART (made while the walk holds its tiers: the context's own levels are still empty, so this is the
+     * unadmitted record on the entry tenant and its partner).
+     */
+    final String recordsIfLostBeforeHandOver(C ctx) { return cdr.lostRecordsOf(ctx); }
+
+    /**
      * What the switch learned of a call in the air since its hand-over: its answer, the seconds it is billed for so far. The next
      * start's record of the call says them if the process dies before the call's end. Never fails the call.
      */
@@ -170,9 +177,11 @@ public abstract class CallFlow<C extends CallFlowContext> extends CallFlowSteps<
      */
     public final void publishWhatWasLeftInTheAir() {
         CallCdr.LeftInTheAir left = cdr.publishLeftovers();
-        if (left.calls() == 0) return;
-        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved — {} in money and {} in units over every tier",
-            name(), left.calls(), kit.journal().where(), CallCause.LOST_AT_RESTART, left.money().toPlainString(), left.units().toPlainString());
+        if (left.calls() == 0 && left.neverHandedOver() == 0) return;
+        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved — {} in money and {} in units over every tier;"
+            + " and {} call(s) that had reserved and were never handed over (F9): {} reserve(s) given back ({} in money), {} not given back (OWED, each named above), each one record at 0.00 on its entry tier",
+            name(), left.calls(), kit.journal().where(), CallCause.LOST_AT_RESTART, left.money().toPlainString(), left.units().toPlainString(),
+            left.neverHandedOver(), left.returned(), left.returnedMoney().toPlainString(), left.owed());
     }
 
     public final void answered(C ctx, Object grant) {

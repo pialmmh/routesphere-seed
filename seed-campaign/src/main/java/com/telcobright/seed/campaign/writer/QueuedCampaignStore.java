@@ -24,19 +24,24 @@ import java.util.concurrent.locks.ReentrantLock;
  * must, never not at all — and a task never waits for the store.
  *
  * <ul>
- *   <li><b>Telling never waits.</b> {@code insertTask}, {@code updateTask}, {@code bumpCounters} and {@code markComplete} put their
- *       change on the queue and return. The queue is bounded: when it is full the caller writes one line of the journal instead
- *       ({@link ChangeJournal}), and so does every later change until the writer has caught up — the order of the telling is kept.</li>
+ *   <li><b>Telling never waits.</b> {@code insertTask}, {@code updateTask}, {@code bumpCounters} and {@code markComplete} write their
+ *       change as ONE line of the journal (ARCH-0065 F10: on the caller's thread, one append, before anything else), put it on the queue
+ *       and return. The queue is bounded: when it is full the change stays in the journal only, and the writer reads it from there when
+ *       it has caught up — the order of the telling is the order of the lines.</li>
  *   <li><b>One thread writes</b>, in batches, each batch ONE transaction of the store ({@link CampaignStore#write}): the task rows of
- *       the batch and, per campaign, one counter statement with the batch's sums.</li>
+ *       the batch and, per campaign, one counter statement with the batch's sums. After each batch it pushes the journal to the disk and
+ *       marks how many of its lines are in the store ({@code <name>.applied}); when everything told is in the store the journal is
+ *       emptied, as the journal of the calls in the air is.</li>
  *   <li><b>A batch that failed is written again</b>, after a wait that grows to a cap, for as long as the process lives: one ERROR
  *       when it starts failing, one INFO when it writes again. A change the store refuses by its own rules (a key, a width — not the
  *       store being away or not ready) must not hold the others: after a few tries the batch is written change by change, and such a
  *       change is put aside in {@code <name>.rejected.jsonl} with one ERROR.</li>
- *   <li><b>A clean stop loses nothing:</b> the queue is drained for a bounded time; what could not be written is put in the journal,
- *       and the next start writes it before the first task.</li>
- *   <li><b>A start repairs what a dead process left</b> ({@link CampaignStore#repairAfterRestart}): after a kill there is no journal,
- *       so every task that is not final is closed and the counters are made to say what the task rows say.</li>
+ *   <li><b>A clean stop loses nothing:</b> the queue is drained for a bounded time; what could not be written stays in the journal
+ *       (it was there from the telling), and the next start writes it before the first task.</li>
+ *   <li><b>A start replays what a dead process left</b> (F10, R-2 S3 (c): 12 served views closed LOST_AT_RESTART and 15 rows never
+ *       written, out of the queue that died with the process): the journal's lines after the applied mark are written into the store
+ *       before the first task — then, when {@code repairFor} names the tenant, the store is repaired ({@link CampaignStore#repairAfterRestart}):
+ *       every task still not final is closed and the counters are made to say what the task rows say.</li>
  * </ul>
  *
  * A reader of the store's counters must see what was told before it asked: {@link #campaigns} waits for that ({@link #awaitWritten}).
@@ -49,8 +54,8 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
      * What the writer knows of itself, for a health page and a test.
      *
      * @param settled  the changes that are in the store, or were put aside as rejected
-     * @param onDisk   the changes that went to the journal instead of the queue, so far
-     * @param lost     the changes that could not be kept at all (the queue full AND the journal not writable)
+     * @param onDisk   the changes the queue could not hold (they are in the journal only, until the writer reads them), so far
+     * @param lost     the changes that could not be kept at all (the journal not writable AND the queue full)
      */
     public record Stats(long told, long settled, int queued, long onDisk, long rejected, long lost, boolean failing, String lastFailure) {
         /** The changes told that are neither in the store nor put aside nor lost: they wait. */
@@ -72,14 +77,16 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
     private final Condition moreWritten = writtenLock.newCondition();
     private final Thread writer;
 
-    private long seq;                               // guarded by telling
-    private long lastOnDisk;                        // guarded by telling: the last change that went to the journal instead of the queue
-    private volatile boolean onDisk;                // the queue was full: every change goes to the journal until the writer has caught up
+    private long seq;                               // guarded by telling: the last change told; its line is the journal's
+    private long firstSeqInFile = 1;                // guarded by telling: the seq of the journal's first line (it moves when the journal is emptied)
+    /** Guarded by telling: the first change whose line could not be written (the disk): from it on the file's lines no longer stand for the seqs. */
+    private long firstFailedSeq = Long.MAX_VALUE;
+    private volatile boolean unjournaled;           // the last append failed: said once, until it writes again
     private volatile boolean closed;
     private volatile boolean stopping;
     private volatile long stopBy;
-    private volatile long writtenThrough;
-    private volatile List<StoreChange> inHand = List.of();      // the queue's changes the writer holds and has not settled yet
+    private volatile long writtenThrough;           // the last seq whose change is in the store (or put aside): the applied mark
+    private volatile List<StoreChange> inHand = List.of();      // the changes the writer holds and has not settled yet
     private volatile long failingSince;
     private volatile String lastFailure;
     private final AtomicLong settled = new AtomicLong();
@@ -112,7 +119,8 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         if (repairFor != null) queued.repair(repairFor);
         queued.writer.start();
         log.info("campaign store {}: one writer, a queue of {} changes, batches of {} in one transaction; a failed batch is written again every {}–{} ms;"
-            + " the journal of what is not written is {}", name, settings.queue(), settings.batch(), settings.retryFirstMs(), settings.retryCapMs(), queued.journal.file());
+            + " every change is a line of {} before it is queued (F10), emptied when everything in it is in the store", name, settings.queue(), settings.batch(),
+            settings.retryFirstMs(), settings.retryCapMs(), queued.journal.file());
         return queued;
     }
 
@@ -150,35 +158,42 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         return new Stats(toldSoFar(), settled.get(), queue.size(), putOnDisk.get(), rejected.get(), lost.get(), failingSince != 0, lastFailure);
     }
 
-    // ── telling: the queue, or a line on disk; never a wait ─────────────────
+    // ── telling: one line of the journal, then the queue; never a wait ──────
 
+    /**
+     * F10: the change is ONE line of the journal first — on the caller's thread, one append — then on the queue. The queue full: the change
+     * stays in the journal only and the writer reads it from there. The journal not writable: said once, the change goes to the queue
+     * alone (a death would lose it); the queue full too: lost, counted and said.
+     */
     private void tell(StoreChange change) {
         telling.lock();
         try {
             long s = ++seq;
-            if (!onDisk && !closed && queue.offer(new Entry(s, change))) return;
-            putOnDiskInsteadOfWaiting(s, change);
+            boolean journaled = appendTheLine(s, change);
+            if (!closed && queue.offer(new Entry(s, change))) return;
+            if (journaled && s < firstFailedSeq) { putOnDisk.incrementAndGet(); return; }   // the queue is full: the line is the change, the writer reads it
+            long soFar = lost.incrementAndGet();
+            if (soFar == 1 || soFar % 1000 == 0) {
+                log.error("campaign store {}: a change could NOT be kept — the journal {} cannot be written and the queue is full; {} lost so far. The change: {}",
+                    name, journal.file(), soFar, change);
+            }
         } finally {
             telling.unlock();
         }
     }
 
-    private void putOnDiskInsteadOfWaiting(long s, StoreChange change) {
-        if (!onDisk && !closed) {
-            log.warn("campaign store {}: the queue is full ({} changes wait for the store): each change is one line of {} from now on, until the writer has caught up",
-                name, settings.queue(), journal.file());
-        }
-        onDisk = true;
-        lastOnDisk = s;
+    private boolean appendTheLine(long s, StoreChange change) {
         try {
             journal.append(change);
-            putOnDisk.incrementAndGet();
+            if (unjournaled) { unjournaled = false; log.info("campaign store {}: the journal {} takes lines again (its lines after the first one it refused are written again at a start)", name, journal.file()); }
+            return true;
         } catch (RuntimeException e) {
-            long soFar = lost.incrementAndGet();
-            if (soFar == 1 || soFar % 1000 == 0) {
-                log.error("campaign store {}: a change could NOT be kept — the queue is full and the journal {} cannot be written ({}); {} lost so far. The change: {}",
-                    name, journal.file(), e.toString(), soFar, change);
+            if (firstFailedSeq == Long.MAX_VALUE) firstFailedSeq = s;
+            if (!unjournaled) {
+                unjournaled = true;
+                log.error("campaign store {}: a change could not be written to the journal {} ({}): it goes to the queue alone — a death of the process would lose it", name, journal.file(), e.toString());
             }
+            return false;
         }
     }
 
@@ -217,14 +232,45 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
             + (now.failing() ? " (the store does not take them: " + now.lastFailure() + ")" : "") + " — the counts would lag behind what was told");
     }
 
-    private void writtenUpTo(long seqWritten) {
+    /**
+     * The changes up to {@code seqWritten} are in the store: the journal pushed to the disk and its mark moved (F10); the journal emptied
+     * when everything told is in the store; then whoever waits is told.
+     */
+    private void applied(long seqWritten) {
+        if (seqWritten > writtenThrough) {
+            journal.fsync();
+            markOrEmpty(seqWritten);
+            writtenThrough = seqWritten;                              // LAST: a waiter that sees it sees the journal marked or emptied too
+        }
         writtenLock.lock();
         try {
-            if (seqWritten > writtenThrough) writtenThrough = seqWritten;
             moreWritten.signalAll();
         } finally {
             writtenLock.unlock();
         }
+    }
+
+    /** Under the telling lock: nothing told after what is written → the journal is emptied; else its applied mark says how far. */
+    private void markOrEmpty(long seqWritten) {
+        telling.lock();
+        try {
+            if (seqWritten >= seq && queue.isEmpty()) {
+                journal.emptied();
+                firstSeqInFile = seq + 1;
+                firstFailedSeq = Long.MAX_VALUE;
+            } else {
+                journal.applied(linesAppliedUpTo(seqWritten));
+            }
+        } catch (RuntimeException e) {
+            log.warn("campaign store {}: the journal's applied mark could not be written ({}): a start would write its lines again — a task row is made once, the counters are set at the start", name, e.toString());
+        } finally {
+            telling.unlock();
+        }
+    }
+
+    /** Under the telling lock: the journal's lines, from its first, whose change is in the store — none past the first line the disk refused. */
+    private long linesAppliedUpTo(long seqWritten) {
+        return Math.max(0, Math.min(seqWritten, firstFailedSeq - 1) - firstSeqInFile + 1);
     }
 
     // ── the writer ──────────────────────────────────────────────────────────
@@ -234,13 +280,9 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
             while (true) {
                 List<Entry> batch = nextBatch();
                 if (!batch.isEmpty()) {
-                    inHand = changesOf(batch);
-                    List<StoreChange> left = writeUntilWritten(inHand, Long.MAX_VALUE);
-                    inHand = left;
-                    if (!left.isEmpty()) return;                      // a stop could wait no longer: close() keeps what is in hand
-                    writtenUpTo(batch.get(batch.size() - 1).seq());
-                } else if (onDisk && (!closed || journal.hasLines())) {
-                    if (!writeWhatWasPutOnDisk()) return;
+                    if (!writeRuns(batch)) return;
+                } else if (toldSoFar() > writtenThrough) {
+                    if (!applyFromTheJournal(writtenThrough + 1, toldSoFar())) return;   // in the journal only: the queue was full
                 } else if (stopping) {
                     return;
                 }
@@ -248,6 +290,28 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         } catch (RuntimeException e) {
             log.error("campaign store {}: its writer stopped on a fault of its own — what is told from now on waits in the queue and the journal and is written at the next start", name, e);
         }
+    }
+
+    /**
+     * The queue's batch in the order of the telling: a run of consecutive changes is one write; a gap before a change (the queue was full
+     * then) is filled from the journal first. False = a stop could wait no longer: the journal keeps what is not in the store.
+     */
+    private boolean writeRuns(List<Entry> batch) {
+        int i = 0;
+        while (i < batch.size()) {
+            Entry e = batch.get(i);
+            if (e.seq() <= writtenThrough) { i++; continue; }                                         // read from the journal already
+            if (e.seq() > writtenThrough + 1) { if (!applyFromTheJournal(writtenThrough + 1, e.seq() - 1)) return false; continue; }
+            int j = i;
+            while (j + 1 < batch.size() && batch.get(j + 1).seq() == batch.get(j).seq() + 1) j++;
+            inHand = changesOf(batch.subList(i, j + 1));
+            List<StoreChange> left = writeUntilWritten(inHand, Long.MAX_VALUE);
+            inHand = left;
+            if (!left.isEmpty()) return false;
+            applied(batch.get(j).seq());
+            i = j + 1;
+        }
+        return true;
     }
 
     private List<Entry> nextBatch() {
@@ -260,6 +324,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        batch.removeIf(e -> e.seq() <= writtenThrough);                  // read from the journal already
         return batch;
     }
 
@@ -270,40 +335,31 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
     }
 
     /**
-     * The queue is empty and changes went to the journal meanwhile: the journal is set aside, new changes go to the queue again (they
-     * are newer than every line set aside), and the lines are written now — before anything of the queue. False = a stop ended it; the
-     * lines not written stay in the file that was set aside, with the count of the ones that are.
+     * The journal's lines of the changes {@code fromSeq}..{@code toSeq} — the ones the queue could not hold — written into the store in
+     * batches, each counted when it is in the store. False = a stop ended it; the lines not written stay in the journal after its mark.
      */
-    private boolean writeWhatWasPutOnDisk() {
-        long through;
+    private boolean applyFromTheJournal(long fromSeq, long toSeq) {
+        long skip, readable;
         telling.lock();
-        try {
-            if (!queue.isEmpty()) return true;                       // older changes first
-            journal.setAsideForReplay();
-            through = lastOnDisk;
-            if (!closed) onDisk = false;
-        } finally {
-            telling.unlock();
-        }
-        long lines = writeTheLinesSetAside(Long.MAX_VALUE);
-        if (lines < 0) return false;
-        writtenUpTo(through);
-        if (lines > 0) log.info("campaign store {}: the {} change(s) the journal held are in the store; changes wait in the queue again", name, lines);
-        return true;
-    }
-
-    /** The file set aside, batch by batch, each batch counted when it is in the store. -1 = a stop (or the start's wait) ended it first. */
-    private long writeTheLinesSetAside(long giveUpAtNanos) {
-        long changes = 0;
-        try (ChangeJournal.Lines lines = journal.linesSetAside()) {
-            for (List<StoreChange> batch = lines.next(settings.batch()); !batch.isEmpty(); batch = lines.next(settings.batch())) {
-                if (!writeUntilWritten(batch, giveUpAtNanos).isEmpty()) return -1;      // what is left stays in the file, after its count
-                changes += batch.size();
-                journal.wroteSoFar(lines.linesRead());
+        try { skip = fromSeq - firstSeqInFile; readable = Math.min(toSeq, firstFailedSeq - 1); } finally { telling.unlock(); }
+        if (readable < fromSeq) { applied(toSeq); return true; }                   // past the line the disk refused: those changes are in the queue or lost, said then
+        long seqNow = fromSeq - 1;
+        toSeq = readable;
+        try (ChangeJournal.Lines lines = journal.mainLines(skip)) {
+            while (seqNow < toSeq) {
+                int most = (int) Math.min(settings.batch(), toSeq - seqNow);
+                List<StoreChange> batch = lines.next(most);
+                if (batch.isEmpty()) break;                                   // the file ends before toSeq: a line the teller could not write
+                inHand = batch;
+                List<StoreChange> left = writeUntilWritten(batch, Long.MAX_VALUE);
+                inHand = left;
+                if (!left.isEmpty()) return false;
+                seqNow = fromSeq - 1 + lines.linesRead() - skip;
+                applied(seqNow);
             }
         }
-        journal.replayed();
-        return changes;
+        if (seqNow < toSeq) applied(toSeq);                                   // what the file does not hold cannot be written: counted as passed
+        return true;
     }
 
     /**
@@ -383,7 +439,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         if (stopping) return;                                        // a stop that cut a write short: the stop says what it kept, once
         failingSince = System.currentTimeMillis();
         log.error("campaign store {}: a batch of {} change(s) could not be written: {} — it is written again every {}–{} ms until the store takes it; no task waits"
-            + " ({} more wait in the queue, then on disk in {})", name, changes, lastFailure, settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
+            + " ({} more wait in the queue, every one in {})", name, changes, lastFailure, settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
     }
 
     /** The words of the failure's first cause: what the database or the pool said, not this library's sentence around it. */
@@ -438,17 +494,50 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
 
     // ── a start: what a stopped process left, then the repair ───────────────
 
+    /**
+     * F10: the journal's lines after its applied mark — what a stopped process had told and not written — into the store before the
+     * first task; a file of the older shape set aside for replay (a process before F10) first. The start fails by name when the store does
+     * not take them in {@code startWaitMs}; the journal is then kept as it is for the next start.
+     */
     private void writeWhatAStoppedProcessLeft() {
         if (!journal.somethingIsLeft()) return;
         long giveUpAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(settings.startWaitMs());
-        long first = writeTheLinesSetAside(giveUpAt);                // a replay that a stop or a kill cut short: the lines after its count
-        long then = first < 0 ? -1 : journal.setAsideForReplay() ? writeTheLinesSetAside(giveUpAt) : 0;
-        if (first < 0 || then < 0) {
+        long older = writeTheLinesSetAside(giveUpAt);                // a replay a process before F10 left cut short: the lines after its count
+        long own = older < 0 ? -1 : writeTheJournalsLines(giveUpAt);
+        if (older < 0 || own < 0) {
             throw new IllegalStateException("campaign store " + name + ": what a stopped process left in " + journal.file() + " could not be written within "
                 + settings.startWaitMs() + " ms: " + lastFailure + " — the journal is kept as it is");
         }
         failingSince = 0;
-        log.info("campaign store {}: {} change(s) a stopped process had left in {} are in the store now", name, first + then, journal.file());
+        journal.emptied();
+        log.info("campaign store {}: {} change(s) a stopped process had left in {} are in the store now", name, older + own, journal.file());
+    }
+
+    /** The journal's lines after the applied mark, batch by batch, the mark moved as they go in. -1 = the start's wait ran out first. */
+    private long writeTheJournalsLines(long giveUpAtNanos) {
+        long applied = journal.appliedLines(), changes = 0;
+        try (ChangeJournal.Lines lines = journal.mainLines(applied)) {
+            for (List<StoreChange> batch = lines.next(settings.batch()); !batch.isEmpty(); batch = lines.next(settings.batch())) {
+                if (!writeUntilWritten(batch, giveUpAtNanos).isEmpty()) return -1;
+                changes += batch.size();
+                journal.applied(lines.linesRead());
+            }
+        }
+        return changes;
+    }
+
+    /** The file a process before F10 set aside, batch by batch, each batch counted when it is in the store. -1 = the start's wait ran out first. */
+    private long writeTheLinesSetAside(long giveUpAtNanos) {
+        long changes = 0;
+        try (ChangeJournal.Lines lines = journal.linesSetAside()) {
+            for (List<StoreChange> batch = lines.next(settings.batch()); !batch.isEmpty(); batch = lines.next(settings.batch())) {
+                if (!writeUntilWritten(batch, giveUpAtNanos).isEmpty()) return -1;
+                changes += batch.size();
+                journal.wroteSoFar(lines.linesRead());
+            }
+        }
+        journal.replayed();
+        return changes;
     }
 
     private void repair(String tenantName) {
@@ -459,8 +548,8 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
     // ── a clean stop ────────────────────────────────────────────────────────
 
     /**
-     * The queue is drained for at most {@code stopWaitMs}; what the store did not take by then is put in the journal, in its order,
-     * and the next start writes it. A change told after this goes to the journal at once.
+     * The queue is drained for at most {@code stopWaitMs}; what the store did not take by then stays in the journal after its mark (it
+     * was there from the telling), and the next start writes it. A change told after this is a line of the journal alone.
      */
     @Override
     public void close() {
@@ -479,22 +568,20 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        keepWhatWasNotWritten();
+        sayWhatStays();
     }
 
-    private void keepWhatWasNotWritten() {
+    private void sayWhatStays() {
         telling.lock();
         try {
-            List<StoreChange> left = new ArrayList<>(inHand);        // what the writer held (also when it hangs in the store's call: then it may be written twice — a task row is made once, and a start sets the counters)
-            for (Entry e : queue) left.add(e.change());
             queue.clear();
-            boolean heldLines = journal.hasLines();
-            if (left.isEmpty() && !heldLines) { log.info("campaign store {}: stopped; every change is in the store", name); return; }
-            journal.prepend(left);
-            log.warn("campaign store {}: {} change(s) were not in the store when the process stopped{}: they are in {}{} and are written at the next start",
-                name, left.size(), lastFailure == null ? "" : " (" + lastFailure + ")", journal.file(), heldLines ? ", before the lines it held already," : "");
+            long left = seq - writtenThrough;                            // the lines after the mark: what the writer held and what waited
+            if (left <= 0) { journal.emptied(); log.info("campaign store {}: stopped; every change is in the store", name); return; }
+            journal.applied(linesAppliedUpTo(writtenThrough));
+            log.warn("campaign store {}: {} change(s) were not in the store when the process stopped{}: they are in {} after its applied mark and are written at the next start",
+                name, left, lastFailure == null ? "" : " (" + lastFailure + ")", journal.file());
         } catch (RuntimeException e) {
-            log.error("campaign store {}: what was not written could not be put in the journal {}: {}", name, journal.file(), e.toString());
+            log.error("campaign store {}: the journal's mark could not be written at the stop ({}): the next start writes its lines from the mark it has", name, journal.file(), e.toString());
         } finally {
             telling.unlock();
         }
