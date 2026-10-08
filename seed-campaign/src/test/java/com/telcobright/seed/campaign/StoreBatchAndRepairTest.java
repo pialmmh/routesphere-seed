@@ -220,7 +220,7 @@ class StoreBatchAndRepairTest {
                 st.execute("UPDATE campaign_task SET STATE = " + state.code() + " WHERE uniqueId = 's-" + state.code() + "'");
             }
         }
-        int[] before = counters(ds, where, 42);
+        int[] before = where == Counters.CAMPAIGN_ROW ? counters(ds, where, 42) : new int[3];     // the counter table has no row before the repair makes it
         Instant start = T0.plusSeconds(600);
 
         StoreRepair repair = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start);
