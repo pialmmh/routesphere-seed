@@ -43,12 +43,14 @@ public abstract class SessionFlow<C extends SessionFlowContext> extends SessionF
     private final AdmissionChain<C> admission;
     private final SessionSettlement<C> settlement;
     private final SessionCdr<C> cdr;
+    private final SessionTaskClose<C> taskClose;
 
     protected SessionFlow(SessionFlowKit kit) {
         super(kit);
         this.admission = new AdmissionChain<>(this);
         this.settlement = new SessionSettlement<>(this);
         this.cdr = new SessionCdr<>(this);
+        this.taskClose = new SessionTaskClose<>(this);
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -257,13 +259,14 @@ public abstract class SessionFlow<C extends SessionFlowContext> extends SessionF
 
     /**
      * The end of every call, whatever its outcome: the service is stopped, every tier is settled, the slot is free, the
-     * CDR is published, the application closes its own. No step's failure stops the next.
+     * CDR is published, the task record is closed (B2), the application closes its own. No step's failure stops the next.
      */
     public final void close(C ctx, String outcome, SessionMachine machine) {
         guarded(ctx, "STOP_SERVICE", () -> stopService(ctx, machine));
         guarded(ctx, "SETTLE", () -> settle(ctx));
         guarded(ctx, "RELEASE_SLOT", () -> slots.release(ctx.sessionKey));
         guarded(ctx, "PUBLISH_CDR", () -> cdr.publish(ctx, outcome));
+        guarded(ctx, "CLOSE_TASK", () -> taskClose.close(ctx, outcome));
         guarded(ctx, "ON_ENDED", () -> onEnded(ctx, outcome));
         counters.ended.incrementAndGet();
     }

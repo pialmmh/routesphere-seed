@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
 import com.telcobright.seed.sessionflow.spi.SessionJournal;
+import com.telcobright.seed.sessionflow.spi.TaskSink;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
@@ -20,6 +21,7 @@ public final class SessionFlowKit {
     private final CdrSink cdrSink;
     private final SdrSink sdrSink;
     private final SessionJournal journal;
+    private final TaskSink tasks;
     private final Clock clock;
     private final ZoneId zone;
     private final SessionFlowSettings settings;
@@ -31,6 +33,7 @@ public final class SessionFlowKit {
         this.zone = required(b.zone, "zone");
         this.sdrSink = b.sdrSink;
         this.journal = b.journal;
+        this.tasks = b.tasks;
         this.clock = b.clock;
         this.settings = b.settings;
     }
@@ -49,6 +52,8 @@ public final class SessionFlowKit {
 
     /** The calls in the air (R1-6): none unless the host keeps one — then a process death loses no handed-over call's record. */
     public SessionJournal journal() { return journal; }
+    /** Where a closed task row goes (the owner 2026-10-09: every session kind carries a CampaignTask): none unless the host keeps a store. */
+    public TaskSink tasks() { return tasks; }
 
     public Clock clock() { return clock; }
 
@@ -63,6 +68,7 @@ public final class SessionFlowKit {
         private CdrSink cdrSink;
         private SdrSink sdrSink = record -> { };
         private SessionJournal journal = SessionJournal.NONE;
+        private TaskSink tasks = TaskSink.NONE;
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
         private SessionFlowSettings settings = SessionFlowSettings.defaults();
@@ -74,6 +80,7 @@ public final class SessionFlowKit {
         public Builder cdrSink(CdrSink v) { this.cdrSink = v; return this; }
         public Builder sdrSink(SdrSink v) { this.sdrSink = required(v, "sdrSink"); return this; }
         public Builder journal(SessionJournal v) { this.journal = required(v, "journal"); return this; }
+        public Builder tasks(TaskSink v) { this.tasks = required(v, "tasks"); return this; }
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }
         public Builder settings(SessionFlowSettings v) { this.settings = required(v, "settings"); return this; }

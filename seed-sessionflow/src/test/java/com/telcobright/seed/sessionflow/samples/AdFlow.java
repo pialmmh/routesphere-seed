@@ -1,5 +1,9 @@
 package com.telcobright.seed.sessionflow.samples;
 
+import com.telcobright.seed.campaign.api.CampaignKind;
+import com.telcobright.seed.campaign.api.CampaignTask;
+import com.telcobright.seed.campaign.api.TaskCharge;
+import com.telcobright.seed.campaign.api.TaskState;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
@@ -19,6 +23,7 @@ import com.telcobright.statewalk.registry.InternalEventResolver;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -135,9 +140,19 @@ public final class AdFlow extends SessionFlow<AdFlow.View> {
     /** The campaign's quota is claimed last, when every tier has reserved. A dry run claims nothing. */
     @Override
     protected String confirmAdmission(View view, StepMode mode) {
+        if (mode == StepMode.SIMULATE) return null;
         AtomicInteger left = quotaLeft.get(view.playing.id());
-        if (left == null || mode == StepMode.SIMULATE) return null;
-        return left.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0 ? null : "QUOTA_EXHAUSTED";
+        if (left != null && left.getAndUpdate(n -> n > 0 ? n - 1 : 0) <= 0) return "QUOTA_EXHAUSTED";
+        view.task = claimedTask(view);
+        return null;
+    }
+
+    /** The claim's record: the campaign_task row of this view, open (B2: the base closes it at the end). */
+    private CampaignTask claimedTask(View view) {
+        String tenant = view.entryTenant != null ? view.entryTenant.getDbName() : view.tenantName;
+        int payer = view.partner != null ? view.partner.getIdPartner() : 0;
+        return new CampaignTask(view.sessionKey, tenant, view.playing.id(), payer, CampaignKind.AD, view.mac, "creative-" + view.playing.id(),
+            view.zone, null, null, TaskState.PROCESSING, Instant.ofEpochMilli(kit.clock().millis()), null, null, 0, null, TaskCharge.FREE, Map.of());
     }
 
     /** A ledger fault first; then the budget that ran out before every campaign was tried; else nobody could pay. */

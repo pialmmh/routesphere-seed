@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.samples;
 
 import com.telcobright.rtc.domainmodel.PartnerType;
+import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.SessionFlowTimings;
 import com.telcobright.seed.sessionflow.api.SessionMachine;
@@ -60,6 +61,8 @@ public final class Scene {
 
     public final RecordingCdrSink cdrs = new RecordingCdrSink();
     public final List<SdrRecord> sessionRecords = new CopyOnWriteArrayList<>();
+    /** The task rows the base closed (B2), in order. */
+    public final List<CampaignTask> closedTasks = new CopyOnWriteArrayList<>();
     private Clock clock = Clock.system(DHAKA);
     private SessionJournal journal = SessionJournal.NONE;
     private LedgerPort ledgerOfTheBooks;
@@ -89,6 +92,7 @@ public final class Scene {
             .ledger(ledgerOfTheBooks != null ? ledgerOfTheBooks : ledger)
             .cdrSink(cdrs)
             .sdrSink(sessionRecords::add)
+            .tasks((ctx, task) -> closedTasks.add(task))
             .clock(clock)
             .zone(DHAKA)
             .settings(settings)

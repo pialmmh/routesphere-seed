@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The service in memory: rank (runnable → targeted → quota → cap → order), claim, complete/fail with counters, the
@@ -84,6 +85,36 @@ class CampaignServiceTest {
             campaign(5, 0, 0, Targeting.ANY, CampaignPolicy.ALWAYS, VIDEO)));
 
         assertThat(service.rank(view("zone0", null, null))).extracting(p -> p.campaign().id()).containsExactly(5);
+    }
+
+    @Test
+    void closed_takesTheRowTheSessionBaseClosed_countersAndStoreAsCompleteAndFailWould() {
+        service.reloaded("btcl", List.of(campaign(1, 0, 0, Targeting.ANY, CampaignPolicy.ALWAYS, VIDEO, IMAGE)));
+        ViewRequest v = view("zone0", null, "aa:bb");
+
+        Placement first = service.rank(v).get(0);
+        Placement second = service.rank(v).get(0);
+        assertThat(first.creative().id()).isEqualTo("v1");
+        assertThat(second.creative().id()).as("creatives rotate").isEqualTo("i1");
+
+        CampaignTask t1 = service.claim(first, v, "ad-btcl-1", "88017", "wifi-9").orElseThrow();
+        CampaignTask t2 = service.claim(second, v, "ad-btcl-2", null, null).orElseThrow();
+
+        TaskCharge charge = new TaskCharge(586L, "BDT", BigDecimal.ZERO, new BigDecimal("0.50"), "R300");
+        CampaignTask doneRow = t1.answered(NOON).completed(NOON.plusSeconds(15), 15, charge, "viewed");       // the base's CLOSE_TASK row
+        CampaignTask kept = service.closed(doneRow);
+        assertThat(kept).isSameAs(doneRow);
+        assertThat(counters(1).sent()).isEqualTo(1);
+        assertThat(counters(1).pending()).isEqualTo(1);
+        assertThat(store.tasks.get("ad-btcl-1").state()).isEqualTo(TaskState.SENT);
+
+        CampaignTask lostRow = t2.failed(NOON.plusSeconds(3), 3, "NOT_SHOWN", charge);                         // failed, and it still cost
+        assertThat(service.closed(lostRow).charge()).as("a failed row keeps the cost the base put on it").isEqualTo(charge);
+        assertThat(counters(1).failed()).isEqualTo(1);
+        assertThat(counters(1).pending()).isZero();
+        assertThat(store.tasks.get("ad-btcl-2").state()).isEqualTo(TaskState.FAILED);
+
+        assertThatThrownBy(() -> service.closed(t1)).as("an open row is not a closed one").isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

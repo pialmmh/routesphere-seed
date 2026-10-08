@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.api;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.statewalk.session.SessionContext;
@@ -27,6 +28,16 @@ public class SessionFlowContext extends SessionContext {
     public volatile String tenantName;
     /** {@code VOICE} | {@code SMS} | {@code AD} — what kind of call this is. */
     public volatile String taskType;
+    /**
+     * The request as the task record every session kind carries (the owner, 2026-10-09: "all accept the incoming entity as a
+     * CampaignTask") — the store's row of this session. The application sets it: in {@code buildTask} from the request, or when it
+     * claims (an ad: the campaign's quota). Null = the application keeps none (a plain call). The base closes it at the end, once
+     * ({@code SessionFlow.close}: completed on SUCCEEDED, failed otherwise, with the settlement's charge and the CDR's cause) and
+     * hands the closed row to the kit's {@code TaskSink}. A DEFERRED session leaves it open.
+     */
+    public volatile CampaignTask task;
+    /** The base closed {@link #task} and handed it to the sink. */
+    public volatile boolean taskClosed;
 
     // ── the task ────────────────────────────────────────────────────────────
 

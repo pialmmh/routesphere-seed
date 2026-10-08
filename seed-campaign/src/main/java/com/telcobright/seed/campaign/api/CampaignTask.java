@@ -50,9 +50,15 @@ public record CampaignTask(String uniqueId,
     }
 
     /** The task failed for good: {@code STATE 5}. Nothing is charged. */
-    public CampaignTask failed(Instant at, int watchedSec, String cause) {
+    public CampaignTask failed(Instant at, int watchedSec, String cause) { return failed(at, watchedSec, cause, TaskCharge.FREE); }
+
+    /**
+     * The task failed for good: {@code STATE 5} — and it still cost {@code paid}: the session base closes a failed session with
+     * what its settlement kept (an ad admitted and charged before the show, under the owner's rule; a call that ran and then failed).
+     */
+    public CampaignTask failed(Instant at, int watchedSec, String cause, TaskCharge paid) {
         return new CampaignTask(uniqueId, tenantId, campaignId, partnerId, kind, subject, creativeId, zone, site, clientRef,
-            TaskState.FAILED, createdAt, answeredAt, at, watchedSec, cause, TaskCharge.FREE, detail);
+            TaskState.FAILED, createdAt, answeredAt, at, watchedSec, cause, paid == null ? TaskCharge.FREE : paid, detail);
     }
 
     public CampaignTask withDetail(String key, Object value) {

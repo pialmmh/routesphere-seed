@@ -74,7 +74,24 @@ public final class DefaultCampaignService implements CampaignService {
     @Override
     public CampaignTask complete(CampaignTask task, int watchedSec, TaskCharge charge, String cause) {
         if (task.state().terminal()) return task;
-        CampaignTask t = task.completed(clock.instant(), watchedSec, charge, cause);
+        return recordCompleted(task.completed(clock.instant(), watchedSec, charge, cause));
+    }
+
+    @Override
+    public CampaignTask fail(CampaignTask task, int watchedSec, String cause) {
+        if (task.state().terminal()) return task;
+        return recordFailed(task.failed(clock.instant(), watchedSec, cause));
+    }
+
+    @Override
+    public CampaignTask closed(CampaignTask closedTask) {
+        if (closedTask.state() == TaskState.SENT) return recordCompleted(closedTask);
+        if (closedTask.state() == TaskState.FAILED) return recordFailed(closedTask);
+        throw new IllegalArgumentException("closed() takes a terminal task row (SENT or FAILED); " + closedTask.uniqueId() + " is " + closedTask.state());
+    }
+
+    /** A completed row: the counters, the store, and the campaign closes itself when its quota is reached. */
+    private CampaignTask recordCompleted(CampaignTask t) {
         LiveCampaign live = liveOf(t.tenantId(), t.campaignId());
         boolean reached = false;
         if (live != null) {
@@ -93,10 +110,8 @@ public final class DefaultCampaignService implements CampaignService {
         return t;
     }
 
-    @Override
-    public CampaignTask fail(CampaignTask task, int watchedSec, String cause) {
-        if (task.state().terminal()) return task;
-        CampaignTask t = task.failed(clock.instant(), watchedSec, cause);
+    /** A failed row: the counters and the store. */
+    private CampaignTask recordFailed(CampaignTask t) {
         LiveCampaign live = liveOf(t.tenantId(), t.campaignId());
         if (live != null) {
             live.pending.decrementAndGet();
