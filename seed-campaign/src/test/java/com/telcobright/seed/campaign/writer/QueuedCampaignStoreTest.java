@@ -260,8 +260,8 @@ class QueuedCampaignStoreTest {
         long tellingMs = (System.nanoTime() - asked) / 1_000_000;
 
         assertThat(tellingMs).as("no change waited for room in the queue").isLessThan(2_000);
-        assertThat(queued.stats().onDisk()).as("what the queue could not hold is on disk, one line a change").isGreaterThanOrEqualTo(370);
-        assertThat(journalLines()).hasSize((int) queued.stats().onDisk());
+        assertThat(queued.stats().onDisk()).as("what the queue could not hold is in the journal only, one line a change").isGreaterThanOrEqualTo(370);
+        assertThat(journalLines()).as("F10: EVERY change is a line of the journal, the queued ones too").hasSize(400);
         store.hold.countDown();
         store.hold = null;
 
@@ -366,6 +366,67 @@ class QueuedCampaignStoreTest {
         queued = QueuedCampaignStore.open("wroot", store, quick(), dir, null);
         assertThat(store.rows).as("the journal was kept: the next start has it").hasSize(5);
         assertThat(store.repairs).as("a store more than one process writes is not repaired").isEmpty();
+    }
+
+    // ── F10 · a kill: the queue dies with the process, the journal does not ──
+
+    /**
+     * ARCH-0065 F10 (R-2 S3 (c): 12 served views closed LOST_AT_RESTART and 15 rows never written — the queue's last batch died with the
+     * process). Every change is a line of the journal BEFORE it is queued; a {@code kill -9} with 100 changes in the queue (the store
+     * answering nothing) leaves them in the file; the next start writes every one, in the order of the telling, before the first task and
+     * before the repair; the file is empty after. The kill is what it leaves on disk: the journal's folder copied as it is, the dead
+     * process never closed.
+     */
+    @Test
+    void a_kill_with_a_hundred_queued_changes_loses_none_the_next_start_writes_every_row() throws Exception {
+        open(quick().withBatch(10));
+        for (int i = 0; i < 20; i++) { aViewIsClaimed(queued, "v" + i); aViewEnds(queued, "v" + i); }    // 80 changes written: the mark moves
+        assertThat(queued.awaitWritten(10_000)).isTrue();
+        store.hold = new CountDownLatch(1);                                                              // the store answers nothing from now on
+        for (int i = 20; i < 70; i++) { aViewIsClaimed(queued, "v" + i); aViewEnds(queued, "v" + i); }   // 200 more: in the queue (and the file), none in the store
+        await("the writer holds a batch and the queue the rest", () -> queued.stats().queued() >= 100);
+        assertThat(journalLines()).as("the 80 written emptied the file; every change told since is a line").hasSize(200);
+        assertThat(Files.exists(dir.resolve("campaign-store-wroot.applied"))).as("no mark: nothing of the file is in the store").isFalse();
+
+        Path afterTheKill = dir.resolve("after-the-kill");                                               // the kill: the files as they are; the process is gone
+        Files.createDirectories(afterTheKill);
+        for (String f : List.of("campaign-store-wroot.jsonl", "campaign-store-wroot.applied")) if (Files.exists(dir.resolve(f))) Files.copy(dir.resolve(f), afterTheKill.resolve(f));
+        FakeStore nextStore = new FakeStore();
+        for (int i = 0; i < 20; i++) nextStore.rows.put("v" + i, store.rows.get("v" + i));              // the rows the dead process had written
+
+        QueuedCampaignStore next = QueuedCampaignStore.open("wroot", nextStore, quick(), afterTheKill, "wroot");
+        try {
+            List<String> expected = new ArrayList<>();
+            for (int i = 20; i < 70; i++) { expected.add("insert v" + i); expected.add("update v" + i + " SENT"); }
+            expected.add("repair wroot");
+            assertThat(nextStore.order).as("the 200 changes after the mark, in the order of the telling, before the repair").containsExactlyElementsOf(expected);
+            assertThat(nextStore.rows).hasSize(70);
+            assertThat(nextStore.rows.values()).as("every served view is final: none closed as lost").allSatisfy(row -> assertThat(row.state()).isEqualTo(TaskState.SENT));
+            assertThat(nextStore.counters.get(7)).as("the counters say what the dead process told").containsExactly(50, 0, 0);
+            assertThat(Files.exists(afterTheKill.resolve("campaign-store-wroot.jsonl"))).as("the file is emptied once everything is in").isFalse();
+            assertThat(Files.exists(afterTheKill.resolve("campaign-store-wroot.applied"))).isFalse();
+            aViewIsClaimed(next, "after-the-start");
+            assertThat(next.awaitWritten(5_000)).isTrue();
+            assertThat(nextStore.rows).containsKey("after-the-start");
+        } finally {
+            store.hold.countDown();
+            store.hold = null;
+            next.close();
+        }
+    }
+
+    /** The telling's cost with the line (F10): one append a change on the caller's thread — still no wait for the store. */
+    @Test
+    void the_line_costs_a_telling_little() throws Exception {
+        open(quick());
+        for (int i = 0; i < 500; i++) aViewIsClaimed(queued, "w" + i);                                   // the JIT's warm-up
+        assertThat(queued.awaitWritten(10_000)).isTrue();
+        long started = System.nanoTime();
+        for (int i = 0; i < 2000; i++) aViewIsClaimed(queued, "c" + i);
+        long perTellingUs = (System.nanoTime() - started) / 1_000 / 4000;
+        System.out.printf("F10 cost: %d µs a telling (one line appended, one offer), over 4,000 tellings%n", perTellingUs);
+        assertThat(perTellingUs).as("a telling with its line takes well under a millisecond").isLessThan(1_000);
+        assertThat(queued.awaitWritten(10_000)).isTrue();
     }
 
     // ── the journal's line ───────────────────────────────────────────────────
