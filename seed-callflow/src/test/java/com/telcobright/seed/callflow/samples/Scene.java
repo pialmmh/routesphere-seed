@@ -7,6 +7,7 @@ import com.telcobright.seed.callflow.api.CallMachine;
 import com.telcobright.seed.callflow.dependencies.CallFlowKit;
 import com.telcobright.seed.callflow.dependencies.CallFlowSettings;
 import com.telcobright.seed.callflow.spi.CallJournal;
+import com.telcobright.seed.callflow.spi.LedgerPort;
 import com.telcobright.seed.callflow.spi.TenantLookup;
 import com.telcobright.seed.callflow.testkit.InMemoryLedger;
 import com.telcobright.seed.callflow.testkit.RecordingCdrSink;
@@ -61,6 +62,13 @@ public final class Scene {
     public final List<SdrRecord> sessionRecords = new CopyOnWriteArrayList<>();
     private Clock clock = Clock.system(DHAKA);
     private CallJournal journal = CallJournal.NONE;
+    private LedgerPort ledgerOfTheBooks;
+
+    /** The ledger of every flow built from now on: another process's books (F9: the next start gives a reserve back on the SAME ledger). */
+    public Scene withLedger(LedgerPort ledger) {
+        this.ledgerOfTheBooks = ledger;
+        return this;
+    }
 
     /** The clock of every flow built from now on: a test of a deadline hands in a clock it moves by hand. */
     public Scene withClock(Clock clock) {
@@ -78,7 +86,7 @@ public final class Scene {
         return CallFlowKit.builder()
             .journal(journal)
             .tenants(TenantLookup.of(root))
-            .ledger(ledger)
+            .ledger(ledgerOfTheBooks != null ? ledgerOfTheBooks : ledger)
             .cdrSink(cdrs)
             .sdrSink(sessionRecords::add)
             .clock(clock)

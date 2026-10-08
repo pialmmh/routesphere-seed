@@ -3,6 +3,7 @@ package com.telcobright.seed.callflow.api;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
+import com.telcobright.seed.callflow.spi.CallJournal;
 import com.telcobright.seed.callflow.spi.LedgerPort;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.session.AdmissionVerdict;
@@ -194,7 +195,40 @@ final class AdmissionChain<C extends CallFlowContext> {
     private String takeHeld(C ctx, Walk walk, LevelAdmission held, int levelIndex) {
         if (held.getDebitReference() == null) held.setDebitReference(referenceOf(ctx, walk.tryNo, levelIndex));
         walk.levels.add(held);
+        if (!walk.simulated() && CallSettlement.holdsReserve(held)) journalReserve(ctx, held, TierSettlement.reservedOf(held));
         return null;
+    }
+
+    // ── F9 · the journal of the calls in the air takes every reserve as it is held ──────────
+
+    /**
+     * ARCH-0065 F9: the reserve is journaled the moment it is held — before the next tier's money is asked — so a process that dies
+     * between a reserve and the hand-over leaves a line the next start gives the money back by. The first reserve opens the call's line
+     * with the record the start publishes if no hand-over ever comes (the entry tier at 0.00). A line that cannot be written is said
+     * once per call and the call goes on: the hand-over's line is the belt it was.
+     */
+    private void journalReserve(C ctx, LevelAdmission level, BigDecimal amount) {
+        if (!flow.kit().journal().keeps()) return;
+        try {
+            CallJournal.Held held = new CallJournal.Held(level.getLevelIndex(), ctx.tenantName, level.getDbName(), level.getPartnerId(),
+                level.getPackageAccountId(), level.getUom(), amount, level.getDebitReference());
+            flow.kit().journal().reserved(ctx.sessionKey, flow.kit().clock().millis(), flow.recordsIfLostBeforeHandOver(ctx), held);
+        } catch (RuntimeException e) {
+            flow.counters().journalRefused.incrementAndGet();
+            ctx.history.note(flow.name(), "the reserve " + level.getDebitReference() + " could not be written to the journal of the calls in the air ("
+                + flow.kit().journal().where() + "): " + e.getMessage() + " — a death before the hand-over would leave it with the ledger");
+        }
+    }
+
+    /** The switch gave the reserve back itself: the next start leaves it (never fails the call). */
+    private void journalRelease(C ctx, LevelAdmission level) {
+        if (!flow.kit().journal().keeps() || level.getDebitReference() == null) return;
+        try {
+            flow.kit().journal().released(ctx.sessionKey, level.getDebitReference());
+        } catch (RuntimeException e) {
+            flow.log.warn("[{}] {} | the journal of the calls in the air did not take the release of {} (a restart would try to give it back again; the ledger moves money once per reference): {}",
+                flow.name(), ctx.sessionKey, level.getDebitReference(), e.toString());
+        }
     }
 
     private static LevelAdmission levelOf(Tenant tier, Partner partner, int levelIndex, TierRate rate) {
@@ -231,6 +265,7 @@ final class AdmissionChain<C extends CallFlowContext> {
             Optional<LedgerPort.Reservation> held = flow.kit().ledger().reserve(level, amount, reference, withinMs);
             if (held.isEmpty()) return causeWhenItCannotPay;
             recordReserve(level, held.get(), reference);
+            journalReserve(ctx, level, held.get().reserved());                       // F9: before the next tier's money moves
             return null;
         } catch (LedgerPort.LedgerRefusal refused) {
             return refused.code();
@@ -285,6 +320,7 @@ final class AdmissionChain<C extends CallFlowContext> {
         if (!CallSettlement.holdsReserve(level)) return;
         try {
             flow.kit().ledger().release(level, why);
+            journalRelease(ctx, level);                                              // F9: the start leaves what the switch gave back
         } catch (RuntimeException e) {
             flow.counters().owed.incrementAndGet();
             flow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} was NOT released ({}): {}", flow.name(),

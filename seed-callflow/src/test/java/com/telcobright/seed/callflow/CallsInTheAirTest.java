@@ -144,11 +144,105 @@ class CallsInTheAirTest {
         AdFlow.View view = Scene.view("air-f1", "dhaka-zone");
         assertThat(flow.preprocess(view)).isNull();
         assertThat(flow.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(journal.inTheAir()).as("F9: its reserves are on its line from the first reserve").isEqualTo(1);
 
         assertThat(flow.handOver(view, () -> false)).as("the fact said no: its end took it first").isFalse();
 
-        assertThat(journal.inTheAir()).isZero();
+        assertThat(journal.inTheAir()).as("the call's end owns its reserves now: the line is closed").isZero();
         assertThat(new FileCallJournal(whatAKillLeaves(dir.resolve("first.jsonl"))).leftovers()).as("a start after a kill: nothing to publish").isEmpty();
+    }
+
+    /**
+     * ARCH-0065 F9 — a process that dies between a tier's reserve and the hand-over (R-2 S3 (c): 19 + 11 charges on no record). The
+     * journal takes the reserve the moment it is held, before the next tier's money moves; the next start — on the SAME books — gives the
+     * reserve back by its reference and publishes one record at 0.00 on the entry tier, LOST_AT_RESTART; a start after that publishes
+     * nothing. The kill: the journal's file copied the instant tier 0's reserve was written (the process then goes on and holds tier 1
+     * too — the dead process's own reserves stand with the ledger until the start gives the journaled one back).
+     */
+    @Test
+    void a_kill_between_the_first_reserve_and_the_hand_over_gives_the_reserve_back_at_the_next_start_and_writes_a_record_at_zero() throws Exception {
+        Scene before = new Scene();
+        before.ledger.fund("res_44", 702, "100.00");                                 // the first candidate (camp-10, 702) pays: its tier 0 is the first reserve
+        Path file = dir.resolve("f9.jsonl");
+        FileCallJournal journal = new FileCallJournal(file);
+        Path[] whatTheKillLeft = {null};
+        CallJournal killedAfterTheFirstReserve = new CallJournal() {
+            @Override public void reserved(String id, long at, String records, Held held) throws RuntimeException {
+                journal.reserved(id, at, records, held);
+                if (whatTheKillLeft[0] == null) { try { whatTheKillLeft[0] = whatAKillLeaves(file); } catch (Exception e) { throw new IllegalStateException(e); } }
+            }
+            @Override public void released(String id, String reference) { journal.released(id, reference); }
+            @Override public void handedOver(String id, long at, String records) { journal.handedOver(id, at, records); }
+            @Override public void noted(String id, long at, long ans, double sec) { journal.noted(id, at, ans, sec); }
+            @Override public void done(String id) { journal.done(id); }
+            @Override public List<Leftover> leftovers() { return journal.leftovers(); }
+            @Override public String where() { return journal.where(); }
+        };
+        AdFlow first = before.withJournal(killedAfterTheFirstReserve).ad(Scene.settings(4), true);
+        AdFlow.View view = Scene.view("f9-1", "dhaka-zone");
+        view.createdAtMs = Instant.parse("2026-10-08T03:20:11Z").toEpochMilli();
+        assertThat(first.preprocess(view)).isNull();
+        assertThat(first.admit(view, StepMode.LIVE).accepted()).isTrue();
+        assertThat(whatTheKillLeft[0]).as("the copy was taken at tier 0's reserve").isNotNull();
+        assertThat(before.ledger.balanceOf("res_44", 702)).as("the dead process's reserve stands with the ledger").isEqualByComparingTo("99.50");
+        assertThat(before.ledger.balanceOf("btcl", 44)).isEqualByComparingTo("99.60");
+        assertThat(Files.readString(whatTheKillLeft[0])).contains("\"k\":\"a\"").contains("\"k\":\"h\"").contains("f9-1#L0").doesNotContain("#L1").doesNotContain("\"k\":\"v\"");
+
+        Scene after = new Scene().withLedger(before.ledger);                      // the same books: the ledger is the BSS
+        FileCallJournal reopened = new FileCallJournal(whatTheKillLeft[0]);
+        assertThat(reopened.leftovers()).singleElement().satisfies(left -> {
+            assertThat(left.handedOver()).isFalse();
+            assertThat(left.reserves()).extracting(CallJournal.Held::reference).containsExactly("f9-1#L0");
+            assertThat(left.reserves().get(0).amount()).isEqualByComparingTo("0.50");
+            assertThat(left.reserves().get(0).tenant()).isEqualTo("res_44");
+            assertThat(left.reserves().get(0).partnerId()).isEqualTo(702);
+        });
+        after.withJournal(reopened).ad(Scene.settings(4), true).publishWhatWasLeftInTheAir();
+
+        assertThat(before.ledger.balanceOf("res_44", 702)).as("tier 0's reserve given back by its reference").isEqualByComparingTo("100.00");
+        assertThat(before.ledger.balanceOf("btcl", 44)).as("tier 1 was not journaled when the process died: the start does not touch it").isEqualByComparingTo("99.60");
+        assertThat(before.ledger.count("release")).isEqualTo(1);
+        List<CdrEvent> tiers = after.cdrs.of("f9-1").get(0).tiers();
+        assertThat(tiers).singleElement().satisfies(cdr -> {
+            assertThat(cdr.tenant).as("the entry tier").isEqualTo("res_44");
+            assertThat(cdr.inPartnerId).isEqualTo(702);
+            assertThat(cdr.inPartnerCost).as("at 0.00: nothing was handed over").isEqualByComparingTo("0");
+            assertThat(cdr.hangupCause).isEqualTo(CallCause.LOST_AT_RESTART);
+            assertThat(cdr.answerTime).isNull();
+            assertThat(cdr.endTime).isNotNull();
+            assertThat(cdr.callId).isEqualTo("f9-1");
+        });
+        assertThat(reopened.inTheAir()).isZero();
+        assertThat(Files.size(whatTheKillLeft[0])).as("nothing open: emptied").isZero();
+
+        Scene third = new Scene().withLedger(before.ledger);
+        third.withJournal(new FileCallJournal(whatTheKillLeft[0])).ad(Scene.settings(4), true).publishWhatWasLeftInTheAir();
+        assertThat(third.cdrs.published()).isEmpty();
+        assertThat(before.ledger.count("release")).as("given back once").isEqualTo(1);
+    }
+
+    /** A candidate the switch refused gave its reserves back itself: the next start leaves them (the lines say so). */
+    @Test
+    void a_reserve_the_switch_gave_back_itself_is_not_given_back_again_at_the_next_start() throws Exception {
+        Scene before = new Scene();
+        before.ledger.fund("btcl", 44, "0.00");                                           // the root cannot pay: tier 0 reserved, then refused and released
+        Path file = dir.resolve("f9-u.jsonl");
+        FileCallJournal journal = new FileCallJournal(file);
+        AdFlow first = before.withJournal(journal).ad(Scene.settings(4), false);
+        AdFlow.View view = Scene.view("f9-u1", "paying-zone");
+        view.createdAtMs = Instant.parse("2026-10-08T03:20:11Z").toEpochMilli();
+        assertThat(first.preprocess(view)).isNull();
+        assertThat(first.admit(view, StepMode.LIVE).accepted()).as("nobody can pay at the root").isFalse();
+        assertThat(before.ledger.count("release")).as("the switch released every candidate's tier 0 itself").isGreaterThanOrEqualTo(1);
+        long releasedByTheSwitch = before.ledger.count("release");
+        Path left = whatAKillLeaves(file);                                                // killed before the end published the record
+
+        Scene after = new Scene().withLedger(before.ledger);
+        after.withJournal(new FileCallJournal(left)).ad(Scene.settings(4), false).publishWhatWasLeftInTheAir();
+
+        assertThat(before.ledger.count("release")).as("nothing given back twice").isEqualTo(releasedByTheSwitch);
+        assertThat(after.cdrs.published()).as("the call's record at 0.00 is published once (its own end never came)").hasSize(1);
+        assertThat(after.cdrs.published().get(0).tiers()).allSatisfy(c -> assertThat(c.inPartnerCost).isEqualByComparingTo("0"));
     }
 
     @Test
