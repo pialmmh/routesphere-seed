@@ -215,11 +215,12 @@ class StoreBatchAndRepairTest {
     static void everyStateOfTheEnum(DataSource ds, Dialect d, Counters where) throws Exception {
         JdbcCampaignStore store = CampaignCounterTableTest.store(ds, d, where);
         for (TaskState state : TaskState.values()) {
-            store.insertTask(task("s-" + state.code(), "wroot", 77));
+            store.insertTask(task("s-" + state.code(), "wroot", 42));
             try (Connection c = ds.getConnection(); var st = c.createStatement()) {
                 st.execute("UPDATE campaign_task SET STATE = " + state.code() + " WHERE uniqueId = 's-" + state.code() + "'");
             }
         }
+        int[] before = counters(ds, where, 42);
         Instant start = T0.plusSeconds(600);
 
         StoreRepair repair = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start);
@@ -230,10 +231,13 @@ class StoreBatchAndRepairTest {
             int closed = rows(ds, "uniqueId = 's-" + state.code() + "' AND STATE = " + TaskState.FAILED.code() + " AND HANGUP_CAUSE = 'LOST_AT_RESTART'");
             assertThat(closed).as(state + (state.terminal() ? " is terminal: left as it is" : " is open: closed LOST_AT_RESTART")).isEqualTo(state.terminal() ? 0 : 1);
         }
-        int[] now = counters(ds, where, 77);
+        int[] now = counters(ds, where, 42);
         assertThat(now[2]).as("pending = the rows not final: none").isZero();
-        assertThat(now[1]).as("failed = FAILED's own row + the closed ones").isEqualTo(1 + open.size());
-        assertThat(now[0]).as("sent = SENT's own row").isEqualTo(1);
+        if (where == Counters.COUNTER_TABLE) {
+            assertThat(now).as("the counter table: SET from the rows — sent 1 (SENT's own), failed 1 + the closed ones").containsExactly(1, 1 + open.size(), 0);
+        } else {
+            assertThat(now).as("the campaign's own row (others write it too): sent and failed only raised").containsExactly(Math.max(before[0], 1), Math.max(before[1], 1 + open.size()), 0);
+        }
     }
 
     // ── a data source that counts ────────────────────────────────────────────
