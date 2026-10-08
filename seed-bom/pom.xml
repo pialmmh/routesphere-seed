@@ -61,7 +61,7 @@
                  adopts it in a later local window) -->
             <dependency>
                 <groupId>com.telcobright</groupId>
-                <artifactId>seed-callflow</artifactId>
+                <artifactId>seed-sessionflow</artifactId>
                 <version>1.0-SNAPSHOT</version>
             </dependency>
 
