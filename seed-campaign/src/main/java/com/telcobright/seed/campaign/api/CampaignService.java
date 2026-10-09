@@ -33,6 +33,13 @@ public interface CampaignService {
     /** The task failed for good. */
     CampaignTask fail(CampaignTask task, int watchedSec, String cause);
 
+    /**
+     * The row the SESSION BASE closed ({@code SENT} or {@code FAILED}, the end's facts on it — seed-sessionflow's CLOSE_TASK step):
+     * the counters and the store take it exactly as {@link #complete} / {@link #fail} would, and the campaign closes itself when its
+     * quota is reached. A row that is not terminal is refused ({@link IllegalArgumentException}): the base closes, this records.
+     */
+    CampaignTask closed(CampaignTask closedTask);
+
     Map<Integer, CampaignCounters> counters(String tenantId);
 
     Optional<Campaign> campaign(String tenantId, int campaignId);

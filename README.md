@@ -13,10 +13,10 @@ small and stays small. First consumer: **wifi-sphere**.
   default, or a named ROUTING POLICY — a DB entity with one JSON document — picked in config. See
   `seed-routing/README.md`.
 
-- `seed-callflow` — the BASE CALL PROCESSING PIPELINE of every switch: one base class (`CallFlow`) runs a voice call,
+- `seed-sessionflow` — the BASE CALL PROCESSING PIPELINE of every switch: one base class (`SessionFlow`) runs a voice call,
   an SMS and an ad view through the same multi-tenant flow — a pooled machine, identify the partner, the tenant chain
   (authorize, rate, reserve), route, signal, settle, one CDR message per call. An application overrides only its own
-  steps. See `seed-callflow/README.md`.
+  steps. See `seed-sessionflow/README.md`.
 
 Read `docs/DESIGN.md` for the decisions (why plain libs, not Quarkus
 extensions), the rules (dependency direction, promote-don't-copy), and the

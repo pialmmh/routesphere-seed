@@ -61,7 +61,18 @@
                  adopts it in a later local window) -->
             <dependency>
                 <groupId>com.telcobright</groupId>
-                <artifactId>seed-callflow</artifactId>
+                <artifactId>seed-sessionflow</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+            <!-- the tenant trees every product walks: the map of sibling tenants, the prime-context tree loader, the doorbell -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-tenant</artifactId>
+                <version>1.0-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-idgen</artifactId>
                 <version>1.0-SNAPSHOT</version>
             </dependency>
 
