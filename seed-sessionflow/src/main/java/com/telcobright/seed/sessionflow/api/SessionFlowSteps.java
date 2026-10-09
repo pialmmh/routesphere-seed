@@ -287,6 +287,12 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
      */
     protected boolean taskCompleted(C ctx, String outcome) { return SessionState.SUCCEEDED.equals(outcome); }
 
+    /**
+     * At the close · The task record's end cause (B2). The default: the CDR's cause word ({@link #cdrCause}). An application whose task rows
+     * speak their own words keeps them here (an ad: {@code viewed}, {@code credited}, {@code abandoned}); the CDR keeps the call's.
+     */
+    protected String taskCause(C ctx, String outcome) { return cdrCause(ctx, outcome); }
+
     /** The cause of a state's deadline (the ad names the signaling window {@code NOT_SHOWN}). */
     protected String timeoutCause(String state) {
         return switch (state) {

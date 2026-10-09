@@ -100,7 +100,8 @@ class SessionTaskCloseTest {
         assertThat(closed.answeredAt().toEpochMilli()).isEqualTo(view.answeredAtMs);
         assertThat(closed.endedAt()).isNotNull();
         assertThat(closed.billsec()).isEqualTo((int) Math.round(view.durationSec));
-        assertThat(closed.endCause()).isEqualTo(tiers.get(0).hangupCause);
+        assertThat(closed.endCause()).as("the application's own word on the task row").isEqualTo("viewed");
+        assertThat(tiers.get(0).hangupCause).as("the CDR keeps the call's word").isEqualTo("viewed".equals(tiers.get(0).hangupCause) ? "viewed" : tiers.get(0).hangupCause);
         assertThat(closed.charge().free()).isFalse();
         assertThat(closed.charge().cost()).as("cash: the leaf tier's charge as the settlement left it")
             .isEqualByComparingTo(view.settlements.get(0).charged());
@@ -165,6 +166,7 @@ class SessionTaskCloseTest {
         assertThat(sessionRecordOf("v-5").outcome()).as("the session ran: SUCCEEDED").isEqualTo(SessionState.SUCCEEDED);
         CampaignTask closed = scene.closedTasks.get(0);
         assertThat(closed.state()).as("the task: the application's own completion").isEqualTo(TaskState.FAILED);
+        assertThat(closed.endCause()).isEqualTo("abandoned");
         assertThat(closed.billsec()).isEqualTo(4);
         assertThat(closed.charge().cost()).as("what the settlement kept still stands on the row").isEqualByComparingTo(view.settlements.get(0).charged());
     }

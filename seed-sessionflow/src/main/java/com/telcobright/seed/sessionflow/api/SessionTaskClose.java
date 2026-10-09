@@ -37,7 +37,7 @@ final class SessionTaskClose<C extends SessionFlowContext> {
         if (ctx.answered() && !task.answered()) task = task.answered(Instant.ofEpochMilli(ctx.answeredAtMs));
         Instant at = Instant.ofEpochMilli(flow.kit().clock().millis());
         int watched = (int) Math.round(ctx.durationSec);
-        String cause = flow.cdrCause(ctx, outcome);
+        String cause = flow.safely(ctx, "taskCause", () -> flow.taskCause(ctx, outcome), flow.cdrCause(ctx, outcome));
         TaskCharge paid = chargeOf(ctx);
         boolean completed = flow.safely(ctx, "taskCompleted", () -> flow.taskCompleted(ctx, outcome), SessionState.SUCCEEDED.equals(outcome));
         return completed ? task.completed(at, watched, paid, cause) : task.failed(at, watched, cause, paid);

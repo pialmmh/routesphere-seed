@@ -188,6 +188,10 @@ public final class AdFlow extends SessionFlow<AdFlow.View> {
     @Override
     protected boolean taskCompleted(View view, String outcome) { return view.completed && !view.abandoned; }
 
+    /** The task row speaks the ad's words; the CDR keeps the call's. */
+    @Override
+    protected String taskCause(View view, String outcome) { return view.abandoned ? "abandoned" : view.completed ? "viewed" : super.taskCause(view, outcome); }
+
     /** A shown view pays what it reserved. An admitted view never shown pays by the owner's rule. */
     @Override
     protected BigDecimal chargeAtSettle(View view, LevelAdmission level) {
