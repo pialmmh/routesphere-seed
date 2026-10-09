@@ -52,6 +52,8 @@ public final class AdFlow extends SessionFlow<AdFlow.View> {
         public volatile List<Campaign> candidates = List.of();
         public volatile Campaign playing;
         public volatile boolean completed;
+        /** The viewer left after the show began: the session still ran, the task did not complete. */
+        public volatile boolean abandoned;
     }
 
     private final Map<String, String> ruleCodeByZone;
@@ -181,6 +183,10 @@ public final class AdFlow extends SessionFlow<AdFlow.View> {
     /** The view completed. */
     @Override
     protected void onAnswered(View view, Object grant) { view.completed = true; }
+
+    /** The campaign's quota counts views watched to their end: an abandoned view's task is not completed, whatever the session's outcome. */
+    @Override
+    protected boolean taskCompleted(View view, String outcome) { return view.completed && !view.abandoned; }
 
     /** A shown view pays what it reserved. An admitted view never shown pays by the owner's rule. */
     @Override

@@ -39,7 +39,8 @@ final class SessionTaskClose<C extends SessionFlowContext> {
         int watched = (int) Math.round(ctx.durationSec);
         String cause = flow.cdrCause(ctx, outcome);
         TaskCharge paid = chargeOf(ctx);
-        return SessionState.SUCCEEDED.equals(outcome) ? task.completed(at, watched, paid, cause) : task.failed(at, watched, cause, paid);
+        boolean completed = flow.safely(ctx, "taskCompleted", () -> flow.taskCompleted(ctx, outcome), SessionState.SUCCEEDED.equals(outcome));
+        return completed ? task.completed(at, watched, paid, cause) : task.failed(at, watched, cause, paid);
     }
 
     /**

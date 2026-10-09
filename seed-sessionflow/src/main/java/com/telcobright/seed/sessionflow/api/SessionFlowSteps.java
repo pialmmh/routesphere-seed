@@ -280,6 +280,13 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
     /** After the settlement · Did the call succeed? The default: it was answered and the service ran. */
     protected boolean succeeded(C ctx) { return ctx.activatedAtMs > 0; }
 
+    /**
+     * At the close · Did the session's TASK complete (B2: the base closes the task record)? The default: the session succeeded. An
+     * application whose task has a completion of its own overrides it — an ad: the view watched to its end; a view shown and then
+     * abandoned ends its session SUCCEEDED and its task FAILED, because a campaign's quota counts completed views only.
+     */
+    protected boolean taskCompleted(C ctx, String outcome) { return SessionState.SUCCEEDED.equals(outcome); }
+
     /** The cause of a state's deadline (the ad names the signaling window {@code NOT_SHOWN}). */
     protected String timeoutCause(String state) {
         return switch (state) {

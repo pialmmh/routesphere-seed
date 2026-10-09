@@ -149,6 +149,27 @@ class SessionTaskCloseTest {
     }
 
     @Test
+    void aViewShownThenAbandoned_endsItsSessionSucceeded_butItsTaskFailed_theApplicationsOwnCompletion() throws Exception {
+        SessionFlowEngine<AdFlow.View> engine = adEngine(true);
+        AdFlow.View view = Scene.view("v-5", "paying-zone");
+
+        assertThat(engine.launch(view).launched()).isTrue();
+        engine.awaitSettled("v-5", 5, TimeUnit.SECONDS);
+        tell(engine, "v-5", new Wire.Ring("SHOWN"));
+        tell(engine, "v-5", new Wire.Answer());
+        view.abandoned = true;                                             // the viewer left the page
+        tell(engine, "v-5", new Wire.Hangup("abandoned", 4));
+
+        cdrOf("v-5");
+        Scene.await("the task closed", () -> !scene.closedTasks.isEmpty());
+        assertThat(sessionRecordOf("v-5").outcome()).as("the session ran: SUCCEEDED").isEqualTo(SessionState.SUCCEEDED);
+        CampaignTask closed = scene.closedTasks.get(0);
+        assertThat(closed.state()).as("the task: the application's own completion").isEqualTo(TaskState.FAILED);
+        assertThat(closed.billsec()).isEqualTo(4);
+        assertThat(closed.charge().cost()).as("what the settlement kept still stands on the row").isEqualByComparingTo(view.settlements.get(0).charged());
+    }
+
+    @Test
     void aViewNobodyCanPay_isRefused_carriesNoTask_theSinkSeesNothing() throws Exception {
         SessionFlowEngine<AdFlow.View> engine = adEngine(true);
         AdFlow.View view = Scene.view("v-4", "poor-zone");          // its only campaign's advertiser has no money
