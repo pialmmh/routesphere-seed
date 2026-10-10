@@ -85,6 +85,17 @@ class TenantTreesTest {
     }
 
     @Test
+    void rootOfCode_namesAServedRootByItsTenantCode_neverATierNorAStranger() {
+        TenantTrees trees = trees(new ScriptedTrees().serve("btcl", btcl(false)).serve("tele2", tele2()), Set.of("btcl", "tele2"));
+
+        assertThat(trees.rootOfCode("btcl").get()).as("the served root whose Tenant.name is the code").isSameAs(trees.root("btcl").get());
+        assertThat(trees.rootOfCode("tele2").get()).isSameAs(trees.root("tele2").get());
+        assertThat(trees.rootOfCode("res_45")).as("a tier's name is not a served root's code").isEmpty();
+        assertThat(trees.rootOfCode("nobody")).isEmpty();
+        assertThat(trees.rootOfCode(null)).isEmpty();
+    }
+
+    @Test
     void nestedResellers_eachTierHasItsOwnContext_andTheChainRunsLeafToRoot() {
         TenantTrees trees = trees(new ScriptedTrees().serve("btcl", btcl(false)), Set.of("btcl"));
         Tenant root = trees.root("btcl").orElseThrow();

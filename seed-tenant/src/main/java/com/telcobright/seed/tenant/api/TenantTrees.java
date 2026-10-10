@@ -121,6 +121,18 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
         return servingTheTreeOf(rootDbName).map(id -> entryIn(id, partnerId)).map(EntryPartner::tenant);
     }
 
+    /**
+     * The served root whose tenant CODE ({@code Tenant.name}) is {@code code} — a handful of served roots compared by name, no tree walked;
+     * two served ids serving ONE tree answer the same root. The base's identification rules name a tenant by code and never see a schema
+     * name; the facade makes every served root's name its code (ARCH-0077-E).
+     */
+    @Override
+    public Optional<Tenant> rootOfCode(String code) {
+        if (code == null) return Optional.empty();
+        return contexts.tenants().stream().map(this::find).flatMap(Optional::stream).map(Snapshot::context)
+                .filter(root -> code.equals(root.getName())).findFirst();
+    }
+
     @Override
     public Optional<Tenant> tenantByDbName(String rootDbName, String dbName) {
         if (dbName == null) return Optional.empty();
