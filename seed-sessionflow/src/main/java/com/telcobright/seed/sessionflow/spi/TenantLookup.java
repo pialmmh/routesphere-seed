@@ -26,6 +26,14 @@ public interface TenantLookup {
     Optional<Tenant> tenantByDbName(String rootDbName, String dbName);
 
     /**
+     * The ROOT of a served tree by the tenant CODE it serves ({@code Tenant.name}): the one identity the facade's identification rules name,
+     * a service's token carries and the Kafka suffix repeats (prime-context F4; ARCH-0077-E makes every served root's name its code). Empty =
+     * no served root has that code. The root's database name may differ from the code (a store row names the schema), so a resolver's
+     * answer — a code — is turned into the root here, and never sees a schema name.
+     */
+    Optional<Tenant> rootOfCode(String code);
+
+    /**
      * The lookup over one or more served trees (each root with its index rebuilt and its chains computed). Each root gets its OWN map
      * partner id → its owning tenant, built once — the call switch's {@code GlobalTenantRegistry.partnerIdVsLookupDb}, per tree (a reload
      * hands in new trees and so makes a new lookup). Two roots of one name cannot be told apart: refused.

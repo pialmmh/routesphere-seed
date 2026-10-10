@@ -17,6 +17,9 @@ final class ServedTrees implements TenantLookup {
             if (byRoot.putIfAbsent(root.getDbName(), new Tree(root)) != null) {
                 throw new IllegalArgumentException("two served trees have a root named '" + root.getDbName() + "': a call could not say which one is its own");
             }
+            if (root.getName() != null && byRoot.values().stream().filter(t -> t.root != byRoot.get(root.getDbName()).root).anyMatch(t -> root.getName().equals(t.root.getName()))) {
+                throw new IllegalArgumentException("two served trees carry the tenant code '" + root.getName() + "': a rule's tenant could not say which root is its own");
+            }
         }
     }
 
@@ -29,6 +32,12 @@ final class ServedTrees implements TenantLookup {
     @Override
     public Optional<Tenant> tenantByDbName(String rootDbName, String dbName) {
         return dbName == null ? Optional.empty() : treeOf(rootDbName).map(tree -> tree.root.findTenantByDbName(dbName));
+    }
+
+    @Override
+    public Optional<Tenant> rootOfCode(String code) {
+        if (code == null) return Optional.empty();
+        return byRoot.values().stream().map(tree -> tree.root).filter(root -> code.equals(root.getName())).findFirst();
     }
 
     private Optional<Tree> treeOf(String rootDbName) {

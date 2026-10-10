@@ -9,6 +9,10 @@ import java.util.Map;
 /**
  * The identification rules as the facade's bootstrap carries them (prime-context F4): the key {@code identification}, a list of
  * {@code {kind, match, tenant}}. A bootstrap without the key has no rules (an empty list); an entry missing a word is refused in words.
+ *
+ * <p>The facade serves the key at the ROOT OF THE SERVICE'S CONFIG — the same in {@code config.yml}, {@code config.json} and the envelope's
+ * {@code config} (prime-context F4, one home): hand this reader the CONFIG map (the parsed {@code config.yml}, or {@code envelope.config}),
+ * never the envelope itself. The rule's {@code tenant} is the tenant CODE; {@code TenantLookup.rootOfCode} turns it into the served root.
  */
 public final class IdentificationRules {
 
