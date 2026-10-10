@@ -50,3 +50,11 @@ period and holds nothing; below the minimum → 0 and nothing held.
 
 Why: the WiFi flow's `renewWindowSeconds(ctx, level)` hook will call `WindowRenewal` (the wifi architect's WINDING_DOWN story depends on it); the
 voice keeps its own path unchanged. Reported as item 3b in the done report. Everything else in the brief stands.
+
+**Amended too (the architect, the same evening):** item 9's README and item 3's tests, no new code — `MemLedgerPort` reads and writes an
+account by `(level.getDbName(), accountId)`, the TIER's own schema, as the call does (`ReserveBalanceStep` reads `tenant.getContext()` of the
+level's tier; `partnerIdWisePackageAccounts` is loaded per schema). The README states: on PostgreSQL the tiers are SCHEMAS of one database
+(routesphere: `btcl`, `res_2`, `res_2_1` …) and mem-ledger's `dbName` is only the qualifier of `dbName.table`, so the host registers EVERY tier
+schema of the tree in `MemLedgerBuilder.databases(...)` (explicit names from the tree, preferred over `autoDiscoverDatabases`). One more test in
+item 3: a two-tier walk where the leaf's account lives in schema `res_2` and the reserve row lands in `res_2.packageaccountreserve`, never in the
+root's. Everything else unchanged.
