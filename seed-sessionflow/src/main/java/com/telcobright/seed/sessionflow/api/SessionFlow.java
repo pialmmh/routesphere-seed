@@ -8,6 +8,7 @@ import com.telcobright.seed.sessionflow.internal.FlowCounters;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.session.AdmissionVerdict;
 
+import java.math.BigDecimal;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -223,6 +224,11 @@ public abstract class SessionFlow<C extends SessionFlowContext> extends SessionF
 
     @Override
     final double renewThroughLedger(C ctx, LevelAdmission level) { return admission.renewThroughLedger(ctx, level); }
+
+    @Override
+    final String reserveWindowThroughChain(C ctx, LevelAdmission level, BigDecimal amount, String reference) {
+        return admission.reserveForRenewal(ctx, level, amount, reference);
+    }
 
     /**
      * The money ended (C14), asked by the balance child: the cause to end the call with now, or null when the application cut the service

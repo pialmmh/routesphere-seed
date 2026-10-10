@@ -258,6 +258,21 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
     abstract double renewThroughLedger(C ctx, LevelAdmission level);
 
     /**
+     * ACTIVE · Hold {@code amount} of this tier's next window through the kit's ledger under {@code reference}, RECORDED on the level exactly as
+     * the base's own renewal records it (the first reference, the total reserved, the count, the balance after; the journal of the calls in the
+     * air told) — for an application that answers {@link #renewWindowSeconds} itself (ARCH-0077-A 3b: the WiFi's {@code WindowRenewal} holds the
+     * whole window, else the remainder, under the same reference; one piece of code records reservations). Null = held; else the cause —
+     * {@code BALANCE_EXHAUSTED} when the ledger refused, {@code BILLING_SYSTEM_ERROR} when it did not answer (a fault never cuts: the
+     * settlement reconciles). Nothing is held for an amount of zero.
+     */
+    protected final String reserveWindow(C ctx, LevelAdmission level, BigDecimal amount, String reference) {
+        return reserveWindowThroughChain(ctx, level, amount, reference);
+    }
+
+    /** The chain's own reserve of a renewal, with its recording ({@code AdmissionChain.reserveForRenewal}). */
+    abstract String reserveWindowThroughChain(C ctx, LevelAdmission level, BigDecimal amount, String reference);
+
+    /**
      * ACTIVE · The money ended (C14): a tier could pay nothing more, or the final partial window just ran out. The cause to end the call
      * with now — the default, {@code BALANCE_EXHAUSTED} — or null when the application cuts the service on the wire itself and the wire's
      * end will end the call (the call switch, v2's word: both legs killed, {@code balanceCutoff} noted, the hangup FreeSWITCH reports is
