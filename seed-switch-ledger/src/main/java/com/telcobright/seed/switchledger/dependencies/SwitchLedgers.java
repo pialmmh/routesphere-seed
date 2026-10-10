@@ -6,6 +6,7 @@ import com.telcobright.seed.switchledger.api.SwitchLedger;
 import com.telcobright.seed.switchledger.internal.AccountLocks;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.MemLedgerPort;
+import com.telcobright.seed.switchledger.internal.OrphanReaper;
 
 import java.time.Clock;
 import java.util.Objects;
@@ -21,8 +22,14 @@ public final class SwitchLedgers {
         Objects.requireNonNull(settings, "settings");
         Objects.requireNonNull(clock, "clock");
         Books books = new Books(memLedger, clock);
-        MemLedgerPort port = new MemLedgerPort(books, AccountLocks.of(memLedger, settings.lockTimeoutMs()));
-        return new SwitchLedger(port, port);
+        AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
+        MemLedgerPort port = new MemLedgerPort(books, locks);
+        return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock));
+    }
+
+    /** The orphan reaper alone, for the host's schedule (the base's slot-reconcile cadence): {@code reap(dbName)} per tier schema. */
+    public static OrphanReaper reaper(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock) {
+        return over(memLedger, settings, clock).reaper();
     }
 
     /** The base's ledger port over the MemLedger: what the {@code SessionFlowKit} is handed. */

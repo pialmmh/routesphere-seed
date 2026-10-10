@@ -121,6 +121,20 @@ public final class Books {
         exec(request(dbName, RESERVE, "UPDATE", row), "grow the reserve row " + row.getChannelCallUuid());
     }
 
+    /**
+     * A reserve row given back whole — {@code returnBalance} (211–265) as the reaper and a release use it: the row's {@code reserveUnit} is
+     * credited to its account and the row dies. The caller holds the account's lock. @return the account's balance after
+     */
+    public BigDecimal returnRow(String dbName, PackageAccountReserve row) {
+        PackageAccount live = liveAccount(dbName, row.getIdPackageAccount());
+        if (live == null) throw new LedgerFault("the reserve row " + row.getChannelCallUuid() + " names account " + row.getIdPackageAccount() + ", which " + dbName + " does not hold");
+        BigDecimal back = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
+        BigDecimal after = balanceOf(live).add(back);
+        moveBalance(dbName, live, after, back);
+        deleteReserveRow(dbName, row.getChannelCallUuid());
+        return after;
+    }
+
     /** The row dies with the settlement or the release ({@code returnBalance} 254–255, {@code deletePackageAccountReserve} 704–713). */
     public void deleteReserveRow(String dbName, String rowKey) {
         boolean deleted = guarded("delete the reserve row " + rowKey, () -> ledger.delete(dbName, RESERVE, rowKey));

@@ -123,6 +123,10 @@ public final class LedgerLab implements AutoCloseable {
         return queryDecimal("SELECT reserveUnit FROM " + schema + ".packageaccountreserve WHERE channel_call_uuid = '" + key + "'");
     }
 
+    public BigDecimal dbPurchase(String schema, long accountId) {
+        return queryDecimal("SELECT id_PackagePurchase FROM " + schema + ".packageaccount WHERE id_packageaccount = " + accountId);
+    }
+
     public static void await(String what, BooleanSupplier condition) {
         long deadline = System.currentTimeMillis() + 15_000;
         while (!condition.getAsBoolean()) {

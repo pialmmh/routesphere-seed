@@ -147,19 +147,16 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         if (tier == null || closed.get(tier) != null) return;
         long accountId = accountOf(level);
         try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            releaseUnderTheLock(level, tier, accountId, why);
+            releaseUnderTheLock(level, tier, why);
         }
     }
 
-    private void releaseUnderTheLock(LevelAdmission level, String tier, long accountId, String why) {
+    private void releaseUnderTheLock(LevelAdmission level, String tier, String why) {
         String db = level.getDbName();
         PackageAccountReserve row = books.reserveRow(db, tier);
         if (row == null) { forget(tier); return; }
         BigDecimal back = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal after = Books.balanceOf(live).add(back);
-        books.moveBalance(db, live, after, back);
-        books.deleteReserveRow(db, tier);
+        BigDecimal after = books.returnRow(db, row);
         forget(tier);
         closed.remember(tier, new TierSettlement(level.getLevelIndex(), back, BigDecimal.ZERO, back, after, true, why));
     }
