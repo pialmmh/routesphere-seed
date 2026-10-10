@@ -2,6 +2,7 @@ package com.telcobright.seed.switchledger.dependencies;
 
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.switchledger.api.Credit;
 import com.telcobright.seed.switchledger.api.SwitchLedger;
 import com.telcobright.seed.switchledger.internal.AccountLocks;
 import com.telcobright.seed.switchledger.internal.Books;
@@ -24,7 +25,12 @@ public final class SwitchLedgers {
         Books books = new Books(memLedger, clock);
         AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
         MemLedgerPort port = new MemLedgerPort(books, locks);
-        return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock));
+        return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock), new Credit(books, locks));
+    }
+
+    /** The credit primitive alone, for a switch's {@code /api/v1/billing/recharge} road; it shares the port's per-account lock. */
+    public static Credit credit(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock) {
+        return over(memLedger, settings, clock).credit();
     }
 
     /** The orphan reaper alone, for the host's schedule (the base's slot-reconcile cadence): {@code reap(dbName)} per tier schema. */
