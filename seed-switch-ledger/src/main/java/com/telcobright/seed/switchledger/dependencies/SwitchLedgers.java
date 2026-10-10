@@ -8,6 +8,7 @@ import com.telcobright.seed.switchledger.internal.AccountLocks;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.MemLedgerPort;
 import com.telcobright.seed.switchledger.internal.OrphanReaper;
+import com.telcobright.seed.switchledger.internal.TwoEntities;
 
 import java.time.Clock;
 import java.util.Objects;
@@ -17,11 +18,15 @@ public final class SwitchLedgers {
 
     private SwitchLedgers() {}
 
-    /** Every door of the switch ledger over this MemLedger, on one per-account lock table. */
+    /**
+     * Every door of the switch ledger over this MemLedger, on one per-account lock table. The ledger must hold exactly the two entities,
+     * PackageAccount and PackageAccountReserve, in every tier schema of the tree — any other refuses the build in words.
+     */
     public static SwitchLedger over(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock) {
         Objects.requireNonNull(memLedger, "memLedger");
         Objects.requireNonNull(settings, "settings");
         Objects.requireNonNull(clock, "clock");
+        TwoEntities.check(memLedger);
         Books books = new Books(memLedger, clock);
         AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
         MemLedgerPort port = new MemLedgerPort(books, locks);

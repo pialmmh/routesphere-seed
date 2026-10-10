@@ -1,6 +1,7 @@
 package com.telcobright.seed.switchledger;
 
 import com.telcobright.memledger.api.MemLedger;
+import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.memledger.config.ReplicationConfig;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
@@ -18,7 +19,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -39,6 +42,7 @@ public final class LedgerLab implements AutoCloseable {
     private final JdbcDataSource dataSource = new JdbcDataSource();
     private final Path dir;
     private final List<String> schemas = new ArrayList<>();
+    private final Map<String, Class<? extends CacheableEntity>> more = new LinkedHashMap<>();
     private MemLedger ledger;
 
     private LedgerLab(Path dir) {
@@ -84,18 +88,26 @@ public final class LedgerLab implements AutoCloseable {
         return this;
     }
 
+    /** A THIRD entity registered in the MemLedger (what the switch ledger refuses), with its table in every schema. */
+    public LedgerLab alsoRegister(String entityName, Class<? extends CacheableEntity> entityClass, String tableDdlPerSchema) {
+        more.put(entityName, entityClass);
+        for (String schema : schemas) sql(String.format(tableDdlPerSchema, schema));
+        return this;
+    }
+
     /** Build the MemLedger: it loads every schema's two tables and replays the (empty) WAL. */
     public MemLedger start() {
         System.out.println("LedgerLab: no network listener — H2 in memory (" + url + "), MemLedger STANDALONE (no REST, no gRPC), queue at " + dir);
-        ledger = MemLedger.builder()
+        var builder = MemLedger.builder()
             .dataSource(dataSource)
             .databases(schemas.toArray(String[]::new))
             .registerEntity(Books.ACCOUNT, PackageAccount.class)
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
             .walPath(dir.resolve("wal").toString())
             .queuePath(dir.resolve("queue").toString())
-            .replicationMode(ReplicationConfig.Mode.STANDALONE)
-            .build();
+            .replicationMode(ReplicationConfig.Mode.STANDALONE);
+        more.forEach(builder::registerEntity);
+        ledger = builder.build();
         return ledger;
     }
 
