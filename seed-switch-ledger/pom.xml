@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-switch-ledger</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-switch-ledger</name>
+    <description>
+        The switch ledger on the base (ARCH-0077-A; the owner, 2026-10-10: the WiFi session follows the CALL pattern strictly — its ledger
+        is MemLedger over the package accounts of the DynamicContext, reserved per tier per window and settled exactly at the end, never an
+        HTTP charge per window). The base's LedgerPort over com.telcobright.memledger (MemLedgerPort), the account order of the call switch
+        (AccountOrder), the one credit primitive (Credit), the orphan reaper (OrphanReaper), the call's C14 remainder (WindowRenewal). A
+        switch that follows the call (wifi-sphere) depends on THIS module, never on routesphere-core; the base (seed-sessionflow) never
+        depends on this module: the ad must not carry Chronicle. Exactly two entities — PackageAccount and PackageAccountReserve — are
+        ever registered in the MemLedger handed in; packagepurchase is never written.
+    </description>
+
+    <properties>
+        <h2.version>2.2.224</h2.version>
+    </properties>
+
+    <dependencies>
+        <!-- the base: LedgerPort, LevelAdmission's walk (AdmissionChain), TierSettlement; its testkit for the tests -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- PackageAccount, PackageAccountReserve, Partner, DynamicContext, LevelAdmission -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>rtc-domain</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- the ledger itself: com.telcobright.memledger.api.MemLedger (the WAL + cache over MySQL; Chronicle bundled in its jar) -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>mem-ledger</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- the tests' MySQL: H2 in MySQL mode, in memory — the REAL MemLedger loads from it and its WAL consumer writes back to it -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- Chronicle Queue (inside mem-ledger's jar) on Java 21: the same openings mem-ledger's own build and routesphere-core use -->
+                    <argLine>
+                        --add-exports=java.base/jdk.internal.ref=ALL-UNNAMED
+                        --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED
+                        --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED
+                        --add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED
+                        --add-opens=java.base/java.lang=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens=java.base/java.io=ALL-UNNAMED
+                        --add-opens=java.base/java.util=ALL-UNNAMED
+                        -Dchronicle.announcer.disable=true
+                        -Dchronicle.analytics.disable=true
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -28,3 +28,25 @@ you never install into `~/.m2/repository`); `date` before any time; the trailer 
 (the radius-2 BED: read nothing, write nothing), 10.10.175.x, 10.9.9.x or 103.95.96.77; a test that fails for an unreachable service: stop and report; nothing of yours
 left running; no live environment touched; the merge is the architect's; no secret value anywhere (none is needed here); never `cd` into another agent's worktree;
 the house style (short named orchestrators, small files, self-describing names); a rule broken once and seen red before it is fixed.
+
+## 3 · Amended (the architect, 2026-10-10 21:4x, relayed to the switch-ledger agent while item 1 was in hand)
+
+**Item 3 stays as written:** `MemLedgerPort.reserve` REFUSES (empty Optional) when the balance cannot cover the whole amount — the base's
+`LedgerPort` contract (its renewal: "the base has no remainder: a ledger that can fund part of a window is the application's own").
+
+**NEW item 3b — `api/WindowRenewal` in seed-switch-ledger:** the call's C14 remainder (routesphere-core `BalanceBillingService.reserveNextWindowSeconds`,
+cited): `double renewSeconds(LevelAdmission level, BigDecimal wholeAmount, String reference, BigDecimal ratePerPeriod, double periodSec)` —
+(1) try the whole window through the port under `reference`; held → `periodSec`; (2) refused → PEEK the account's live balance (`MemLedgerPort`
+gains `Optional<BigDecimal> balanceOf(LevelAdmission)`, a read, no write); remaining ≤ 0 → 0; (3) seconds = remaining / ratePerPeriod × periodSec;
+below the call's `MIN_FINAL_WINDOW_SEC` (the constant in `BalanceBillingService` — its value cited) → 0; else reserve exactly `remaining` under the
+SAME reference and answer those seconds (the tracker then enters WINDING_DOWN and arms the final cut). A zero rate → `periodSec`, nothing held (the
+call's rule). Every reservation taken here is RECORDED on the level exactly as the base's `AdmissionChain.recordReserve` does (debitReference the
+first time, totalReserved, reservationCount, balanceAfter) — that code is NOT copied: the base's package-private
+`AdmissionChain.reserveForRenewal(ctx, level, amount, reference)` is exposed to applications as a
+`protected final String reserveWindow(C ctx, LevelAdmission level, BigDecimal amount, String reference)` on `SessionFlowSteps` (null = held), and
+`WindowRenewal` takes that call as a lambda, so one piece of code records reservations. Tests: a tier with 2.5 windows of balance renews twice
+whole, then answers the remainder's seconds (less than the period), then 0; the reserve rows and totals match; a zero-rated tier answers the
+period and holds nothing; below the minimum → 0 and nothing held.
+
+Why: the WiFi flow's `renewWindowSeconds(ctx, level)` hook will call `WindowRenewal` (the wifi architect's WINDING_DOWN story depends on it); the
+voice keeps its own path unchanged. Reported as item 3b in the done report. Everything else in the brief stands.
