@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.testkit;
 
 import com.telcobright.rtc.domainmodel.PartnerType;
+import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.mysqlentity.RatePlan;
 import com.telcobright.rtc.domainmodel.mysqlentity.Route;
@@ -35,6 +36,7 @@ public final class TenantTreeBuilder {
         final String dbName;
         final String parent;
         final Map<Integer, Partner> partners = new LinkedHashMap<>();
+        final Map<Long, List<PackageAccount>> accounts = new LinkedHashMap<>();
         final Map<String, List<RatePlan>> partnerPlans = new LinkedHashMap<>();
         final Map<Integer, RatePlan> plans = new LinkedHashMap<>();
         final Map<Integer, List<AdRate>> adRates = new LinkedHashMap<>();
@@ -65,6 +67,25 @@ public final class TenantTreeBuilder {
         }
 
         public TenantSpec deactivate(int partnerId) { partners.get(partnerId).setStatus("DEACTIVATED"); return this; }
+
+        /**
+         * A package account of a partner, as the tree carries it (ARCH-0077-A): the CATALOG row — its id, its purchase, its unit, its expiry
+         * ({@code null} = none known) and the balance the tree was served with. A switch on the switch ledger reads the LIVE balance from
+         * its MemLedger, never from here.
+         */
+        public TenantSpec account(int partnerId, long accountId, long purchaseId, String uom, String balance, LocalDateTime expireDate) {
+            PackageAccount a = new PackageAccount();
+            a.setId(accountId);
+            a.setIdpackagePurchase(purchaseId);
+            a.setName(uom + "-" + accountId);
+            a.setUom(uom);
+            a.setBalanceBefore(new BigDecimal(balance));
+            a.setBalanceAfter(new BigDecimal(balance));
+            a.setLastAmount(BigDecimal.ZERO);
+            a.setExpireDate(expireDate);
+            accounts.computeIfAbsent((long) partnerId, k -> new ArrayList<>()).add(a);
+            return this;
+        }
 
         /** An ad rate plan assigned to a partner (the assignment open-ended, priority in the order given). */
         public TenantSpec plan(int planId, String name, int partnerId, Integer roundDecimals) {
@@ -170,7 +191,7 @@ public final class TenantTreeBuilder {
             routes.values().forEach(r -> partnerVsRoutes.computeIfAbsent(r.getIdPartner(), k -> new ArrayList<>()).add(r));
             return new DynamicContext(Map.of(), partners, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
                 Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), partnerPlans, plans, Map.of(), List.of(), List.of(),
-                partnerVsRoutes, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                partnerVsRoutes, Map.of(), Map.of(), Map.of(), Map.of(), accounts,
                 routes, routeVsCampaign, byCampaign, rules, byCode, callers, settings, adRates, members, contents, slas);
         }
     }

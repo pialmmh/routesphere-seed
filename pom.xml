@@ -24,6 +24,7 @@
         <module>seed-sessionflow</module>
         <module>seed-tenant</module>
         <module>seed-idgen</module>
+        <module>seed-switch-ledger</module>
     </modules>
 
     <properties>

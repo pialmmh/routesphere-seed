@@ -17,6 +17,10 @@ small and stays small. First consumer: **wifi-sphere**.
   an SMS and an ad view through the same multi-tenant flow — a pooled machine, identify the partner, the tenant chain
   (authorize, rate, reserve), route, signal, settle, one CDR message per call. An application overrides only its own
   steps. See `seed-sessionflow/README.md`.
+- `seed-switch-ledger` — the SWITCH LEDGER on the base: the base's `LedgerPort` over the switch's own MemLedger (package accounts, one
+  reserve row per tier per session, settled exactly at the end), the call switch's account order, the one credit primitive, the orphan
+  reaper, the call's C14 remainder (`WindowRenewal`). For a switch that follows the call (wifi-sphere); the base never depends on it. See
+  `seed-switch-ledger/README.md`.
 
 Read `docs/DESIGN.md` for the decisions (why plain libs, not Quarkus
 extensions), the rules (dependency direction, promote-don't-copy), and the
