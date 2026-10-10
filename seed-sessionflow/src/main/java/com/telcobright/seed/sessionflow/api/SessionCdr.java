@@ -9,7 +9,9 @@ import com.telcobright.seed.sessionflow.spi.SessionJournal;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The CDR of an ended call, for every application: ONE message per call, one record per tier, the leaf first. A call
@@ -113,8 +115,8 @@ final class SessionCdr<C extends SessionFlowContext> {
      * {@code neverHandedOver} with reserves and no hand-over (F9) — {@code returned} of their reserves given back ({@code returnedMoney}),
      * {@code owed} not given back (the ledger refused or did not answer: one ERROR each, the reference in it).
      */
-    record LeftInTheAir(int calls, BigDecimal money, BigDecimal units, int neverHandedOver, int returned, BigDecimal returnedMoney, int owed) {
-        static final LeftInTheAir NOTHING = new LeftInTheAir(0, BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, BigDecimal.ZERO, 0);
+    record LeftInTheAir(int calls, BigDecimal money, BigDecimal units, int neverHandedOver, int returned, BigDecimal returnedMoney, int owed, int closed) {
+        static final LeftInTheAir NOTHING = new LeftInTheAir(0, BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, BigDecimal.ZERO, 0, 0);
     }
 
     /**
@@ -126,7 +128,7 @@ final class SessionCdr<C extends SessionFlowContext> {
      */
     LeftInTheAir publishLeftovers() {
         SessionJournal journal = flow.kit().journal();
-        int calls = 0, neverHandedOver = 0, returned = 0, owed = 0;
+        int calls = 0, neverHandedOver = 0, returned = 0, owed = 0, closed = 0;
         BigDecimal money = BigDecimal.ZERO, units = BigDecimal.ZERO, returnedMoney = BigDecimal.ZERO;
         for (SessionJournal.Leftover left : journal.leftovers()) {
             List<CdrEvent> tiers = recordsOfLeftover(left);
@@ -140,6 +142,9 @@ final class SessionCdr<C extends SessionFlowContext> {
                 for (CdrEvent cdr : tiers) { cdr.inPartnerCost = BigDecimal.ZERO; cdr.packageAmount = BigDecimal.ZERO; cdr.answerTime = null; cdr.durationSec = BigDecimal.ZERO; }
             } else {
                 calls++;
+                int[] done = closeAsReserved(left);          // A2: the rows of a handed-over call die here, nothing returned
+                closed += done[0];
+                owed += done[1];
             }
             flow.kit().cdrSink().publish(left.callId(), tiers);
             flow.counters().cdrPublished.incrementAndGet();
@@ -149,7 +154,7 @@ final class SessionCdr<C extends SessionFlowContext> {
                 units = units.add(cdr.packageAmount == null ? BigDecimal.ZERO : cdr.packageAmount);
             }
         }
-        return calls == 0 && neverHandedOver == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units, neverHandedOver, returned, returnedMoney, owed);
+        return calls == 0 && neverHandedOver == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units, neverHandedOver, returned, returnedMoney, owed, closed);
     }
 
     /**
@@ -157,6 +162,35 @@ final class SessionCdr<C extends SessionFlowContext> {
      * in the call's own tree (the lookup by root and database name), else named by its database name alone; the partner the tier's own
      * row, else a shell with the id. False = the ledger refused or did not answer: OWED, one ERROR naming the reference.
      */
+    /**
+     * A2 (ARCH-0077): a call HANDED OVER when the process died is charged what it reserved (the record above) — so each tier's reserve is
+     * CLOSED through the ledger as settled at exactly its reserved sum: the switch ledger deletes the tier's reserve row and moves nothing
+     * (reserved − charged = 0), and the orphan reaper can never give back money a record has charged. One tier = one settle, under the
+     * tier's FIRST reference (the row's key; a renewal's {@code #W<n>} grew the same row), charged the sum of every window the journal holds.
+     * A ledger that refuses or does not answer = OWED: one ERROR naming the reference. Answers {closed, owed}.
+     */
+    private int[] closeAsReserved(SessionJournal.Leftover left) {
+        int closed = 0, owed = 0;
+        Map<Integer, List<SessionJournal.Held>> byTier = new LinkedHashMap<>();
+        for (SessionJournal.Held held : left.reserves()) byTier.computeIfAbsent(held.tier(), t -> new ArrayList<>()).add(held);
+        for (List<SessionJournal.Held> windows : byTier.values()) {
+            SessionJournal.Held first = windows.stream().filter(h -> h.reference() != null && !h.reference().contains("#W")).findFirst().orElse(windows.get(0));
+            BigDecimal reserved = windows.stream().map(h -> h.amount() == null ? BigDecimal.ZERO : h.amount()).reduce(BigDecimal.ZERO, BigDecimal::add);
+            LevelAdmission level = levelOf(first);
+            level.addToTotalReserved(reserved);
+            try {
+                flow.kit().ledger().settle(level, reserved);
+                closed++;
+            } catch (RuntimeException e) {
+                owed++;
+                flow.counters().owed.incrementAndGet();
+                flow.log.error("[{}] {} | OWED: the reserve {} ({} {}) of tier {} ({}) partner {} of a call left in the air was NOT closed as reserved: {}",
+                    flow.name(), left.callId(), first.reference(), reserved, first.uom(), first.tier(), first.tenant(), first.partnerId(), e.toString());
+            }
+        }
+        return new int[] {closed, owed};
+    }
+
     private boolean giveBack(String callId, SessionJournal.Held held) {
         try {
             flow.kit().ledger().release(levelOf(held), SessionCause.LOST_AT_RESTART);

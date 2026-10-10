@@ -68,9 +68,18 @@ class SessionsInTheAirTest {
         assertThat(journal.inTheAir()).isEqualTo(2);
         Path left = whatAKillLeaves(dir.resolve("air.jsonl"));
 
-        Scene after = new Scene();
+        BigDecimal leafBefore = before.ledger.balanceOf("res_44", 702), rootBefore = before.ledger.balanceOf("btcl", 44);
+        int openBefore = before.ledger.openReserves();
+        assertThat(openBefore).as("the two calls in the air hold their reserves at the kill: two tiers each").isEqualTo(4);
+
+        Scene after = new Scene().withLedger(before.ledger);                      // the same books: the ledger survives the process
         FileSessionJournal reopened = new FileSessionJournal(left);
         after.withJournal(reopened).ad(Scene.settings(4), true).publishWhatWasLeftInTheAir();
+
+        assertThat(before.ledger.openReserves()).as("A2: every reserve of a handed-over call is CLOSED as reserved — no row for the reaper").isZero();
+        assertThat(before.ledger.balanceOf("res_44", 702)).as("closed, nothing returned: the record charged it").isEqualByComparingTo(leafBefore);
+        assertThat(before.ledger.balanceOf("btcl", 44)).isEqualByComparingTo(rootBefore);
+        assertThat(before.ledger.count("settle")).as("one settle per tier of the two calls, charged what was reserved").isGreaterThanOrEqualTo(4);
 
         assertThat(after.cdrs.published()).extracting(p -> p.callId()).as("the two calls in the air, not the one whose end was published")
             .containsExactlyInAnyOrder("air-1", "air-2");

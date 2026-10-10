@@ -184,14 +184,15 @@ public abstract class SessionFlow<C extends SessionFlowContext> extends SessionF
 
     /**
      * Before the first call of a start (the engine asks it): the record of every call a stopped process left in the air is published
-     * — handed over, ended {@link SessionCause#LOST_AT_RESTART}, every tier charged what it reserved. One WARN with the count and the sums.
+     * — handed over, ended {@link SessionCause#LOST_AT_RESTART}, every tier charged what it reserved and its reserve CLOSED as such (A2: the
+     * row dies, nothing is returned, the reaper never sees it). One WARN with the count and the sums.
      */
     public final void publishWhatWasLeftInTheAir() {
         SessionCdr.LeftInTheAir left = cdr.publishLeftovers();
         if (left.calls() == 0 && left.neverHandedOver() == 0) return;
-        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved — {} in money and {} in units over every tier;"
+        log.warn("[{}] the start published the records of {} call(s) a stopped process left in the air ({}): each ended {}, every tier charged what it reserved and {} reserve(s) closed as such — {} in money and {} in units over every tier;"
             + " and {} call(s) that had reserved and were never handed over (F9): {} reserve(s) given back ({} in money), {} not given back (OWED, each named above), each one record at 0.00 on its entry tier",
-            name(), left.calls(), kit.journal().where(), SessionCause.LOST_AT_RESTART, left.money().toPlainString(), left.units().toPlainString(),
+            name(), left.calls(), kit.journal().where(), SessionCause.LOST_AT_RESTART, left.closed(), left.money().toPlainString(), left.units().toPlainString(),
             left.neverHandedOver(), left.returned(), left.returnedMoney().toPlainString(), left.owed());
     }
 
