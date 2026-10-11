@@ -251,6 +251,13 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
      * period; a tier that does not renew, or is zero-rated → the period (the cadence goes on); refused → 0; a ledger FAULT → the
      * period (a fault never cuts a call: the settlement reconciles). The call switch answers its own billing's number instead: a
      * whole unit, else the remainder of the balance in seconds, under its minimum 0 ({@code BalanceBillingService.reserveNextWindowSeconds}).
+     *
+     * <p><b>An override gives up the next-account rotation.</b> O4 ({@link #nextAccount}) lives inside the default road only: a flow that
+     * overrides this method and does not renew through the base's own road first never rotates - its tier runs on the account its
+     * admission chose, and is cut when that account ends. That is the call's behaviour (the call switch's override above never
+     * rotates: one account per tier per call, the remainder of that same account spent to the second, then the cut). A flow that
+     * wants both the rotation and its own last-window rule calls {@code super.renewWindowSeconds(ctx, level)} FIRST and applies
+     * its own rule only where that answers 0 (found by the WiFi flow, 2026-10-11).
      */
     protected double renewWindowSeconds(C ctx, LevelAdmission level) { return renewThroughLedger(ctx, level); }
 
