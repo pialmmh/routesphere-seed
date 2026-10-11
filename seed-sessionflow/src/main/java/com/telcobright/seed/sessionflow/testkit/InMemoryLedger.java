@@ -22,6 +22,12 @@ import java.util.function.LongConsumer;
  * <p>It can be told to fail like a real ledger: {@link #faultOn} (it does not answer), {@link #refuseOn} (it refuses
  * with a code of its own), {@link #slowOn} (it takes time; a caller that waits less gets no answer),
  * {@link #failSettlements}. {@link #openReserves()} is the leak check: after every call has ended it must be zero.
+ *
+ * <p><b>Two ledgers exist, and this stands in for either.</b> {@code new InMemoryLedger()} is the ledger that picks the account
+ * ITSELF (orchestrix's road 16): a tier is charged on its partner, and an account only when one is funded here. {@link #accountKeyed()}
+ * is the SWITCH's own ledger (seed-switch-ledger): a tier pays from the account its rating step named and is REFUSED when it names
+ * none. A flow that will run on the switch ledger tells its stories on the second — the first would book on the partner and hide
+ * that refusal.
  */
 public final class InMemoryLedger implements LedgerPort {
 
@@ -41,6 +47,24 @@ public final class InMemoryLedger implements LedgerPort {
     private final Map<String, Long> timeGiven = new HashMap<>();
     private LongConsumer timePasses = InMemoryLedger::sleep;
     private boolean settlementsFail;
+    private final boolean accountKeyed;
+
+    /** The switch ledger's two refusals, in its own words (seed-switch-ledger's {@code MemLedgerPort}; a test there holds them equal). */
+    public static final String NO_ACCOUNT = "NO_ACCOUNT";
+    public static final String ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND";
+
+    /** The ledger that picks the account itself (orchestrix's road 16): one balance per (tenant, partner). */
+    public InMemoryLedger() { this(false); }
+
+    private InMemoryLedger(boolean accountKeyed) { this.accountKeyed = accountKeyed; }
+
+    /**
+     * The SWITCH's own ledger in memory (seed-switch-ledger's shape): a tier pays from the ACCOUNT its rating step named
+     * ({@code level.getPackageAccountId()}) in its own tier — never from "the partner". A tier that names none is refused
+     * {@link #NO_ACCOUNT}; one that names an account this ledger does not hold, {@link #ACCOUNT_NOT_FOUND}. Fund it with
+     * {@link #fundAccount(String, long, String, String)}: the switch ledger keys an account by its tier and its id alone.
+     */
+    public static InMemoryLedger accountKeyed() { return new InMemoryLedger(true); }
 
     // ── setting the scene ───────────────────────────────────────────────────
 
@@ -104,6 +128,18 @@ public final class InMemoryLedger implements LedgerPort {
         return balances.getOrDefault(accountKeyOf(tenant, partnerId, accountId), BigDecimal.ZERO);
     }
 
+    /** One account of a tier by its id ALONE, as the switch ledger holds it: its balance and its unit ({@link #accountKeyed()}). */
+    public synchronized InMemoryLedger fundAccount(String tenant, long accountId, String amount, String uom) {
+        balances.put(accountKey(tenant, accountId), new BigDecimal(amount));
+        units.put(accountKey(tenant, accountId), uom);
+        return this;
+    }
+
+    /** The balance of an account funded by its id alone ({@link #accountKeyed()}). */
+    public synchronized BigDecimal balanceOfAccount(String tenant, long accountId) {
+        return balances.getOrDefault(accountKey(tenant, accountId), BigDecimal.ZERO);
+    }
+
     /** Reserves that were neither settled nor released. Zero when no call is live. */
     public synchronized int openReserves() { return heldByTier.size(); }
 
@@ -164,7 +200,7 @@ public final class InMemoryLedger implements LedgerPort {
         }
         BigDecimal after = before.subtract(amount);
         balances.put(money, after);
-        Reservation held = new Reservation(accountOf(money), units.getOrDefault(key, "BDT"), amount, before, after, false);
+        Reservation held = new Reservation(accountOf(money), units.getOrDefault(money, units.getOrDefault(key, "BDT")), amount, before, after, false);
         reservesByReference.put(reference, held);
         heldByTier.merge(tierOf(reference), amount, BigDecimal::add);
         note("reserve", reference, level, amount, null);
@@ -218,12 +254,33 @@ public final class InMemoryLedger implements LedgerPort {
 
     private static String accountKeyOf(String tenant, int partnerId, long accountId) { return keyOf(tenant, partnerId) + "@" + accountId; }
 
-    /** The balance a tier moves: the account it is charged on when that account is funded here, else the partner's. */
+    private static String accountKey(String tenant, long accountId) { return tenant + "@" + accountId; }
+
+    /** The balance a tier moves, by the ledger this one stands in for. */
     private String moneyKeyOf(LevelAdmission level) {
+        return accountKeyed ? theAccountTheTierNamed(level) : theAccountChargedElseThePartners(level);
+    }
+
+    /** Road 16's shape: the account the tier is charged on when that account is funded here, else the partner's balance. */
+    private String theAccountChargedElseThePartners(LevelAdmission level) {
         String partner = keyOf(level.getDbName(), level.getPartnerId());
         if (level.getChargeAccountId() == null) return partner;
         String account = partner + "@" + level.getChargeAccountId();
         return balances.containsKey(account) ? account : partner;
+    }
+
+    /** The switch ledger's rule: the account the rating step named, held in the tier — else refused, in the switch ledger's words. */
+    private String theAccountTheTierNamed(LevelAdmission level) {
+        Long id = level.getPackageAccountId();
+        if (id == null) {
+            throw new LedgerRefusal(NO_ACCOUNT, "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") partner " + level.getPartnerId()
+                + " names no package account: the rating step chose none");
+        }
+        String account = accountKey(level.getDbName(), id);
+        if (!balances.containsKey(account)) {
+            throw new LedgerRefusal(ACCOUNT_NOT_FOUND, "account " + id + " of tier " + level.getLevelIndex() + " is not held in " + level.getDbName());
+        }
+        return account;
     }
 
     /** A funded account answers its own id; a partner's balance answers a stable made-up one. */

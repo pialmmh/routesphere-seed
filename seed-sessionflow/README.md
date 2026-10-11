@@ -210,6 +210,12 @@ mvn -o test                       # the whole suite
 mvn -o test -Dseed.it=true        # + the Kafka road over a real broker on 127.0.0.1:9092
 ```
 
+The testkit's ledger stands in for EITHER real ledger, and a flow tells its stories on the one it will run on: `new InMemoryLedger()`
+is the ledger that picks the account itself (orchestrix's road 16: a tier is booked on its partner); `InMemoryLedger.accountKeyed()` is the
+SWITCH's own ledger (seed-switch-ledger: a tier pays from the account its rating step named — `fundAccount(tier, accountId, amount, uom)` —
+and a tier that names none is refused `NO_ACCOUNT`, one that names an account not held `ACCOUNT_NOT_FOUND`, in the real ledger's own words;
+seed-switch-ledger's `TestkitLedgerMatchesTheSwitchLedgerTest` holds the two together).
+
 For a test of a deadline: `testkit.ManualClock` (a clock the test moves) with `InMemoryLedger.slowOn(tenant, partner, ms)`
 and `timePassesBy(clock::advance)`. The slow ledger "takes" its time by moving the clock, so the test is exact and waits
 for nothing. `SessionFlowBudgetTest` is the example.
