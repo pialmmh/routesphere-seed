@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.SessionFlowKit;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.registry.InternalEventResolver;
@@ -219,13 +220,49 @@ public abstract class SessionFlowSteps<C extends SessionFlowContext> {
     protected boolean settlesAsync() { return false; }
 
     /**
-     * The settle rule · What this tier finally pays. The base applies it exactly once per tier, on every end path. The
-     * default is the call's rule for a pre-rated event: an answered call pays what it reserved, an unanswered call pays
-     * nothing. A call rated by duration returns its rate × {@code ctx.durationSec}.
+     * The settle rule · What this tier finally pays. The base applies it exactly once per tier, on every end path. A lane says it
+     * in ONE of two ways:
+     * <ul>
+     *   <li><b>priced by duration or rate</b> (the voice call, the WiFi session): override this method whole — its rate ×
+     *       {@code ctx.durationSec}; the two hooks below are then never asked;</li>
+     *   <li><b>priced by its reserve</b> (the ad now, the SMS later): keep this method and answer {@link #settleOutcome} and
+     *       {@link #refundPolicy} instead — the tier pays its whole reserve when the policy says the outcome pays, else nothing.</li>
+     * </ul>
+     * The default asks the two hooks at settle time; a null from either is its default, and the two defaults are the call's rule for
+     * a pre-rated event: an answered call pays what it reserved, an unanswered call pays nothing. A throw here, or from a hook, is no
+     * charge: the tier's settlement is not taken and is logged OWED.
      */
     protected BigDecimal chargeAtSettle(C ctx, LevelAdmission level) {
-        return ctx.answered() ? TierSettlement.reservedOf(level) : BigDecimal.ZERO;
+        boolean pays = policyAtSettle(ctx).pays(outcomeAtSettle(ctx));
+        return pays ? TierSettlement.reservedOf(level) : BigDecimal.ZERO;
     }
+
+    /**
+     * The settle rule, for a lane priced by its reserve · What the session came to, read at settle time: {@link SettleOutcome#CONSUMED},
+     * {@link SettleOutcome#OFFERED_NOT_CONSUMED} or {@link SettleOutcome#FAILED}. The default is the call's: answered = consumed, else
+     * failed. Null = the default. Asked only by the default {@link #chargeAtSettle}: a lane that overrides it never sees this.
+     */
+    protected SettleOutcome settleOutcome(C ctx) { return callsOutcome(ctx); }
+
+    /**
+     * The settle rule, for a lane priced by its reserve · What a session that did not consume pays, read at settle time: a lane returns
+     * its config's policy as the config stands now (the ad: {@code adsphere.billing.unshown}). The default is the call's rule
+     * ({@link RefundPolicy#callsRule}): a failed session pays nothing. Null = the default. Asked only by the default {@link #chargeAtSettle}.
+     */
+    protected RefundPolicy refundPolicy(C ctx) { return RefundPolicy.callsRule(); }
+
+    private RefundPolicy policyAtSettle(C ctx) {
+        RefundPolicy policy = refundPolicy(ctx);
+        return policy != null ? policy : RefundPolicy.callsRule();
+    }
+
+    private SettleOutcome outcomeAtSettle(C ctx) {
+        SettleOutcome outcome = settleOutcome(ctx);
+        return outcome != null ? outcome : callsOutcome(ctx);
+    }
+
+    /** The call's outcome: an answered call consumed its service, an unanswered one failed. */
+    private SettleOutcome callsOutcome(C ctx) { return ctx.answered() ? SettleOutcome.CONSUMED : SettleOutcome.FAILED; }
 
     /**
      * The settlement, first · The billed duration of the call in seconds. It is asked once, when the tiers are settled, and

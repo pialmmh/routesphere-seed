@@ -16,7 +16,9 @@ import com.telcobright.seed.sessionflow.api.SessionState;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.EntryPartner;
 import com.telcobright.seed.sessionflow.api.TierRate;
-import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.api.SettleOutcome;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy.Rule;
 import com.telcobright.seed.sessionflow.dependencies.SessionFlowKit;
 import com.telcobright.statewalk.pipeline.StepMode;
 import com.telcobright.statewalk.registry.InternalEventResolver;
@@ -192,11 +194,13 @@ public final class AdFlow extends SessionFlow<AdFlow.View> {
     @Override
     protected String taskCause(View view, String outcome) { return view.abandoned ? "abandoned" : view.completed ? "viewed" : super.taskCause(view, outcome); }
 
-    /** A shown view pays what it reserved. An admitted view never shown pays by the owner's rule. */
+    /** The settle rule, said through the base's two hooks: a view shown consumed it; an admitted view never shown was offered and not consumed. */
     @Override
-    protected BigDecimal chargeAtSettle(View view, LevelAdmission level) {
-        return view.answered() || unshownViewIsCharged ? TierSettlement.reservedOf(level) : BigDecimal.ZERO;
-    }
+    protected SettleOutcome settleOutcome(View view) { return view.answered() ? SettleOutcome.CONSUMED : SettleOutcome.OFFERED_NOT_CONSUMED; }
+
+    /** A view shown pays what it reserved; one never shown pays by the owner's rule: it keeps its charge, or nothing (the call's rule). */
+    @Override
+    protected RefundPolicy refundPolicy(View view) { return RefundPolicy.of(Rule.REFUND, unshownViewIsCharged ? Rule.CHARGE : Rule.REFUND); }
 
     @Override
     protected String timeoutCause(String state) {
