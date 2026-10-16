@@ -17,11 +17,13 @@
         call, an SMS — is a Call and runs the same multi-tenant flow: launch a pooled machine, preprocess, identify the
         partner, walk the tenant chain leaf to root (authorize, rate, reserve), route, signal, settle, publish one CDR
         record per tier to Kafka. An application overrides only its own steps. The machines come from a pool of a fixed
-        size (statewalk 3.2.0). The ledger of orchestrix's prepaid roads is here too (OrchestrixLedger). First user:
+        size (statewalk 3.3.0 — the SW-T1/SW-T2 fixes of 2026-10-16; persistence stays OFF here, a lane turns it on by its own config
+        key). The ledger of orchestrix's prepaid roads is here too (OrchestrixLedger). First user:
         ad-sphere (AdCallFlow).</description>
 
     <properties>
-        <statewalk.version>3.2.0</statewalk.version>
+        <!-- 3.3.0 (tag v3.3.0, a6879ca): the SW-T1 fixes + persistence by config + SW-T2 (ARCH-0087); the base sets no persistence (OFF) -->
+        <statewalk.version>3.3.0</statewalk.version>
         <jackson.version>2.19.2</jackson.version>
         <kafka.version>3.7.1</kafka.version>
     </properties>
