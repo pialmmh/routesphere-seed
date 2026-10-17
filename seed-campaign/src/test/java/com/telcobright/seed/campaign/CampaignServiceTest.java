@@ -250,5 +250,90 @@ class CampaignServiceTest {
         assertThat(service.claim(p, ViewRequest.at("nobody", "zone0", null, null, null, null, NOON), "x", null, null)).isEmpty();
     }
 
+    // ── ARCH-0093: the two layers — the runner mints the task, the core assigns it at the claim ──
+
+    /** The runner's task for a request: its facts, no campaign — what layer 1 makes before the core sees anything. */
+    static CampaignTask minted(String id) {
+        return CampaignTask.minted(id, "btcl", CampaignKind.AD, "88017", "zone0", null, "wifi-9", NOON, Map.of("facts", Map.of("zone", "zone0")));
+    }
+
+    @Test
+    void a_task_minted_by_the_runner_is_handed_to_the_core_under_no_campaign_and_takes_one_at_the_claim() {
+        service.reloaded("btcl", List.of(campaign(1, 0, 5, Targeting.ANY, CampaignPolicy.ALWAYS, VIDEO)));
+        ViewRequest v = view("zone0", null, "aa:bb");
+        CampaignTask minted = minted("ad-btcl-1");
+        assertThat(minted.state()).as("6: the runner's row before the hand-over").isEqualTo(TaskState.CREATED);
+        assertThat(minted.assigned()).isFalse();
+        assertThat(minted.campaignId()).isEqualTo(CampaignTask.NO_CAMPAIGN);
+
+        CampaignTask handed = service.handedToCore(minted);
+
+        assertThat(handed.state()).as("1: the hand-over is the SMS runner's markAsProcessing").isEqualTo(TaskState.PROCESSING);
+        assertThat(handed.assigned()).isFalse();
+        assertThat(store.tasks.get("ad-btcl-1").state()).as("the row exists STATE 1 before any campaign is claimed").isEqualTo(TaskState.PROCESSING);
+        assertThat(store.writes).as("one INSERT and no counter: no campaign has taken it").containsExactly("insert ad-btcl-1");
+        assertThat(counters(1).pending()).isZero();
+
+        CampaignTask assigned = service.assign(handed, service.rank(v).get(0), v).orElseThrow();
+
+        assertThat(assigned.assigned()).isTrue();
+        assertThat(assigned.campaignId()).isEqualTo(1);
+        assertThat(assigned.partnerId()).as("the campaign's partner, as claim wrote it").isEqualTo(701);
+        assertThat(assigned.creativeId()).isEqualTo("v1");
+        assertThat(assigned.state()).as("the assignment moves no state").isEqualTo(TaskState.PROCESSING);
+        assertThat(assigned.createdAt()).as("the row's birth stays the mint").isEqualTo(NOON);
+        assertThat(assigned.detail()).as("the claim's facts join the mint's").containsEntry("viewSeconds", 15).containsKey("specificity").containsKey("facts");
+        assertThat(store.tasks.get("ad-btcl-1").campaignId()).as("the UPDATE set CAMPAIGN_ID").isEqualTo(1);
+        assertThat(store.writes).as("the assignment = one UPDATE and ONE counter move, as claim's INSERT + bump").containsExactly("insert ad-btcl-1", "update ad-btcl-1 PROCESSING", "bump 1 0/0/1");
+        assertThat(counters(1).pending()).isEqualTo(1);
+        assertThat(counters(1).servedToday()).isEqualTo(1);
+
+        CampaignTask done = service.closed(assigned.completed(NOON.plusSeconds(15), 15, null, "viewed"));
+
+        assertThat(done.state()).as("11: the view completed").isEqualTo(TaskState.SENT);
+        assertThat(store.counters.get(1)).as("6 → 1 → 11: pending +1 at the claim, sent +1 / pending −1 at the close — moved once each").containsExactly(1, 0, 0);
+        assertThat(counters(1).sent()).isEqualTo(1);
+        assertThat(counters(1).pending()).isZero();
+    }
+
+    @Test
+    void a_task_no_campaign_took_closes_failed_with_its_cause_and_moves_no_counter() {
+        service.reloaded("btcl", List.of(campaign(1, 0, 0, Targeting.ANY, CampaignPolicy.ALWAYS, VIDEO)));
+        CampaignTask handed = service.handedToCore(minted("ad-btcl-2"));
+
+        CampaignTask refused = service.closed(handed.failed(NOON.plusSeconds(1), 0, "NO_RULE"));
+
+        assertThat(refused.state()).as("5 with the cause word").isEqualTo(TaskState.FAILED);
+        assertThat(refused.endCause()).isEqualTo("NO_RULE");
+        assertThat(refused.assigned()).as("no campaign ever took it").isFalse();
+        assertThat(refused.charge().free()).isTrue();
+        assertThat(store.tasks.get("ad-btcl-2").state()).isEqualTo(TaskState.FAILED);
+        assertThat(store.writes).as("the row alone").containsExactly("insert ad-btcl-2", "update ad-btcl-2 FAILED");
+        assertThat(store.counters).as("no campaign took it: no counter of any campaign moved").isEmpty();
+        assertThat(counters(1).failed()).isZero();
+        assertThat(counters(1).pending()).isZero();
+        assertThat(service.closed(refused)).as("closed once: a terminal row is written as it is, again without a counter").isEqualTo(refused);
+        assertThat(store.counters).isEmpty();
+    }
+
+    @Test
+    void assign_answers_empty_when_the_quota_went_and_a_task_that_has_its_campaign_is_not_assigned_or_handed_over_again() {
+        service.reloaded("btcl", List.of(campaign(1, 0, 1, Targeting.ANY, CampaignPolicy.ALWAYS, VIDEO)));
+        ViewRequest v = view("zone0", null, "aa:bb");
+        Placement p = service.rank(v).get(0);
+        CampaignTask first = service.assign(service.handedToCore(minted("ad-btcl-3")), p, v).orElseThrow();
+        CampaignTask second = service.handedToCore(minted("ad-btcl-4"));
+
+        assertThat(service.assign(second, p, v)).as("the one view is taken: the task stays as it was").isEmpty();
+
+        assertThat(store.tasks.get("ad-btcl-4").assigned()).isFalse();
+        assertThat(store.tasks.get("ad-btcl-4").state()).isEqualTo(TaskState.PROCESSING);
+        assertThat(counters(1).pending()).isEqualTo(1);
+        assertThatThrownBy(() -> service.assign(first, p, v)).as("a task that has its campaign is not assigned twice").isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ad-btcl-3").hasMessageContaining("campaign 1");
+        assertThatThrownBy(() -> service.handedToCore(first)).as("nor handed to the core again").isInstanceOf(IllegalArgumentException.class);
+        assertThat(counters(1).pending()).as("a refused verb moves nothing").isEqualTo(1);
+    }
+
     private CampaignCounters counters(int id) { return service.counters("btcl").get(id); }
 }

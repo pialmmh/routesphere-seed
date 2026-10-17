@@ -173,6 +173,8 @@ class StoreBatchAndRepairTest {
         store.updateTask(task("w3", "wroot", 42).failed(T0.plusSeconds(3), 3, "STALLED"));
         store.insertTask(task("r1", "res_44", 42));
         store.bumpCounters("wroot", 42, 0, 0, +875);                             // a pending that never came down
+        // ARCH-0093: a task the runner handed to the core that was never admitted (the process died between the two): STATE 1, no campaign
+        store.insertTask(CampaignTask.minted("w6", "wroot", CampaignKind.AD, "aa:bb:cc:dd:ee:06", "zone0", "site-1", "wifi-6", T0, Map.of()).processing());
         try (Connection c = ds.getConnection(); var st = c.createStatement()) {
             st.execute("INSERT INTO campaign_task (uniqueId, CAMPAIGN_ID, ID_PARTNER, PHONE_NUMBER, TASK_TYPE, STATE, CREATED_STAMP) VALUES ('sms-1', 44, 701, '8801', 'SMS', 1, CURRENT_TIMESTAMP)");
         }
@@ -181,22 +183,27 @@ class StoreBatchAndRepairTest {
 
         StoreRepair repair = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start);
 
-        assertThat(repair.tasksClosed()).as("w4 and w5: not final, and no machine of this process holds them").isEqualTo(2);
+        assertThat(repair.tasksClosed()).as("w4, w5 and the orphan w6: not final, and no machine of this process holds them").isEqualTo(3);
         assertThat(rows(ds, "tenantName = 'wroot' AND STATE = 1")).as("no task of wroot is left PROCESSING").isZero();
         assertThat(rows(ds, "uniqueId IN ('w4', 'w5') AND STATE = 5 AND STATUS = 5 AND HANGUP_CAUSE = 'LOST_AT_RESTART' AND END_TIME_MILLIS = " + start.toEpochMilli())).isEqualTo(2);
+        assertThat(rows(ds, "uniqueId = 'w6' AND STATE = 5 AND STATUS = 5 AND HANGUP_CAUSE = 'LOST_AT_RESTART' AND CAMPAIGN_ID = " + CampaignTask.NO_CAMPAIGN + " AND END_TIME_MILLIS = " + start.toEpochMilli()))
+            .as("the orphan is closed like the others, still under no campaign").isEqualTo(1);
         assertThat(rows(ds, "uniqueId = 'w3' AND HANGUP_CAUSE = 'STALLED'")).as("a task that was final keeps its own end").isEqualTo(1);
         assertThat(rows(ds, "uniqueId = 'r1' AND STATE = 1")).as("another tenant's live view is not this start's to close").isEqualTo(1);
         assertThat(rows(ds, "uniqueId = 'sms-1' AND STATE = 1")).as("another kind's task is not this store's").isEqualTo(1);
 
         int[] now = counters(ds, where, 42);
         if (where == Counters.COUNTER_TABLE) {
-            assertThat(now).as("the counter is this store's own traffic: SET to the count of the rows — sent 2, failed 3 (w3, w4, w5), pending 1 (r1)").containsExactly(2, 3, 1);
+            assertThat(now).as("the counter is this store's own traffic: SET to the count of the rows — sent 2, failed 3 (w3, w4, w5), pending 1 (r1); the orphan counts nowhere").containsExactly(2, 3, 1);
+            assertThat(CampaignCounterTableTest.count(ds, "SELECT COUNT(*) FROM campaign_counter WHERE CAMPAIGN_ID = " + CampaignTask.NO_CAMPAIGN))
+                .as("no counter row is made for 'no campaign'").isZero();
         } else {
             assertThat(now).as("the campaign's own row, which others write too (its 12 sent have no task row here): sent and failed are only raised, pending is the rows not final")
                 .containsExactly(Math.max(before[0], 2), Math.max(before[1], 3), 1);
         }
-        assertThat(repair.countersCorrected()).isEqualTo(1);
-        assertThat(repair.words()).contains("2 task(s) of wroot").contains("LOST_AT_RESTART").contains("campaign 42").contains("→ " + now[0] + "/" + now[1] + "/" + now[2]);
+        assertThat(repair.countersCorrected()).as("campaign 42 alone: the orphan touches no counter").isEqualTo(1);
+        assertThat(repair.words()).contains("3 task(s) of wroot").contains("LOST_AT_RESTART").contains("(1 of them handed to the core and never admitted: no campaign, no counter)")
+            .contains("campaign 42").contains("→ " + now[0] + "/" + now[1] + "/" + now[2]);
 
         StoreRepair again = store.repairAfterRestart("wroot", CampaignStore.LOST_AT_RESTART, start.plusSeconds(1));
         assertThat(again.nothing()).as("a store that is right is left alone").isTrue();
