@@ -2,8 +2,9 @@ package com.telcobright.seed.campaign.api;
 
 /**
  * {@code campaign_task.STATE}, routesphere's codes (grep over routesphere-core, 2026-09-24). A kind uses the codes
- * whose meaning fits it: an SMS task is CREATED, then PROCESSING, then SENT or FAILED (or RETRY); an ad task is born
- * PROCESSING (the view is live), then SENT (= completed) or FAILED (abandoned, stalled, never shown).
+ * whose meaning fits it: an SMS task is CREATED, then PROCESSING, then SENT or FAILED (or RETRY); an ad task walks the same
+ * ladder since ARCH-0093 — minted CREATED by its runner at the request, PROCESSING when handed to the core (its row is first
+ * seen there), then SENT (= completed) or FAILED (abandoned, stalled, never shown — or refused by the core before any campaign took it).
  */
 public enum TaskState {
     PENDING(0), PROCESSING(1), QUEUED(4), FAILED(5), CREATED(6), SENT(11), RETRY(16);

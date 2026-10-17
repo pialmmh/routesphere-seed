@@ -72,10 +72,15 @@ public final class JdbcCampaignStore implements CampaignStore {
           ORIGINATING_CALLING_NUMBER, CLIENT_TRANS_ID, tenantName, TASK_DETAIL_JSON)
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?""";
     private static final String WHERE_NO_SUCH_TASK = " WHERE NOT EXISTS (SELECT 1 FROM campaign_task WHERE uniqueId = ?)";
+    /**
+     * The row as the task is now. The last three — {@code CAMPAIGN_ID}, {@code ID_PARTNER}, {@code MESSAGE} — are the ASSIGNMENT's (ARCH-0093: the
+     * ad's task is made under no campaign and takes one at the core's claim, by this UPDATE); a task born under its campaign writes them again
+     * unchanged.
+     */
     private static final String UPDATE_TASK = """
         UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, ANSWERED = ?, ANSWER_TIME_MILLIS = ?,
           END_TIME_MILLIS = ?, BILLSEC = ?, HANGUP_CAUSE = ?, idPackageAccount = ?, packageAmount = ?, uom = ?,
-          inPartnerCost = ?, isPrepaid = ?, MatchedPrefixCustomer = ?, TASK_DETAIL_JSON = ?
+          inPartnerCost = ?, isPrepaid = ?, MatchedPrefixCustomer = ?, TASK_DETAIL_JSON = ?, CAMPAIGN_ID = ?, ID_PARTNER = ?, MESSAGE = ?
         WHERE uniqueId = ?""";
     private static final String BUMP = """
         UPDATE campaign SET SENT_TASK_COUNT = COALESCE(SENT_TASK_COUNT, 0) + ?, FAILED_TASK_COUNT = COALESCE(FAILED_TASK_COUNT, 0) + ?,
@@ -286,6 +291,9 @@ public final class JdbcCampaignStore implements CampaignStore {
         ps.setString(i++, ch.free() ? "0" : "1");
         ps.setString(i++, fit(ch.matchedPattern(), CampaignSchema.TASK_PREFIX_WIDTH, "MatchedPrefixCustomer", t));
         ps.setString(i++, json.apply(t.detail()));
+        ps.setInt(i++, t.campaignId());
+        ps.setInt(i++, t.partnerId());
+        ps.setString(i++, fit(t.creativeId(), CampaignSchema.TASK_MESSAGE_WIDTH, "MESSAGE", t));
         ps.setString(i, t.uniqueId());
     }
 

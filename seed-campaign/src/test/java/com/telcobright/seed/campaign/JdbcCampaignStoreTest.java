@@ -81,6 +81,40 @@ class JdbcCampaignStoreTest {
         aLongTextIsCutNotLost(openH2(d), d);
     }
 
+    @ParameterizedTest
+    @EnumSource(Dialect.class)
+    void a_task_handed_to_the_core_is_a_row_under_no_campaign_and_the_claims_update_sets_the_campaign_its_partner_and_the_creative(Dialect d) throws Exception {
+        theAssignmentLandsInTheRow(openH2(d), d);
+    }
+
+    /** ARCH-0093: the ad's task is INSERTed by the runner's hand-over with CAMPAIGN_ID 0 (the column is NOT NULL) and takes its campaign by the UPDATE. */
+    static void theAssignmentLandsInTheRow(DataSource ds, Dialect d) throws Exception {
+        JdbcCampaignStore store = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d);
+        Instant t0 = Instant.parse("2026-10-17T10:00:00Z");
+        CampaignTask handed = CampaignTask.minted("ad-btcl-aabb-9", "btcl", CampaignKind.AD, "8801711", "zone0", "site-1", "wifi-9", t0, Map.of("facts", Map.of("zone", "zone0"))).processing();
+
+        store.insertTask(handed);
+
+        Map<String, Object> row = row(ds, "SELECT * FROM campaign_task WHERE uniqueId = 'ad-btcl-aabb-9'");
+        assertThat(row).containsEntry("campaign_id", 0).containsEntry("id_partner", 0).containsEntry("state", 1).containsEntry("status", 15)
+            .containsEntry("task_type", "AD").containsEntry("phone_number", "8801711").containsEntry("start_time_millis", t0.toEpochMilli());
+        assertThat(row.get("message")).as("no creative before the claim").isNull();
+
+        Campaign cola = store.campaigns("btcl").get(0);
+        store.updateTask(handed.assigned(cola, cola.creatives().get(0), Map.of("viewSeconds", 15)));
+
+        row = row(ds, "SELECT * FROM campaign_task WHERE uniqueId = 'ad-btcl-aabb-9'");
+        assertThat(row).as("the assignment's three columns").containsEntry("campaign_id", 42).containsEntry("id_partner", 701).containsEntry("message", "c-77")
+            .containsEntry("state", 1).containsEntry("status", 15);
+        assertThat((String) row.get("task_detail_json")).contains("viewSeconds").contains("facts");
+
+        store.updateTask(handed.failed(t0.plusSeconds(1), 0, "NO_RULE"));
+
+        row = row(ds, "SELECT * FROM campaign_task WHERE uniqueId = 'ad-btcl-aabb-9'");
+        assertThat(row).as("a refused request's close writes the row as its task is: still no campaign, the cause word").containsEntry("campaign_id", 0)
+            .containsEntry("state", 5).containsEntry("status", 5).containsEntry("hangup_cause", "NO_RULE").containsEntry("end_time_millis", t0.plusSeconds(1).toEpochMilli());
+    }
+
     /** The widths are the table's own (CampaignSchema): a zone of 64 in a column of 60 must not cost the task its row. */
     static void aLongTextIsCutNotLost(DataSource ds, Dialect d) throws Exception {
         JdbcCampaignStore store = new JdbcCampaignStore(ds, CampaignKind.AD, JdbcCampaignStoreTest::json, d);

@@ -55,13 +55,42 @@ public final class DefaultCampaignService implements CampaignService {
 
     @Override
     public Optional<CampaignTask> claim(Placement p, ViewRequest view, String taskId, String subject, String clientRef) {
-        LiveCampaign live = liveOf(view.tenantId(), p.campaign().id());
-        if (live == null || !live.tryTake()) return Optional.empty();
-        live.served(view.at(), zone);
-        tenants.get(view.tenantId()).cap.count(p.campaign().id(), view.device(), view.at());
+        if (!takeOne(p, view)) return Optional.empty();
         CampaignTask task = newTask(p, view, taskId, subject, clientRef);
         tell(() -> { store.insertTask(task); store.bumpCounters(task.tenantId(), task.campaignId(), 0, 0, +1); }, task, "claim");
         return Optional.of(task);
+    }
+
+    /** ARCH-0093, layer 1 → 2: the runner's minted task becomes the core's — its row made PROCESSING under no campaign; no counter moves. */
+    @Override
+    public CampaignTask handedToCore(CampaignTask minted) {
+        requireUnassigned(minted, "handedToCore()");
+        CampaignTask processing = minted.processing();
+        tell(() -> store.insertTask(processing), processing, "handed to the core");
+        return processing;
+    }
+
+    /** ARCH-0093, the core's claim: the quota and the cap as {@link #claim} takes them, then the row's UPDATE and the one counter move. */
+    @Override
+    public Optional<CampaignTask> assign(CampaignTask task, Placement p, ViewRequest view) {
+        requireUnassigned(task, "assign()");
+        if (!takeOne(p, view)) return Optional.empty();
+        CampaignTask assigned = task.assigned(p.campaign(), p.creative(), placementDetail(p));
+        tell(() -> { store.updateTask(assigned); store.bumpCounters(assigned.tenantId(), assigned.campaignId(), 0, 0, +1); }, assigned, "assign");
+        return Optional.of(assigned);
+    }
+
+    /** One slot of the campaign's quota and one count of the device's cap — what claim and assign share. False = the quota or the cap went. */
+    private boolean takeOne(Placement p, ViewRequest view) {
+        LiveCampaign live = liveOf(view.tenantId(), p.campaign().id());
+        if (live == null || !live.tryTake()) return false;
+        live.served(view.at(), zone);
+        tenants.get(view.tenantId()).cap.count(p.campaign().id(), view.device(), view.at());
+        return true;
+    }
+
+    private static void requireUnassigned(CampaignTask task, String verb) {
+        if (task.assigned()) throw new IllegalArgumentException(verb + " takes a task no campaign has taken; " + task.uniqueId() + " names campaign " + task.campaignId());
     }
 
     @Override
@@ -74,20 +103,30 @@ public final class DefaultCampaignService implements CampaignService {
     @Override
     public CampaignTask complete(CampaignTask task, int watchedSec, TaskCharge charge, String cause) {
         if (task.state().terminal()) return task;
-        return recordCompleted(task.completed(clock.instant(), watchedSec, charge, cause));
+        CampaignTask done = task.completed(clock.instant(), watchedSec, charge, cause);
+        return done.assigned() ? recordCompleted(done) : recordUnassigned(done);
     }
 
     @Override
     public CampaignTask fail(CampaignTask task, int watchedSec, String cause) {
         if (task.state().terminal()) return task;
-        return recordFailed(task.failed(clock.instant(), watchedSec, cause));
+        CampaignTask lost = task.failed(clock.instant(), watchedSec, cause);
+        return lost.assigned() ? recordFailed(lost) : recordUnassigned(lost);
     }
 
     @Override
     public CampaignTask closed(CampaignTask closedTask) {
-        if (closedTask.state() == TaskState.SENT) return recordCompleted(closedTask);
-        if (closedTask.state() == TaskState.FAILED) return recordFailed(closedTask);
-        throw new IllegalArgumentException("closed() takes a terminal task row (SENT or FAILED); " + closedTask.uniqueId() + " is " + closedTask.state());
+        if (!closedTask.state().terminal()) {
+            throw new IllegalArgumentException("closed() takes a terminal task row (SENT or FAILED); " + closedTask.uniqueId() + " is " + closedTask.state());
+        }
+        if (!closedTask.assigned()) return recordUnassigned(closedTask);
+        return closedTask.state() == TaskState.SENT ? recordCompleted(closedTask) : recordFailed(closedTask);
+    }
+
+    /** A row no campaign took (ARCH-0093: a request the core refused): the row alone — no campaign's counters, no quota, no campaign to close. */
+    private CampaignTask recordUnassigned(CampaignTask t) {
+        tell(() -> store.updateTask(t), t, "closed under no campaign");
+        return t;
     }
 
     /** A completed row: the counters, the store, and the campaign closes itself when its quota is reached. */
@@ -146,11 +185,17 @@ public final class DefaultCampaignService implements CampaignService {
 
     private CampaignTask newTask(Placement p, ViewRequest view, String taskId, String subject, String clientRef) {
         Campaign c = p.campaign();
+        Map<String, Object> detail = new java.util.HashMap<>(placementDetail(p));
+        detail.put("facts", view.facts());
         return new CampaignTask(taskId, view.tenantId(), c.id(), c.partnerId(), c.kind(),
             subject == null || subject.isBlank() ? (view.device() == null ? "unknown" : view.device()) : subject,
             p.creative().id(), view.fact(ViewRequest.ZONE), view.fact(ViewRequest.SITE), clientRef,
-            TaskState.PROCESSING, clock.instant(), null, null, 0, null, null,
-            Map.of("facts", view.facts(), "viewSeconds", p.viewSeconds(), "specificity", p.specificity()));
+            TaskState.PROCESSING, clock.instant(), null, null, 0, null, null, detail);
+    }
+
+    /** What the claim learns of the placement, kept on the row's detail: the seconds the view must last and why the campaign ranked where it did. */
+    private static Map<String, Object> placementDetail(Placement p) {
+        return Map.of("viewSeconds", p.viewSeconds(), "specificity", p.specificity());
     }
 
     /** The store is told; a store that fails is logged with the task and the step, and the task's life goes on. */
