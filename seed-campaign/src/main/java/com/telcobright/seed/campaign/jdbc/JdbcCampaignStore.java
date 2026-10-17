@@ -488,9 +488,13 @@ public final class JdbcCampaignStore implements CampaignStore {
     private static final String OPEN_STATES_IN = "STATE IN (" + String.join(", ", Collections.nCopies(OPEN_STATE_CODES.size(), "?")) + ")";
     static final String CLOSE_WHAT_IS_NOT_FINAL = "UPDATE campaign_task SET STATE = ?, STATUS = ?, LAST_UPDATED_STAMP = ?, END_TIME_MILLIS = ?, HANGUP_CAUSE = ?"
         + " WHERE TASK_TYPE = ? AND tenantName = ? AND " + OPEN_STATES_IN;
+    /** The rows per campaign — never the rows no campaign took ({@code CAMPAIGN_ID} = {@link CampaignTask#NO_CAMPAIGN}): they have no counter (ARCH-0093). */
     static final String COUNT_THE_TASKS = "SELECT CAMPAIGN_ID, SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END), SUM(CASE WHEN STATE = ? THEN 1 ELSE 0 END),"
         + " SUM(CASE WHEN " + OPEN_STATES_IN + " THEN 1 ELSE 0 END)"
-        + " FROM campaign_task WHERE TASK_TYPE = ? GROUP BY CAMPAIGN_ID";
+        + " FROM campaign_task WHERE TASK_TYPE = ? AND CAMPAIGN_ID <> " + CampaignTask.NO_CAMPAIGN + " GROUP BY CAMPAIGN_ID";
+    /** The open rows of the tenant that no campaign took: handed to the core, never admitted (the process died between the two) — said apart in the repair's words. */
+    private static final String COUNT_THE_OPEN_ORPHANS = "SELECT COUNT(*) FROM campaign_task WHERE TASK_TYPE = ? AND tenantName = ? AND CAMPAIGN_ID = "
+        + CampaignTask.NO_CAMPAIGN + " AND " + OPEN_STATES_IN;
     private static final String COUNTERS_ON_THE_ROWS = "SELECT CAMPAIGN_ID, COALESCE(SENT_TASK_COUNT, 0), COALESCE(FAILED_TASK_COUNT, 0),"
         + " COALESCE(PENDING_TASK_COUNT, 0) FROM campaign WHERE CAMPAIGN_TYPE = ? FOR UPDATE";
     private static final String SET_ON_THE_ROW = "UPDATE campaign SET SENT_TASK_COUNT = ?, FAILED_TASK_COUNT = ?, PENDING_TASK_COUNT = ?,"
@@ -509,6 +513,9 @@ public final class JdbcCampaignStore implements CampaignStore {
      * traffic: SENT, FAILED and PENDING are SET to the count of the rows. In {@link Counters#CAMPAIGN_ROW} the counters stand on the
      * campaign's own row, which others write too (a migration, another runner whose task rows are not kept for ever): SENT and FAILED
      * are only RAISED to the count — never lowered — and PENDING is set to the rows that are not final.
+     *
+     * <p>A task left open under NO campaign (ARCH-0093: handed to the core, never admitted — the process died between the two) is closed
+     * like the others, with the same cause; it has no campaign, so no counter is touched for it, and the words say how many there were.
      */
     @Override
     public StoreRepair repairAfterRestart(String tenantName, String cause, Instant at) {
@@ -517,10 +524,11 @@ public final class JdbcCampaignStore implements CampaignStore {
             c.setAutoCommit(false);
             try {
                 Map<Integer, int[]> stored = lockTheCounters(c);
+                int orphans = countTheOpenOrphans(c, tenantName);
                 int closed = closeWhatIsNotFinal(c, tenantName, cause, at);
                 List<String> corrected = setTheCountersFromTheRows(c, stored, countTheTasks(c));
                 c.commit();
-                return new StoreRepair(closed, corrected.size(), wordsOf(tenantName, closed, cause, corrected));
+                return new StoreRepair(closed, corrected.size(), wordsOf(tenantName, closed, orphans, cause, corrected));
             } catch (SQLException | RuntimeException e) {
                 try { c.rollback(); } catch (SQLException alreadyGone) { e.addSuppressed(alreadyGone); }
                 throw e;
@@ -543,6 +551,18 @@ public final class JdbcCampaignStore implements CampaignStore {
             }
         }
         return stored;
+    }
+
+    /** How many of the tenant's open rows no campaign took — counted before the close, which closes them with the rest. */
+    private int countTheOpenOrphans(Connection c, String tenantName) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(COUNT_THE_OPEN_ORPHANS)) {
+            ps.setString(1, kind.name());
+            ps.setString(2, tenantName);
+            bindTheOpenStates(ps, 3);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
     }
 
     private int closeWhatIsNotFinal(Connection c, String tenantName, String cause, Instant at) throws SQLException {
@@ -607,9 +627,10 @@ public final class JdbcCampaignStore implements CampaignStore {
         return corrected;
     }
 
-    private static String wordsOf(String tenantName, int closed, String cause, List<String> corrected) {
+    private static String wordsOf(String tenantName, int closed, int orphans, String cause, List<String> corrected) {
         if (closed == 0 && corrected.isEmpty()) return "";
-        return closed + " task(s) of " + tenantName + " that a stopped process left not final are closed " + cause + "; " + corrected.size()
+        return closed + " task(s) of " + tenantName + " that a stopped process left not final are closed " + cause
+            + (orphans == 0 ? "" : " (" + orphans + " of them handed to the core and never admitted: no campaign, no counter)") + "; " + corrected.size()
             + " campaign(s) had counters that did not say what their task rows say, set now" + (corrected.isEmpty() ? "" : " — " + String.join("; ", corrected));
     }
 
