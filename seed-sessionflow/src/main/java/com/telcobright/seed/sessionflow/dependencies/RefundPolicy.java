@@ -7,7 +7,7 @@ import java.util.Locale;
 /**
  * The refund rule of a lane priced by its reserve: what a session that did not consume pays at settle time — its whole reserve
  * ({@link Rule#CHARGE}) or nothing ({@link Rule#REFUND}). A session that consumed always pays what it reserved. A lane hands it
- * to the base at settle time through {@code SessionFlowSteps.refundPolicy}, from its own config.
+ * to the base at settle time through {@code RoutesphereFlow.refundPolicy}, from its own config.
  *
  * @param onFailure what an admitted session that FAILED pays
  * @param unshown   what a session OFFERED and never consumed pays (the ad: handed to the phone, never shown —

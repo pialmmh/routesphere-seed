@@ -1,16 +1,17 @@
 package com.telcobright.seed.sessionflow.spi;
 
-import com.telcobright.seed.sessionflow.api.RequestFacts;
+import com.telcobright.seed.sessionflow.api.Ingress;
 
 import java.util.Optional;
 
 /**
- * Which tenant did this request come in for? Asked by the PRODUCT, before admission: it sets the flow's {@code ctx.tenantName} from the
- * answer, and the base's own {@code resolveTenant} then checks that the name is the root of a served tree (it stays as it is). No match =
- * empty, NEVER a default: a request nobody claims is refused, not quietly given to someone (ARCH-0077-A item 8).
+ * Which ROOT tenant did this session come in for? The base's step (a) {@code identifySiblingLevelTenants} asks it with the ingress the
+ * signaling machine stamped on the facts ({@code listen ip:port}, {@code esl host:port}, {@code vlan gateway:svlan}, {@code topic name}).
+ * The answer is the root's tenant CODE (the rule's {@code tenant}). No match = empty, NEVER a default: a session nobody claims is refused
+ * {@code NO_TENANT}, not quietly given to someone (operator model §5; ARCH-0077-A item 8).
  */
 @FunctionalInterface
 public interface TenantResolver {
 
-    Optional<String> tenantOf(RequestFacts facts);
+    Optional<String> tenantOf(Ingress ingress);
 }

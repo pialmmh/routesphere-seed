@@ -1,7 +1,7 @@
 package com.telcobright.seed.sessionflow;
 
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
-import com.telcobright.seed.sessionflow.api.RequestFacts;
+import com.telcobright.seed.sessionflow.api.Ingress;
 import com.telcobright.seed.sessionflow.dependencies.IdentificationRules;
 import com.telcobright.seed.sessionflow.dependencies.TenantResolvers;
 import com.telcobright.seed.sessionflow.spi.TenantResolver;
@@ -28,19 +28,19 @@ class TenantResolverTest {
 
     @Test
     void aListenRuleResolves_anEslRuleToo() {
-        assertThat(resolver.tenantOf(RequestFacts.listen("10.10.191.5", 1812))).contains("btcl");
-        assertThat(resolver.tenantOf(RequestFacts.listen("10.10.191.6", 1812))).contains("tele2");
-        assertThat(resolver.tenantOf(RequestFacts.esl("127.0.0.1", 8021))).contains("btcl");
+        assertThat(resolver.tenantOf(Ingress.listen("10.10.191.5", 1812))).contains("btcl");
+        assertThat(resolver.tenantOf(Ingress.listen("10.10.191.6", 1812))).contains("tele2");
+        assertThat(resolver.tenantOf(Ingress.esl("127.0.0.1", 8021))).contains("btcl");
     }
 
     @Test
     void anUnknownAddress_isEmpty_neverADefault() {
-        assertThat(resolver.tenantOf(RequestFacts.listen("10.10.191.9", 1812))).isEmpty();
-        assertThat(resolver.tenantOf(RequestFacts.listen("10.10.191.5", 1813))).as("the port is part of the match").isEmpty();
-        assertThat(resolver.tenantOf(new RequestFacts("esl", "10.10.191.5:1812"))).as("the kind is part of the match").isEmpty();
-        assertThat(TenantResolvers.ofRules(List.of(new IdentificationRule("listen", "1.2.3.4:1812", "only"))).tenantOf(RequestFacts.listen("9.9.9.9", 1812)))
+        assertThat(resolver.tenantOf(Ingress.listen("10.10.191.9", 1812))).isEmpty();
+        assertThat(resolver.tenantOf(Ingress.listen("10.10.191.5", 1813))).as("the port is part of the match").isEmpty();
+        assertThat(resolver.tenantOf(new Ingress("esl", "10.10.191.5:1812"))).as("the kind is part of the match").isEmpty();
+        assertThat(TenantResolvers.ofRules(List.of(new IdentificationRule("listen", "1.2.3.4:1812", "only"))).tenantOf(Ingress.listen("9.9.9.9", 1812)))
             .as("one rule is not a default").isEmpty();
-        assertThat(TenantResolvers.none().tenantOf(RequestFacts.listen("10.10.191.5", 1812))).isEmpty();
+        assertThat(TenantResolvers.none().tenantOf(Ingress.listen("10.10.191.5", 1812))).isEmpty();
     }
 
     @Test
@@ -72,7 +72,7 @@ class TenantResolverTest {
 
     @Test
     void theFactsAndTheRules_refuseBlanks() {
-        assertThatThrownBy(() -> new RequestFacts("listen", " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Ingress("listen", " ")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new IdentificationRule("", "x", "t")).isInstanceOf(IllegalArgumentException.class);
         assertThat(new IdentificationRule("listen", "a:1", "t").toString()).isEqualTo("listen a:1 → t");
     }

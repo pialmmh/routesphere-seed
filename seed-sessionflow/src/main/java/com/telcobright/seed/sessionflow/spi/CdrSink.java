@@ -14,6 +14,12 @@ public interface CdrSink extends AutoCloseable {
 
     void publish(String callId, List<CdrEvent> tiers);
 
+    /**
+     * The session's records on its ROOT's road ({@code cdr_<root>}, §C: every lookup of a session is scoped to its root, its CDR topic too).
+     * The default ignores the root (a sink bound to one topic); a per-root sink ({@code CdrSinks.kafkaPerRoot}) names the topic by it.
+     */
+    default void publish(String root, String callId, List<CdrEvent> tiers) { publish(callId, tiers); }
+
     @Override
     default void close() { }
 }

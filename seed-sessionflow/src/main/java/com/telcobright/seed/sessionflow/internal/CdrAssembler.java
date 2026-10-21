@@ -2,7 +2,7 @@ package com.telcobright.seed.sessionflow.internal;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
-import com.telcobright.seed.sessionflow.api.SessionFlowContext;
+import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.ClosedSpan;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
@@ -35,7 +35,7 @@ public final class CdrAssembler {
     }
 
     /** One tier's record: the call's facts, this tier's payer and rate, and what the settle step charged here. */
-    public CdrEvent tierRecord(SessionFlowContext ctx, LevelAdmission level, TierSettlement settlement, int serviceGroup,
+    public CdrEvent tierRecord(RoutesphereContext ctx, LevelAdmission level, TierSettlement settlement, int serviceGroup,
                                String hangupCause, boolean paidInMoney) {
         CdrEvent cdr = callFacts(ctx, serviceGroup, hangupCause);
         cdr.tenant = level.getDbName();
@@ -58,25 +58,25 @@ public final class CdrAssembler {
      * (billing keys a record on the id and the tenant: one per purchase), its own account, charge, wall-clock and seconds; the session's
      * cause, with the span's own end in the meta data. {@code callId} stays the session's: the spans correlate by it.
      */
-    public CdrEvent spanRecord(SessionFlowContext ctx, ClosedSpan span, int serviceGroup, String hangupCause, boolean paidInMoney) {
+    public CdrEvent spanRecord(RoutesphereContext ctx, ClosedSpan span, int serviceGroup, String hangupCause, boolean paidInMoney) {
         CdrEvent cdr = tierRecord(ctx, span.level(), span.settlement(), serviceGroup, hangupCause, paidInMoney);
-        long answeredAt = span.spanNo() == 1 ? ctx.answeredAtMs : span.startedAtMs();
+        long answeredAt = span.spanNo() == 1 ? ctx.answeredAtMs() : span.startedAtMs();
         asSpan(cdr, ctx, span.level(), span.spanNo(), span.startedAtMs(), answeredAt, span.endedAtMs(), span.seconds());
         cdr.meta.put("spanEnd", "NEXT_ACCOUNT");
         return cdr;
     }
 
     /** O4 · The record of the LIVE span of a tier that rotated: {@code <sid>.<n>}, from the last rotation to the end. */
-    public CdrEvent lastSpanRecord(SessionFlowContext ctx, LevelAdmission level, TierSettlement settlement, int serviceGroup, String hangupCause,
+    public CdrEvent lastSpanRecord(RoutesphereContext ctx, LevelAdmission level, TierSettlement settlement, int serviceGroup, String hangupCause,
                                    boolean paidInMoney) {
         CdrEvent cdr = tierRecord(ctx, level, settlement, serviceGroup, hangupCause, paidInMoney);
         asSpan(cdr, ctx, level, ctx.spanNo(), ctx.spanStartedAtMs, ctx.spanStartedAtMs, ctx.endedAtMs, ctx.spanSeconds());
         return cdr;
     }
 
-    private void asSpan(CdrEvent cdr, SessionFlowContext ctx, LevelAdmission level, int spanNo, long startedAtMs, long answeredAtMs, long endedAtMs,
+    private void asSpan(CdrEvent cdr, RoutesphereContext ctx, LevelAdmission level, int spanNo, long startedAtMs, long answeredAtMs, long endedAtMs,
                         double seconds) {
-        cdr.channelCallUuid = ctx.sessionKey + "." + spanNo;
+        cdr.channelCallUuid = ctx.sessionId() + "." + spanNo;
         cdr.startTime = wallClock(startedAtMs);
         cdr.answerTime = wallClock(answeredAtMs);
         cdr.endTime = wallClock(endedAtMs);
@@ -86,7 +86,7 @@ public final class CdrAssembler {
     }
 
     /** The one record of a call nobody was admitted for: on the tenant it entered, zero amounts, its cause. */
-    public CdrEvent unadmittedRecord(SessionFlowContext ctx, Tenant tenant, Integer payerId, int serviceGroup, String hangupCause) {
+    public CdrEvent unadmittedRecord(RoutesphereContext ctx, Tenant tenant, Integer payerId, int serviceGroup, String hangupCause) {
         CdrEvent cdr = callFacts(ctx, serviceGroup, hangupCause);
         cdr.tenant = tenant.getDbName();
         cdr.resellerHierarchy = hierarchyOf(tenant);
@@ -110,14 +110,14 @@ public final class CdrAssembler {
         return epochMs <= 0 ? null : WALL_CLOCK.format(Instant.ofEpochMilli(epochMs).atZone(zone));
     }
 
-    private CdrEvent callFacts(SessionFlowContext ctx, int serviceGroup, String hangupCause) {
+    private CdrEvent callFacts(RoutesphereContext ctx, int serviceGroup, String hangupCause) {
         CdrEvent cdr = new CdrEvent();
         cdr.sequenceNo = sequence.incrementAndGet();
-        cdr.callId = ctx.sessionKey;
-        cdr.channelCallUuid = ctx.sessionKey;
+        cdr.callId = ctx.sessionId();
+        cdr.channelCallUuid = ctx.sessionId();
         cdr.serviceGroup = serviceGroup > 0 ? serviceGroup : null;
         cdr.startTime = wallClock(ctx.createdAtMs);
-        cdr.answerTime = wallClock(ctx.answeredAtMs);
+        cdr.answerTime = wallClock(ctx.answeredAtMs());
         cdr.endTime = wallClock(ctx.endedAtMs);
         cdr.durationSec = BigDecimal.valueOf(ctx.durationSec);
         cdr.originatingCallingNumber = ctx.originatingCallingNumber;
@@ -136,8 +136,8 @@ public final class CdrAssembler {
     }
 
     /** From the start to the first sign of the far end: the first progress, else the answer. Null when neither came. */
-    private static Float postDialDelayOf(SessionFlowContext ctx) {
-        long firstSign = ctx.progressAtMs > 0 ? ctx.progressAtMs : ctx.answeredAtMs;
+    private static Float postDialDelayOf(RoutesphereContext ctx) {
+        long firstSign = ctx.progressAtMs > 0 ? ctx.progressAtMs : ctx.answeredAtMs();
         if (firstSign <= 0 || ctx.createdAtMs <= 0) return null;
         return Math.max(0, firstSign - ctx.createdAtMs) / 1000f;
     }

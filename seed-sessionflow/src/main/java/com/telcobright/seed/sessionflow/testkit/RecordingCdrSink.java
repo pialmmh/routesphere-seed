@@ -20,10 +20,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class RecordingCdrSink implements CdrSink {
 
-    /** One call as it was published: its id (the Kafka key) and its tier records, the leaf first. */
-    public record Published(String callId, List<CdrEvent> tiers) {
+    /** One call as it was published: its id (the Kafka key), its tier records, the leaf first, and the root whose road it took (null = not named). */
+    public record Published(String callId, List<CdrEvent> tiers, String root) {
+        public Published(String callId, List<CdrEvent> tiers) { this(callId, tiers, null); }
+
         /** Exactly the Kafka value. */
         public String json() { return CdrJson.ofCall(tiers); }
+
+        /** The topic of the root's road ({@code cdr_<root>}, P1 §C); null when the publisher named no root. */
+        public String topic() { return root == null ? null : "cdr_" + root; }
     }
 
     private final List<Published> published = new CopyOnWriteArrayList<>();
@@ -31,8 +36,12 @@ public final class RecordingCdrSink implements CdrSink {
     private int duplicates;
 
     @Override
-    public void publish(String callId, List<CdrEvent> tiers) {
-        published.add(new Published(callId, List.copyOf(tiers)));
+    public void publish(String callId, List<CdrEvent> tiers) { publish(null, callId, tiers); }
+
+    /** The session's records on its root's road (P1 §C): kept with the root they were published for. */
+    @Override
+    public void publish(String root, String callId, List<CdrEvent> tiers) {
+        published.add(new Published(callId, List.copyOf(tiers), root));
         keepOncePerKey(callId, tiers);
     }
 
