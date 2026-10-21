@@ -102,6 +102,8 @@ class FinishSessionTest {
         assertThat(signaling.available()).isEqualTo(signaling.totalCreated());
         assertThat(lab.kit.slots().held()).isZero();
         assertThat(lab.kit.counters().ended.get()).isEqualTo(3);
+        assertThat(lab.kit.counters().launched.get()).as("one per session that reached INIT").isEqualTo(3);
+        assertThat(lab.engine.stats().launched()).isEqualTo(3);
     }
 
     @Test

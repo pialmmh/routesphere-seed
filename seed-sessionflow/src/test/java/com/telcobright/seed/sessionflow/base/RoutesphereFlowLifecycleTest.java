@@ -88,6 +88,8 @@ class RoutesphereFlowLifecycleTest {
         line.levelIndex = 0; line.dbName = "res_44_7"; line.partnerId = 3; line.debitReference = "s-3#L0";
         line.totalReserved = new BigDecimal("1.00"); line.reservedAmount = new BigDecimal("1.00"); line.reservationCount = 1; line.rate = new BigDecimal("1.00");
         ctx.tiers = List.of(line);
+        ctx.task = com.telcobright.seed.campaign.api.CampaignTask.minted("s-3", "btcl", com.telcobright.seed.campaign.api.CampaignKind.AD, "8801711000000",
+            "dhaka-zone", "site-7", "app-1", java.time.Instant.ofEpochMilli(1_760_000_000_123L), java.util.Map.of("rule", "R100", "slot", 2)).processing();
 
         String row = SnapshotSerializer.contextToBase64Json(ctx);
         LabContext back = (LabContext) SnapshotSerializer.contextFromBase64Json(row, LabContext.class.getName());
@@ -103,6 +105,7 @@ class RoutesphereFlowLifecycleTest {
             assertThat(t.debitReference).isEqualTo("s-3#L0");
             assertThat(t.totalReserved).isEqualByComparingTo("1.00");
         });
+        assertThat(back.task).as("the task row travels as its picture (the Instants as millis) and comes back the same").isEqualTo(ctx.task);
         assertThat(back.tree).as("the root's snapshot is never persisted").isNull();
         assertThat(back.levels).as("the live tiers are never persisted").isEmpty();
         assertThat(java.util.Base64.getDecoder().decode(row).length).as("a small row (§L.6)").isLessThan(4096);

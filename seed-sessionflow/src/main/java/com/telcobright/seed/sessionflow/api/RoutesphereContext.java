@@ -2,10 +2,13 @@ package com.telcobright.seed.sessionflow.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.campaign.api.CampaignTask;
+import com.telcobright.seed.sessionflow.internal.TaskJson;
 import com.telcobright.statewalk.session.SessionContext;
 import com.telcobright.statewalk.session.events.SignalingFailed;
 
@@ -47,11 +50,13 @@ public class RoutesphereContext extends SessionContext {
     /** {@code VOICE} | {@code SMS} | {@code AD} | {@code WIFI} — what kind of session this is. */
     public volatile String taskType;
     /**
-     * The session's task row (the owner, 2026-10-09: every session kind takes a CampaignTask in), closed by the base at the end, once.
-     * Live only for now: {@code CampaignTask} carries {@code Instant}s that statewalk's plain mapper does not write — a restored session's
-     * task is closed by its lane's start repair (seed-campaign {@code repairAfterRestart}, LOST_AT_RESTART).
+     * The session's task row (the owner, 2026-10-09: every session kind takes a CampaignTask in), closed by the base at the finish, once.
+     * Persisted as its picture ({@code TaskJson.TaskLine}: statewalk's plain mapper cannot write the task's {@code Instant}s), so a
+     * session restored from its row closes its own task.
      */
-    @JsonIgnore public transient volatile CampaignTask task;
+    @JsonSerialize(converter = TaskJson.Out.class)
+    @JsonDeserialize(converter = TaskJson.In.class)
+    public volatile CampaignTask task;
     public volatile boolean taskClosed;
     public volatile String originatingCallingNumber;
     public volatile String originatingCalledNumber;

@@ -110,6 +110,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** INIT: the candidates, in failover order; the budget child when the service renews (spawned here, started at ACTIVE). */
     @Override
     public final void prepare(C ctx, InternalEventResolver resolver) {
+        kit.counters().launched.incrementAndGet();
         if (ctx.startRefusal != null) return;
         ctx.candidates = candidatesOf(ctx);
         if (renewsBudget()) resolver.spawnChild(BudgetChild.TYPE, BudgetChild.contextFor(ctx));
@@ -531,6 +532,25 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         String tail = schemaName.substring(schemaName.lastIndexOf('_') + 1);
         if (tail.isEmpty() || tail.length() > 9 || !tail.chars().allMatch(Character::isDigit)) return -1;
         return Integer.parseInt(tail);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // The dry run
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * What this session WOULD come to, with no side effect and no machine (a lane's routing admin, a price preview): the same start and
+     * admission walk on the facts already on the context — nothing reserved, no slot, no CDR, every step traced. A lane's
+     * {@code confirmAdmission} must claim nothing when {@code ctx.dryRun} is set.
+     */
+    public final DryRun simulate(C ctx) {
+        ctx.traced = true;
+        ctx.dryRun = true;
+        onStart(ctx, new SessionStart(ctx.facts));
+        if (ctx.startRefusal != null) return DryRun.of(false, ctx.startRefusal, ctx);
+        ctx.candidates = candidatesOf(ctx);
+        Verdict verdict = AdmissionChain.of(this).admitFirstCandidate(ctx);
+        return DryRun.of(verdict.accepted(), verdict.cause(), ctx);
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════

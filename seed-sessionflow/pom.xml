@@ -86,6 +86,13 @@
             <version>2.0.13</version>
             <scope>test</scope>
         </dependency>
+        <!-- §L.4's proof only: statewalk's JDBC store on an in-memory database, one table per lane (test scope; no runtime dependency) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.2.224</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
