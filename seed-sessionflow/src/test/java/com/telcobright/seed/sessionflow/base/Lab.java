@@ -135,7 +135,7 @@ public final class Lab implements AutoCloseable {
 
     private void fundEveryone() {
         Map<String, int[]> partners = new HashMap<>();
-        partners.put("btcl", new int[] {1, 44});
+        partners.put("btcl", new int[] {1, 8, 44});
         partners.put("res_44", new int[] {5, 7});
         partners.put("res_44_7", new int[] {3});
         partners.put("tele2", new int[] {1, 9});
