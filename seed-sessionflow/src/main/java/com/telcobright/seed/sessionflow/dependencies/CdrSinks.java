@@ -3,6 +3,7 @@ package com.telcobright.seed.sessionflow.dependencies;
 import com.telcobright.seed.sessionflow.internal.FanOutCdrSink;
 import com.telcobright.seed.sessionflow.internal.FileCdrJournal;
 import com.telcobright.seed.sessionflow.internal.KafkaCdrSink;
+import com.telcobright.seed.sessionflow.internal.OncePerSessionCdrSink;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 
 import java.io.IOException;
@@ -28,6 +29,12 @@ public final class CdrSinks {
     public static CdrSink journal(Path directory, Clock clock, ZoneId zone) {
         return new FileCdrJournal(directory, clock, zone);
     }
+
+    /**
+     * §L.1 · One message per session id: a session ended twice (restored from an older row after a death between its record and its final
+     * row) publishes once. {@code kept} = how many recent session ids are remembered.
+     */
+    public static CdrSink oncePerSession(CdrSink next, int kept) { return new OncePerSessionCdrSink(next, kept); }
 
     /** Several sinks as one, in the order given. */
     public static CdrSink all(CdrSink... sinks) { return new FanOutCdrSink(List.of(sinks)); }

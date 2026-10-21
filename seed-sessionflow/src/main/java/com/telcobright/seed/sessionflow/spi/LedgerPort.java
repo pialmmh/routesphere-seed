@@ -11,7 +11,12 @@ import java.util.Optional;
  * refused. The call switch implements it on its own ledger ({@code PrepaidServiceWithCompensation}); the ad switch on
  * orchestrix's prepaid roads. The pipeline never knows which.
  *
- * <p>Every verb is idempotent by its reference: the same reference twice moves money once.
+ * <p><b>Every verb is idempotent per (session id, tier)</b> (P1 §L.1): the base names every reserve {@code <session>#L<tier>} (a later
+ * candidate {@code <session>#<try>#L<tier>}, a renewal window {@code …#W<n>}) and settles or releases the tier by that first reference — the
+ * same reference twice moves money once. Persistence is async, so a process that dies after the final state's synchronous settle and
+ * before the final row lands restores the session from an older row and ends it again: the second {@link #settle} or {@link #release} of
+ * the same (session, tier) must move nothing (the in-memory testkit ledger answers its first result; the switch ledger finds the reserve
+ * row gone and moves nothing).
  *
  * <ul>
  *   <li>{@link #reserve}: empty = this partner cannot pay it. A present answer = the ledger's own facts.</li>

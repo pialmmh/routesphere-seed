@@ -37,6 +37,14 @@
             <groupId>com.telcobright</groupId>
             <artifactId>rtc-domain</artifactId>
             <version>1.0-SNAPSHOT</version>
+            <!-- P1 §A: state-walk v1 stays out of the seed — rtc-domain carries it for its own CampaignTask entity, which the
+                 seed never loads (the seed's task is seed-campaign's CampaignTask) -->
+            <exclusions>
+                <exclusion>
+                    <groupId>com.telcobright</groupId>
+                    <artifactId>state-walk</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.telcobright</groupId>

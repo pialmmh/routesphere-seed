@@ -5,6 +5,7 @@ import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.context.api.Snapshot;
 import com.telcobright.seed.context.api.TenantContexts;
 import com.telcobright.seed.sessionflow.api.EntryPartner;
+import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.tenant.dependencies.TenantTreesBuilder;
 import com.telcobright.seed.tenant.internal.PartnerTiers;
@@ -131,6 +132,26 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
         if (code == null) return Optional.empty();
         return contexts.tenants().stream().map(this::find).flatMap(Optional::stream).map(Snapshot::context)
                 .filter(root -> code.equals(root.getName())).findFirst();
+    }
+
+    /**
+     * §D · The served root's CURRENT snapshot with its own version — what a session of the base takes at its start and keeps to its end.
+     * The doorbell ({@code config_event_loader_<root>}) reloads THAT root only: the next session takes the new version, a running one
+     * finishes on the tree it started with (the snapshot is immutable, swapped whole). The root is the served id (the tenant code the
+     * identification rule names), else a served root's code or database name. Empty = not served, or never loaded.
+     */
+    @Override
+    public Optional<RootTree> snapshot(String root) {
+        if (root == null) return Optional.empty();
+        Optional<Snapshot<Tenant>> own = find(root);
+        if (own.isPresent()) return own.map(s -> RootTree.of(root, s.version(), s.context()));
+        for (String id : contexts.tenants()) {
+            Optional<Snapshot<Tenant>> s = find(id);
+            if (s.isPresent() && (root.equals(s.get().context().getName()) || root.equals(s.get().context().getDbName()))) {
+                return s.map(snap -> RootTree.of(root, snap.version(), snap.context()));
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
