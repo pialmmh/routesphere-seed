@@ -148,6 +148,101 @@ class RestoreLostUpTest {
         assertNotNull(leaf.answerTime, "the CDR knows it was answered — " + numbers);
     }
 
+    /**
+     * (b) once more, the caller hanging up before CONNECTING's deadline: the restored machine ends the call and publishes its
+     * {@code ServiceEnd} — to a supervisor in CONNECTING, which has no rule for it. The end is lost too; the deadline then fails the
+     * session as never answered.
+     */
+    @Test
+    @Disabled(R1)
+    void a_hangup_after_a_lost_answer_reaches_the_restored_supervisor_and_the_call_is_charged_for_its_talk() throws Exception {
+        long connectingSec = 3;
+        RoutesphereSettings s = new RoutesphereSettings(8, 2, 80, new SessionTimings(2, 2, connectingSec, 20), 0, 0, 0, false, 500);
+        InMemoryPersistenceProvider store = new InMemoryPersistenceProvider();
+        Crash crash = new Crash();
+        HeldAtTheAnswer flowA = new HeldAtTheAnswer(w.kit(s, new CrashingLedger(w.ledger, crash), new CrashingCdrSink(w.cdrs, crash)), crash);
+        FlowBed<VoiceContext, EslOut, EslFrame> a = node(flowA, new CrashingStore(store, crash));
+
+        a.frame(ID, VoiceFlowTest.park(ID, World.ESL_BTCL, "10.0.0.7", "01711000002"));
+        a.channel.inject(ID, EslFrame.answer(ID, "b-r1", "PCMA")).toCompletableFuture().get(5, SECONDS);
+        long answeredAt = System.currentTimeMillis();
+        await("the supervisor is inside ACTIVE's entry", () -> flowA.answersHeld() == 1);
+        await("the machine's ANSWERED landed, the supervisor's ACTIVE did not", () -> row(store).equals("CONNECTING + EslCall ANSWERED"));
+        crash.now();
+        assertTrue(a.registry().awaitIdle(5, SECONDS));
+
+        FlowBed<VoiceContext, EslOut, EslFrame> b = node(flow(w.kit(s)), store);
+        String restoredAs = b.states(ID);
+        Thread.sleep(500);                                                          // the caller talks on, then hangs up
+        b.frame(ID, EslFrame.hangup(ID, "NORMAL_CLEARING"));
+        b.frame(ID, EslFrame.hangupComplete(ID, "NORMAL_CLEARING"));
+        long hungUpAt = System.currentTimeMillis();
+        String afterTheHangup = b.states(ID);
+        b.awaitGone(ID, (connectingSec + 5) * 1000);
+
+        CdrEvent leaf = w.cdrs.of(ID).get(0).tiers().get(0);
+        double realTalk = (hungUpAt - answeredAt) / 1000.0;
+        String numbers = String.format("R-1(b2) real talk %.3f s (answer on node A → hangup on node B) · restored as %s · after the hangup %s (the"
+                + " ServiceEnd reached a supervisor in CONNECTING) · node B's wire %s · the CDR's cause %s, answer time %s, billed %s s · the ledger: %s"
+                + " · the leaf paid %s (honest: %.2f)",
+            realTalk, restoredAs, afterTheHangup, b.wire(ID), leaf.hangupCause, leaf.answerTime, leaf.durationSec, moneyOf(w.ledger),
+            new BigDecimal("100.00").subtract(w.balance("res_44", 701)), realTalk);
+        System.out.println(numbers);
+
+        assertEquals("NORMAL_CLEARING", leaf.hangupCause, numbers);
+        assertEquals(0, count(w.ledger, "release"), "an answered call is settled, never released — " + numbers);
+        assertEquals(realTalk, new BigDecimal("100.00").subtract(w.balance("res_44", 701)).doubleValue(), 0.5, "charged for its talk — " + numbers);
+    }
+
+    // ── (c) a restored budget child renewing for a call that already ended ──────────────────────────────────────────
+
+    /**
+     * (a) with the budget child (§L.2: a persisting lane renews at most once a minute — the period 60 s; its FIRST renewal 2 s after the
+     * answer, B8). The caller talks 1 s and hangs up before the first renewal; the node dies with the settle in the air. The next node
+     * seats the supervisor (ACTIVE) and the budget child (still live in the row) — and the child renews a window for a call that ended.
+     */
+    @Test
+    @Disabled(R1)
+    void a_restored_budget_child_renews_no_window_for_a_call_that_already_ended() throws Exception {
+        long activeMaxSec = 10;
+        RoutesphereSettings s = World.settings(activeMaxSec).withReservePeriodSec(60).withReserveInitialDelaySec(2);
+        w.ledger.fund("res_44", 701, "1000.00").fund("btcl", 44, "1000.00");
+        InMemoryPersistenceProvider store = new InMemoryPersistenceProvider();
+        Crash crash = new Crash();
+        CrashingLedger slowLedger = new CrashingLedger(w.ledger, crash).holdSettlesUntilTheCrash();
+        FlowBed<VoiceContext, EslOut, EslFrame> a = node(flow(w.kit(s, slowLedger, new CrashingCdrSink(w.cdrs, crash))), new CrashingStore(store, crash));
+
+        a.frame(ID, VoiceFlowTest.park(ID, World.ESL_BTCL, "10.0.0.7", "01711000002"));
+        a.frame(ID, EslFrame.answer(ID, "b-r1", "PCMA"));
+        long answeredAt = a.registry().supervisorContextOf(ID).answer.atMs();
+        Thread.sleep(1_000);
+        a.frame(ID, EslFrame.hangup(ID, "NORMAL_CLEARING"));
+        long hungUpAt = System.currentTimeMillis();
+        a.channel.inject(ID, EslFrame.hangupComplete(ID, "NORMAL_CLEARING")).toCompletableFuture().get(5, SECONDS);
+        await("the supervisor's settle waits in the ledger", () -> slowLedger.settlesHeld() == 1);
+        await("the machine's TERMINATED landed, the supervisor's SUCCEEDED did not", () -> row(store).startsWith("ACTIVE + EslCall TERMINATED"));
+        String rowAtTheCrash = row(store);
+        crash.now();
+        assertTrue(a.registry().awaitIdle(5, SECONDS));
+        long windowsBefore = windows(w.ledger);
+
+        FlowBed<VoiceContext, EslOut, EslFrame> b = node(flow(w.kit(s)), store);
+        String restoredAs = b.states(ID) + " + Budget " + b.registry().childStateOf(ID, "Budget");
+        b.awaitGone(ID, (activeMaxSec + 5) * 1000);
+
+        CdrEvent leaf = w.cdrs.of(ID).get(0).tiers().get(0);
+        double realTalk = (hungUpAt - answeredAt) / 1000.0;
+        long windowsAfterTheHangup = windows(w.ledger) - windowsBefore;
+        String numbers = String.format("R-1(c) real talk %.3f s · the row at the crash: %s · restored as %s · windows reserved after the hangup: %d"
+                + " · billed %s s, the CDR's cause %s · the leaf paid %s (honest: %.2f) · the ledger: %s",
+            realTalk, rowAtTheCrash, restoredAs, windowsAfterTheHangup, leaf.durationSec, leaf.hangupCause,
+            new BigDecimal("1000.00").subtract(w.balance("res_44", 701)), realTalk, moneyOf(w.ledger));
+        System.out.println(numbers);
+
+        assertEquals(0, windowsAfterTheHangup, "no window is renewed for a call that ended — " + numbers);
+        assertEquals("NORMAL_CLEARING", leaf.hangupCause, numbers);
+    }
+
     // ── the bed ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private VoiceFlow flow(RoutesphereKit kit) {
@@ -188,7 +283,14 @@ class RestoreLostUpTest {
         SessionBundle bundle = SessionBundle.fromRow(row);
         String machine = bundle.children().stream().filter(c -> c.machineId().endsWith("#" + EslCall.TYPE)).map(MachineSnapshot::currentState)
             .findFirst().orElse("-");
-        return bundle.supervisor().currentState() + " + EslCall " + machine;
+        String budget = bundle.children().stream().filter(c -> c.machineId().endsWith("#Budget")).map(MachineSnapshot::currentState)
+            .findFirst().map(st -> " + Budget " + st).orElse("");
+        return bundle.supervisor().currentState() + " + EslCall " + machine + budget;
+    }
+
+    /** The windows the ledger holds for the session beyond the admission's one minute ({@code …#W<n>} references). */
+    private static long windows(InMemoryLedger ledger) {
+        return ledger.journal().stream().filter(e -> e.verb().equals("reserve") && e.reference().startsWith(ID) && e.reference().contains("#W")).count();
     }
 
     private static String moneyOf(InMemoryLedger ledger) {
