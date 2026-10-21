@@ -30,6 +30,13 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- the trees per root with their doorbell (TenantTrees + the scripted source): the §D scenario of a sample -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-tenant</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.telcobright</groupId>
             <artifactId>statewalk</artifactId>

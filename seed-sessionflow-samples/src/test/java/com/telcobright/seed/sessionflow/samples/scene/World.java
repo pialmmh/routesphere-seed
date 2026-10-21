@@ -55,8 +55,9 @@ public final class World {
         Map.entry("ccl#9", new BigDecimal("0.55")), Map.entry("ccl#44", new BigDecimal("0.45")),
         Map.entry("ccl_44#701", new BigDecimal("0.70")));
 
-    public final Tenant btcl = btclTree();
+    public final Tenant btcl = btclTree(false);
     public final Tenant ccl = cclTree();
+
     public final InMemoryLedger ledger = new InMemoryLedger()
         .fund("btcl", 9, "100.00").fund("btcl", 44, "100.00")
         .fund("res_44", 701, "100.00").fund("res_44", 703, "100.00").fund("res_44", 704, "100.00").fund("res_44", 7, "100.00")
@@ -66,20 +67,21 @@ public final class World {
     public final List<Object> sdrs = new CopyOnWriteArrayList<>();
     public final List<CampaignTask> closedTasks = new CopyOnWriteArrayList<>();
 
-    private static Tenant btclTree() {
+    /** btcl's tree as prime-context serves it; {@code withNewCo} = after a change: partner 705 "NewCo" added in res_44. */
+    public static Tenant btclTree(boolean withNewCo) {
         TenantTreeBuilder b = new TenantTreeBuilder();
-        b.root("btcl").partner(9, "DirectCo", PartnerType.CUSTOMER)
+        TenantTreeBuilder.TenantSpec res44 = b.root("btcl").partner(9, "DirectCo", PartnerType.CUSTOMER)
             .reseller(44, "Res44")
                 .partner(701, "Unilever", PartnerType.CUSTOMER)
                 .partner(702, "Poorco", PartnerType.CUSTOMER)
                 .partner(703, "OneLine", PartnerType.CUSTOMER, 1)
-                .partner(704, "Closed", PartnerType.CUSTOMER).deactivate(704)
-                .reseller(7, "Sub7")
-                    .partner(801, "Walton", PartnerType.CUSTOMER);
+                .partner(704, "Closed", PartnerType.CUSTOMER).deactivate(704);
+        if (withNewCo) res44.partner(705, "NewCo", PartnerType.CUSTOMER);
+        res44.reseller(7, "Sub7").partner(801, "Walton", PartnerType.CUSTOMER);
         return b.build();
     }
 
-    private static Tenant cclTree() {
+    public static Tenant cclTree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("ccl").partner(9, "CCL Direct", PartnerType.CUSTOMER).partner(44, "CCL Res", PartnerType.RESELLER)
             .and().tenant("ccl_44", "ccl").partner(701, "CCL Unilever", PartnerType.CUSTOMER);
@@ -96,9 +98,12 @@ public final class World {
     }
 
     /** The kit of a flow in this world: both roots served, the rules checked against them, the books and the sinks above. */
-    public RoutesphereKit kit(RoutesphereSettings settings) {
+    public RoutesphereKit kit(RoutesphereSettings settings) { return kit(settings, TenantLookup.of(btcl, ccl)); }
+
+    /** The same on another source of the trees (seed-tenant's TenantTrees: one snapshot per root, reloaded by its doorbell). */
+    public RoutesphereKit kit(RoutesphereSettings settings, TenantLookup tenants) {
         return RoutesphereKit.builder()
-            .tenants(TenantLookup.of(btcl, ccl))
+            .tenants(tenants)
             .identification(rules())
             .ledger(ledger)
             .cdr(cdrs)

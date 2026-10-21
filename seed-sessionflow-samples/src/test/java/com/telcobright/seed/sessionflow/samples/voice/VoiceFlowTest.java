@@ -41,7 +41,8 @@ class VoiceFlowTest {
             new DialplanRoute("017", new EslTarget("GP-backup", 6, "10.10.199.21", "external", null, "rs-out")),
             new DialplanRoute("017", new EslTarget("GP-third", 7, "10.10.199.22", "external", null, "rs-out")),
             new DialplanRoute("017", new EslTarget("GP-never-reached", 8, "10.10.199.23", "external", null, "rs-out")),
-            new DialplanRoute("018", new EslTarget("Robi-trunk", 9, "10.10.199.24", "external", null, "rs-out"))),
+            new DialplanRoute("018", new EslTarget("Robi-trunk", 9, "10.10.199.24", "external", null, "rs-out")),
+            new DialplanRoute(VoiceFlow.DID_RANGE, new EslTarget("DID-pbx", 10, "10.10.199.25", "internal", null, "rs-did"))),
         "ccl", List.of(new DialplanRoute("017", new EslTarget("CCL-GP", 15, "10.10.177.20", "external", null, "ccl-out"))));
 
     private final List<AutoCloseable> open = new ArrayList<>();
@@ -62,6 +63,10 @@ class VoiceFlowTest {
 
     static EslFrame park(String uuid, String esl, String sourceIp, String called) {
         return EslFrame.park(uuid, esl, "01711000001", called, sourceIp, "1001");
+    }
+
+    static EslFrame parkAs(String uuid, String sipAccount, String called) {
+        return EslFrame.park(uuid, World.ESL_BTCL, "01711000001", called, "10.0.0.7", sipAccount);
     }
 
     /** A whole answered call: park, answer, a little talk, the caller's hangup, the hangup complete. */
@@ -306,6 +311,34 @@ class VoiceFlowTest {
         b.frame("c-s1", EslFrame.hangupComplete("c-s1", "NORMAL_CLEARING"));
         b.frame("c-s3", park("c-s3", World.ESL_BTCL, "10.0.0.3", "01711000004"));
         assertEquals("CONNECTING/TRYING", b.states("c-s3"), "the slot came back with the end of c-s1");
+    }
+
+    // ── C4 · the entry tier's checks, in v2's order: the DID, the partner's slot, the SIP account's cap ─────────
+
+    @Test
+    void the_entry_tier_refuses_an_unknown_did_before_anything_and_a_sip_account_over_its_cap_before_any_reserve() throws Exception {
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), PARTNERS, World.RATES, ROUTES, java.util.Set.of("btcl|09678000001"),
+            Map.of("btcl|2002", 1));
+        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(flow, VoiceContext::new, EslCall.spec(ESL, EslCallContext::new), new EslChannel(),
+            EslFrames::decode);
+        open.add(b);
+
+        b.frame("c-did-x", parkAs("c-did-x", "1001", "09678000009"));
+        assertEquals("INVALID_DID", b.session("c-did-x").endCause, "a DID this root does not know");
+        assertEquals(0, verbs("reserve", "c-did-x"), "refused before the slot and before any reserve");
+        b.frame("c-did", parkAs("c-did", "1001", "09678000001"));
+        assertEquals("CONNECTING/TRYING", b.states("c-did"));
+        assertTrue(b.wire("c-did").contains("uuid_transfer c-did 8809678000001 XML rs-did"), b.wire("c-did").toString());
+
+        b.frame("c-sip1", parkAs("c-sip1", "2002", "01711000002"));
+        b.frame("c-sip1", EslFrame.answer("c-sip1", "b-sip1", "PCMA"));
+        b.frame("c-sip2", parkAs("c-sip2", "2002", "01711000003"));
+        assertEquals("RETAIL_CHANNEL_LIMIT_REACHED", b.session("c-sip2").endCause, "the account's one channel is taken");
+        assertEquals(0, verbs("reserve", "c-sip2"), "refused at the leaf before its reserve");
+        b.frame("c-sip1", EslFrame.hangup("c-sip1", "NORMAL_CLEARING"));
+        b.frame("c-sip1", EslFrame.hangupComplete("c-sip1", "NORMAL_CLEARING"));
+        b.frame("c-sip3", parkAs("c-sip3", "2002", "01711000004"));
+        assertEquals("CONNECTING/TRYING", b.states("c-sip3"), "the account's channel came back at the end of c-sip1");
     }
 
     // ── a crash mid-call, and a crash between the settle and the final row (§L.1) ──────────────────────────

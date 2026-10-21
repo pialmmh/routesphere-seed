@@ -10,16 +10,19 @@ import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Verdict;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The ESL call on the base (P1 §H; design §7 "ESL call") — decisions only: no state, no ESL word (that is {@link EslCall}). What is the
- * call's own: the entry partner by the source address, INSIDE the root its FreeSWITCH connection named (C1); one minute at each tier's
+ * call's own: the entry partner by the source address, INSIDE the root its FreeSWITCH connection named (C1); at the entry tier a call to
+ * the DID range must reach a DID the root knows and the SIP account keeps to its own cap (C4); one minute at each tier's
  * per-minute rate reserved at admission (C6) and renewed every period while it talks (C14); the root's digit filter (C5); the routes
  * of the root by the dialed prefix, in order, as the plan (C8); the call switch's v1 re-route table (C12); every started minute
  * charged at the end, the rest back (C17).
@@ -32,6 +35,12 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
     private final Map<String, Integer> partnerBySource;
     private final Map<String, BigDecimal> ratePerMinute;
     private final Map<String, List<DialplanRoute>> routesByRoot;
+    private final Set<String> dids;
+    private final Map<String, Integer> sipAccountCaps;
+    private final SipAccountSlots sipSlots = new SipAccountSlots();
+
+    /** The DID range: a called number starting with it is a DID call (C4's INVALID_DID applies to it). */
+    public static final String DID_RANGE = "0967";
 
     /**
      * @param partnerBySource the entry partner by {@code <root>|<source ip>} (C1: inside the root, never across)
@@ -40,10 +49,21 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
      */
     public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
                      Map<String, List<DialplanRoute>> routesByRoot) {
+        this(kit, partnerBySource, ratePerMinute, routesByRoot, Set.of(), Map.of());
+    }
+
+    /**
+     * @param dids           the DIDs each root knows, by {@code <root>|<number>}
+     * @param sipAccountCaps a SIP account's concurrent calls, by {@code <root>|<account>} (absent = no cap of its own)
+     */
+    public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
+                     Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids, Map<String, Integer> sipAccountCaps) {
         super(kit);
         this.partnerBySource = Map.copyOf(partnerBySource);
         this.ratePerMinute = Map.copyOf(ratePerMinute);
         this.routesByRoot = Map.copyOf(routesByRoot);
+        this.dids = Set.copyOf(dids);
+        this.sipAccountCaps = Map.copyOf(sipAccountCaps);
     }
 
     @Override public String name() { return "CallSupervisor"; }
@@ -69,6 +89,26 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
         Integer partnerId = partnerBySource.get(call.root + "|" + facts(call).sourceIp());
         return partnerId == null ? null : entryOfPartner(call, partnerId);
     }
+
+    /** C4 · the entry tier, before the partner's slot: a call to the DID range must reach a DID this root knows. */
+    @Override
+    protected Verdict authorizeBeforeSlot(VoiceContext call, Tier tier, Partner partner) {
+        if (!tier.isLeaf() || !call.originatingCalledNumber.startsWith(DID_RANGE)) return Verdict.ok();
+        return dids.contains(call.root + "|" + call.originatingCalledNumber) ? Verdict.ok() : Verdict.reject("INVALID_DID");
+    }
+
+    /** C4 · the entry tier, after the partner's slot: the SIP account keeps to its own cap. */
+    @Override
+    protected Verdict authorize(VoiceContext call, Tier tier, Partner partner) {
+        if (!tier.isLeaf()) return Verdict.ok();
+        String account = call.root + "|" + facts(call).sipAccount();
+        Integer cap = sipAccountCaps.get(account);
+        if (cap == null || sipSlots.acquire(call.sessionId(), account, cap)) return Verdict.ok();
+        return Verdict.reject("RETAIL_CHANNEL_LIMIT_REACHED");
+    }
+
+    /** The finish, last: the SIP account's channel back, once. */
+    @Override protected void onEnded(VoiceContext call, Outcome outcome) { sipSlots.release(call.sessionId()); }
 
     /** C6: ONE minute at this tier's own per-minute rate. */
     @Override
