@@ -663,12 +663,16 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * After a restore the live pictures are gone (they are never persisted): the root's snapshot is taken again by the root (§L.6 — the
-     * version it started with is noted when it moved), and the live tiers are rebuilt from their persisted lines on it.
+     * version it started with is noted when it moved), and the live tiers and the closed spans (O4) are rebuilt from their persisted lines
+     * on it.
      */
     final void bringBackTheLiveTiers(C ctx) {
         if (ctx.tree == null && ctx.root != null) retakeTheRootsSnapshot(ctx);
         if (ctx.levels.isEmpty() && !ctx.tiers.isEmpty()) {
             ctx.levels = ctx.tiers.stream().map(line -> line.toLevel(ctx.tree)).toList();
+        }
+        if (ctx.closedSpans.isEmpty() && !ctx.spans.isEmpty()) {
+            ctx.closedSpans = ctx.spans.stream().map(line -> line.toSpan(ctx.tree)).toList();
         }
     }
 

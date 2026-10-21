@@ -118,6 +118,8 @@ public class RoutesphereContext extends SessionContext {
     public volatile boolean reservesClosed;
     /** The reserve series a tier closed mid-session (O4: the next account took over), in order (live). */
     @JsonIgnore public transient volatile List<ClosedSpan> closedSpans = List.of();
+    /** The persisted picture of {@link #closedSpans}, in the same order (P1-F2: a restore keeps the spans' numbers, records and seconds). */
+    public volatile List<SpanLine> spans = List.of();
     /** When the LIVE span of the rotating tier began (the last rotation). 0 = the session's own activation. */
     public volatile long spanStartedAtMs;
 
@@ -188,10 +190,13 @@ public class RoutesphereContext extends SessionContext {
         return terminatingCalledNumber != null ? terminatingCalledNumber : originatingCalledNumber;
     }
 
-    /** The live tiers changed (admission, a renewal, a rotation): their persisted picture follows. */
+    /** The live tiers changed (admission, a renewal, a rotation): their persisted picture — the tiers and the closed spans — follows. */
     public void keepTiers() {
         List<TierLine> lines = new ArrayList<>(levels.size());
         for (LevelAdmission level : levels) lines.add(TierLine.of(level));
         tiers = List.copyOf(lines);
+        List<SpanLine> closed = new ArrayList<>(closedSpans.size());
+        for (ClosedSpan span : closedSpans) closed.add(SpanLine.of(span));
+        spans = List.copyOf(closed);
     }
 }
