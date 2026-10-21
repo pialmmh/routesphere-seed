@@ -1,7 +1,7 @@
 # P1 · stream B (the base) — report
 
 Branch `p1-base` (worktree `routesphere-seed/worktrees/p1-base`), from `seed-context` @ 1297f1d + the brief 4c2e0c5.
-Code head **e218fa4**; this report is the commit after it. Written 2026-10-22 ~05:35 +06, unattended (the owner asleep).
+Code head **1418404** (B11); this report is the commit after it. Written 2026-10-22 ~05:35 +06, unattended (the owner asleep).
 Nothing pushed. Nothing left running. Nothing written to `~/.m2` (one early `install` was removed again, see §8).
 
 ## 0 · In one look
@@ -9,16 +9,16 @@ Nothing pushed. Nothing left running. Nothing written to `~/.m2` (one early `ins
 | § | what | state | commit | tests |
 |---|---|---|---|---|
 | A | 2.0.0-SNAPSHOT, statewalk 4.0.0 pinned, resolved version proved | done | 712e303, 61b9631 | StatewalkPinTest 2 |
-| B | `RoutesphereFlow` = statewalk's `SessionHandler`, every call FINAL; context, kit, engine | done | 712e303 (B0), 61b9631, e218fa4 | Lifecycle 4, AdmissionWalk 6, AdmissionBudget 3, Kit 3 |
+| B | `RoutesphereFlow` = statewalk's `SessionHandler`, every call FINAL; context, kit, engine, the dry run | done | 712e303 (B0), 61b9631, e218fa4, 1418404 | Lifecycle 4, AdmissionWalk 6, AdmissionBudget 3, Kit 3, DryRun 2, OneTablePerLane 1 |
 | C | (a) the root first, per protocol | done | 1310577, f9401b5 | RootFirst 8, KafkaCdrSinkPerRoot 1 |
 | D | one snapshot per root; the doorbell per root | done | 61b9631, 1310577 | SnapshotPerSession 2, seed-tenant RootSnapshot 2 |
 | E | (e) one ledger port; the budget child on 4.0; idempotent per (session, tier) | done | 83bac8a, 8d613b3, a9ee0bb, 2ffb0e7 | CreditControl 11, Rotation 1, SessionsInTheAir 2, switch-ledger ChainOnTheLedger 10 + WindowRenewal 7 |
 | F | (f) handleRerouting by cause | done | c862269 | Rerouting 6 |
 | G | (g) finishSession | done | c862269, 2d4e576 | FinishSession 5, CdrWire 3 |
 
-**The reactor offline, clean copy of e218fa4** (`git archive e218fa4 | tar -x`, then `mvn -o -q test` at its root, nothing else on the
-path): **349/0/0/3** (§4). Before P1 (1297f1d + brief): 425/0/0/4. B0 retired the 3.x engine's tests (−150); §B–§G re-proved them on the
-new base (+74, plus the switch ledger's 17 back).
+**The reactor offline, clean copy of 1418404** (`git archive 1418404 | tar -x`, then `mvn -o -q test` at its root, nothing else on the
+path): **352/0/0/3** (§4). Before P1 (1297f1d + brief): 425/0/0/4. B0 retired the 3.x engine's tests (−150); §B–§G re-proved them on the
+new base: +77 since B0 (275 → 352; the switch ledger's 17 among them).
 
 ## 1 · §A — branch, version, pins
 
@@ -123,17 +123,18 @@ The reactor offline after every commit (`mvn -o -q test` at the worktree's root;
 | a9ee0bb B8 | 345/0/0/3 | 127 | 50 | 14 |
 | 2ffb0e7 B9 | 346/0/0/3 | 128 | 50 | 14 |
 | e218fa4 B10 | 349/0/0/3 | 131 | 50 | 14 |
+| 1418404 B11 | 352/0/0/3 | 134 | 50 | 14 |
 
 (B0's own row is derived: B1's 279 less its 4 new tests. The other modules are unchanged throughout: seed-campaign 72, seed-config 5,
 seed-config-client 5, seed-context 20/0/0/1, seed-idgen 19, seed-routing 33/0/0/2. The skipped 4 → 3: the retired `KafkaCdrSinkIT`.)
 
-**Clean copy of e218fa4** (`git -C <wt> archive e218fa4 | tar -x -C <scratch>/clean`, then `mvn -o -q test` at its root, offline):
-**349/0/0/3** — seed-campaign 72, seed-config-client 5, seed-config 5, seed-context 20/0/0/1, seed-idgen 19, seed-routing 33/0/0/2,
-seed-sessionflow 131, seed-switch-ledger 50, seed-tenant 14; the same as the worktree's run, class for class.
+**Clean copy of 1418404** (`git -C <wt> archive 1418404 | tar -x -C <scratch>/clean`, then `mvn -o -q test` at its root, offline):
+**352/0/0/3** — seed-campaign 72, seed-config-client 5, seed-config 5, seed-context 20/0/0/1, seed-idgen 19, seed-routing 33/0/0/2,
+seed-sessionflow 134, seed-switch-ledger 50, seed-tenant 14; the same as the worktree's run, module for module.
 
 seed-sessionflow per class: ResellerPartnerRule 5, StatewalkPin 2, base.AdmissionBudget 3, base.AdmissionWalk 6, base.CdrWire 3,
-base.CreditControl 11, base.FinishSession 5, base.Rerouting 6, base.RootFirst 8, base.Rotation 1, base.RoutesphereFlowLifecycle 4,
-base.RoutesphereKit 3, base.SessionsInTheAir 2, base.SnapshotPerSession 2, ChannelSlots 6, RefundPolicy 16, KafkaCdrSinkPerRoot 1,
+base.CreditControl 11, base.DryRun 2, base.FinishSession 5, base.OneTablePerLane 1, base.Rerouting 6, base.RootFirst 8, base.Rotation 1,
+base.RoutesphereFlowLifecycle 4, base.RoutesphereKit 3, base.SessionsInTheAir 2, base.SnapshotPerSession 2, ChannelSlots 6, RefundPolicy 16, KafkaCdrSinkPerRoot 1,
 OrchestrixLedger 12, OrchestrixReturnRoad 21, TenantLookupCode 4, TenantResolver 5, InMemoryLedgerAccountKeyed 5.
 
 The lab (`src/test/.../base/`): `Lab` — two roots on statewalk 4.0's real registry; `LabFlow` — the smallest application; `LabCall` — the
@@ -198,12 +199,13 @@ Decisions the base made where the design page left a gap — please confirm:
 
 ## 7 · What is left
 
-- **§L.4 one table per lane** is by construction (`name()` = the registered supervisor name = statewalk's default table) and documented;
-  no JDBC test in the base (seed-sessionflow has no JDBC driver; the samples use statewalk's in-memory store).
-- **The 3.x dry run** (`simulate`, `DryRun`) was not ported: `ctx.dryRun` still makes the walk reserve nothing, but there is no public
-  entry. Port it if a product asks (the ad's price preview used it?).
-- **The 3.x engine's counters** `launched` and `busy` are no longer counted (the door is statewalk's kit, which refuses a full pool with
-  `RejectedExecutionException` — tested); `PoolStats` reports them 0. Count them from the channel adapter, or drop them.
+- **§L.4** is proved (B11: two lanes on one pooled H2 database through statewalk's JDBC store, one table each) — on H2, not MariaDB;
+  the 64 KB `TEXT` cap (E-F1) is the owner's.
+- **The dry run** is back (`simulate`, B11). A lane's `confirmAdmission` must claim nothing when `ctx.dryRun` is set (the 3.x hook had a
+  `StepMode` parameter for it): P2's AdFlow must check `ctx.dryRun` before it claims the quota.
+- **The 3.x engine's `busy` counter** is no longer counted: the door is statewalk's kit, which refuses a full pool with
+  `RejectedExecutionException` (tested) before the flow sees the session; `launched` is counted again (B11). Count `busy` in the channel
+  adapter, or drop it from `PoolStats`.
 - **A restored session's CampaignTask** now travels with its context (B10); the `detail` map's values come back as JSON types (an `Long`
   may come back an `Integer`).
 - The C1–C23 regression table and the four samples are stream T's (§H).
@@ -211,7 +213,9 @@ Decisions the base made where the design page left a gap — please confirm:
 
 ## 8 · Notes for the architect
 
-- Merge order: B (this branch, e218fa4 + this report), then T. T already holds B0–B4; B5–B10 are additive.
+- Merge order: B (this branch, 1418404 + this report), then T. T already holds B0–B4; B5–B11 are additive.
+- The other implementations of the one port: OrchestrixLedger is idempotent by the road's own key (road 16's reference; the return road
+  "may be asked again"), MemLedgerPort by its reserve row, the testkit's InMemoryLedger by its closed tiers.
 - One slip, repaired: an early `mvn install` (04:34) wrote the seed's 2.0.0-SNAPSHOT into `~/.m2`. I removed exactly what it wrote
   (the 2.0.0-SNAPSHOT version dirs, the four artifact dirs that did not exist before, the 2.0.0 lines of the metadata files) at 04:35;
   every later build ran `test` only. Nothing else outside the worktree and the scratch dir was written.
