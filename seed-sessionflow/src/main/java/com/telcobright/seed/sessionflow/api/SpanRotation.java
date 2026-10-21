@@ -27,6 +27,7 @@ final class SpanRotation<C extends RoutesphereContext> {
         if (!closeSpan(ctx, level)) return false;
         LevelAdmission fresh = freshLevel(level, next);
         replace(ctx, level, fresh);
+        ctx.keepTiers();                                                               // the closed span is in the session's row at once
         String reference = ctx.sessionId() + "." + ctx.spanNo() + "#L" + level.getLevelIndex();
         String refusal = AdmissionChain.of(flow).reserveForRenewal(ctx, fresh, window.reserveAmount(), reference);
         return firstWindowHeld(ctx, fresh, next, refusal);

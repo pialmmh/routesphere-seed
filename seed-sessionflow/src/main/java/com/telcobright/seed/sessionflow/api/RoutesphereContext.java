@@ -108,7 +108,7 @@ public class RoutesphereContext extends SessionContext {
     @JsonIgnore public transient volatile List<LevelAdmission> levels = List.of();
     /** The tiers the candidate being admitted has reserved so far (live, admission only). */
     @JsonIgnore transient volatile List<LevelAdmission> walking = new ArrayList<>();
-    /** The candidate being admitted (live, admission only). */
+    /** The candidate being admitted (live, admission only) — read it through {@link #candidateBeingAdmitted()}. */
     @JsonIgnore transient volatile Candidate trying;
     /** The persisted picture of {@link #levels}: ids and amounts, in the same order. */
     public volatile List<TierLine> tiers = List.of();
@@ -118,6 +118,8 @@ public class RoutesphereContext extends SessionContext {
     public volatile boolean reservesClosed;
     /** The reserve series a tier closed mid-session (O4: the next account took over), in order (live). */
     @JsonIgnore public transient volatile List<ClosedSpan> closedSpans = List.of();
+    /** The persisted picture of {@link #closedSpans}, in the same order (P1-F2: a restore keeps the spans' numbers, records and seconds). */
+    public volatile List<SpanLine> spans = List.of();
     /** When the LIVE span of the rotating tier began (the last rotation). 0 = the session's own activation. */
     public volatile long spanStartedAtMs;
 
@@ -160,6 +162,13 @@ public class RoutesphereContext extends SessionContext {
     /** The session's own id in its domain (the facts'), or null before {@code SessionStart}. The CDR's call id and the ledger's key. */
     public String sessionId() { return facts == null ? null : facts.sessionId(); }
 
+    /**
+     * The candidate the admission walk is on right now — what step (d) {@code routing} routes by (it runs inside the walk, before
+     * {@link #chosen} is set), and what any admission hook may read. Live, never persisted; null outside admission (before it, after the
+     * candidate was admitted — then {@link #chosen} names it — and after every candidate was refused).
+     */
+    public Candidate candidateBeingAdmitted() { return trying; }
+
     /** The service was established (a call answered, an ad viewed, an SMS submitted). */
     public boolean answered() { return answer != null; }
 
@@ -181,10 +190,13 @@ public class RoutesphereContext extends SessionContext {
         return terminatingCalledNumber != null ? terminatingCalledNumber : originatingCalledNumber;
     }
 
-    /** The live tiers changed (admission, a renewal, a rotation): their persisted picture follows. */
+    /** The live tiers changed (admission, a renewal, a rotation): their persisted picture — the tiers and the closed spans — follows. */
     public void keepTiers() {
         List<TierLine> lines = new ArrayList<>(levels.size());
         for (LevelAdmission level : levels) lines.add(TierLine.of(level));
         tiers = List.copyOf(lines);
+        List<SpanLine> closed = new ArrayList<>(closedSpans.size());
+        for (ClosedSpan span : closedSpans) closed.add(SpanLine.of(span));
+        spans = List.copyOf(closed);
     }
 }
