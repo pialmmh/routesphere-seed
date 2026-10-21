@@ -12,15 +12,13 @@ import java.util.List;
  * held and closed as a {@link ClosedSpan}, a fresh series opened on the next account with its first window held at once. The tier
  * keeps its place in the chain; the tiers above are untouched. A next account that cannot fund its first window is the cut.
  */
-final class SpanRotation<C extends SessionFlowContext> {
+final class SpanRotation<C extends RoutesphereContext> {
 
-    private final SessionFlow<C> flow;
-    private final AdmissionChain<C> chain;
+    private final RoutesphereFlow<C> flow;
 
-    SpanRotation(SessionFlow<C> flow, AdmissionChain<C> chain) {
-        this.flow = flow;
-        this.chain = chain;
-    }
+    private SpanRotation(RoutesphereFlow<C> flow) { this.flow = flow; }
+
+    static <C extends RoutesphereContext> SpanRotation<C> of(RoutesphereFlow<C> flow) { return new SpanRotation<>(flow); }
 
     /** @return true = the session goes on, on the next account; false = the money ended (the cut) */
     boolean rotateOrCut(C ctx, LevelAdmission level, TierRate window) {
@@ -29,15 +27,15 @@ final class SpanRotation<C extends SessionFlowContext> {
         if (!closeSpan(ctx, level)) return false;
         LevelAdmission fresh = freshLevel(level, next);
         replace(ctx, level, fresh);
-        String reference = ctx.sessionKey + "." + ctx.spanNo() + "#L" + level.getLevelIndex();
-        String refusal = chain.reserveForRenewal(ctx, fresh, window.reserveAmount(), reference);
+        String reference = ctx.sessionId() + "." + ctx.spanNo() + "#L" + level.getLevelIndex();
+        String refusal = AdmissionChain.of(flow).reserveForRenewal(ctx, fresh, window.reserveAmount(), reference);
         return firstWindowHeld(ctx, fresh, next, refusal);
     }
 
     /** The current series is settled for everything it held — every window held was used — and recorded as a closed span. */
     private boolean closeSpan(C ctx, LevelAdmission level) {
         long now = flow.kit().clock().millis();
-        long startedAt = ctx.spanStartedAtMs > 0 ? ctx.spanStartedAtMs : ctx.activatedAtMs;
+        long startedAt = ctx.spanStartedAtMs > 0 ? ctx.spanStartedAtMs : ctx.activeAtMs;
         TierSettlement done;
         try {
             done = flow.kit().ledger().settle(level, TierSettlement.reservedOf(level));
@@ -61,10 +59,10 @@ final class SpanRotation<C extends SessionFlowContext> {
         for (int w = 1; w <= level.getReservationCount(); w++) {
             String reference = w == 1 ? level.getDebitReference() : level.getDebitReference() + "#W" + w;
             try {
-                flow.kit().journal().released(ctx.sessionKey, reference);
+                flow.kit().journal().released(ctx.sessionId(), reference);
             } catch (RuntimeException e) {
-                flow.log.warn("[{}] {} | the journal of the calls in the air did not take the settled reserve {} (a restart would try to give it back; the ledger moves money once per reference): {}",
-                    flow.name(), ctx.sessionKey, reference, e.toString());
+                RoutesphereFlow.log.warn("[{}] {} | the journal of the calls in the air did not take the settled reserve {} (a restart would try to give it back; the ledger moves money once per reference): {}",
+                    flow.name(), ctx.sessionId(), reference, e.toString());
             }
         }
     }
@@ -82,7 +80,7 @@ final class SpanRotation<C extends SessionFlowContext> {
         return fresh;
     }
 
-    private static void replace(SessionFlowContext ctx, LevelAdmission old, LevelAdmission fresh) {
+    private static void replace(RoutesphereContext ctx, LevelAdmission old, LevelAdmission fresh) {
         List<LevelAdmission> levels = new ArrayList<>(ctx.levels);
         levels.set(levels.indexOf(old), fresh);
         ctx.levels = List.copyOf(levels);
