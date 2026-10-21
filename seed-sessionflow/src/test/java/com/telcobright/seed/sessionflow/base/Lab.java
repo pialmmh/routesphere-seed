@@ -54,6 +54,7 @@ public final class Lab implements AutoCloseable {
     public final RecordingCdrSink cdr = new RecordingCdrSink();
     public final List<LabContext> contexts = new CopyOnWriteArrayList<>();
     public final List<Object> sdrs = new CopyOnWriteArrayList<>();
+    public final List<com.telcobright.seed.campaign.api.CampaignTask> closedTasks = new CopyOnWriteArrayList<>();
     public final TestChannel<String, StatemachineEvent> wire = new TestChannel<>("lab");
     public final RoutesphereKit kit;
     public final LabFlow flow;
@@ -72,7 +73,7 @@ public final class Lab implements AutoCloseable {
         this.kit = RoutesphereKit.builder()
             .tenants(trees != null ? trees : TenantLookup.of(btcl, tele2))
             .identification(RULES)
-            .ledger(ledger).cdr(cdr).sdr((id, sdr) -> sdrs.add(sdr))
+            .ledger(ledger).cdr(cdr).sdr((id, sdr) -> sdrs.add(sdr)).tasks((ctx, task) -> closedTasks.add(task))
             .zone(ZoneId.of("Asia/Dhaka")).settings(settings)
             .build();
         this.flow = flows.apply(kit);
@@ -107,6 +108,8 @@ public final class Lab implements AutoCloseable {
     public void fail(String id, String cause, int code) { frame(id, new Fail(cause, code)); }
 
     public void hangup(String id) { frame(id, new Hangup(System.currentTimeMillis())); }
+
+    public void cancel(String id, String cause) { frame(id, new LabEvents.Cancel(cause)); }
 
     public void frame(String id, StatemachineEvent e) {
         try {

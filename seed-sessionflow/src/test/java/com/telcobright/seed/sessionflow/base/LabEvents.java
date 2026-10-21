@@ -14,4 +14,6 @@ public final class LabEvents {
     public record Answer(long atMs) implements StatemachineEvent {}
     public record Fail(String cause, int code) implements StatemachineEvent {}
     public record Hangup(long atMs) implements StatemachineEvent {}
+    /** The caller gave up before the answer: the signaling machine ENDS (a re-route is then impossible, CN-2). */
+    public record Cancel(String cause) implements StatemachineEvent {}
 }
