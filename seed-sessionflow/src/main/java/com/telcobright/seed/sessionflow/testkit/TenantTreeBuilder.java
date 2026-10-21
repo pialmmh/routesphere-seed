@@ -28,6 +28,10 @@ import java.util.Map;
  * A tenant tree built in memory for the tests of every product on this kit (the story of design §5): tenants with
  * partners, resellers (type 100 + a child tenant), ad rate plans and rows, routes bound to campaigns, rules, callers,
  * settings, contents. {@link #build()} rebuilds the index and the ancestor chains exactly as {@code TenantHierarchyInitializer} does.
+ *
+ * <p>Reseller tiers of any depth (P1 §H): {@code root("btcl").reseller(44, "Res44")} declares partner 44 in btcl AND the tier
+ * {@code res_44} under it; {@code .reseller(7, "Sub7")} from there declares {@code res_44_7} — three tiers. Two roots (two operators in
+ * one JVM, their partner ids overlapping) are two builders: one tree per root.
  */
 public final class TenantTreeBuilder {
 
@@ -180,6 +184,25 @@ public final class TenantTreeBuilder {
             return this;
         }
 
+        /**
+         * A reseller in this tier (P1 §H): its partner here, of type RESELLER, and its own tier below named by the house rule —
+         * {@code res_<id>} under a root, {@code <this tier>_<id>} under a reseller ({@code res_44_7}) — so the base's reseller rule
+         * finds the partner by the id at the end of the tier's name. Answers the NEW tier, to fill; {@link #up()} comes back here.
+         */
+        public TenantSpec reseller(int partnerId, String partnerName) {
+            partner(partnerId, partnerName, PartnerType.RESELLER);
+            return TenantTreeBuilder.this.tenant(parent == null ? "res_" + partnerId : dbName + "_" + partnerId, dbName);
+        }
+
+        /** The tier above this one; a root has none. */
+        public TenantSpec up() {
+            if (parent == null) throw new IllegalStateException(dbName + " is a root: no tier above it");
+            return specs.get(parent);
+        }
+
+        /** This tier's database name (a reseller's is made by {@link #reseller}). */
+        public String dbName() { return dbName; }
+
         public TenantTreeBuilder and() { return TenantTreeBuilder.this; }
 
         DynamicContext context() {
@@ -200,9 +223,21 @@ public final class TenantTreeBuilder {
 
     public TenantSpec root(String dbName) { return tenant(dbName, null); }
 
+    /**
+     * A tier under {@code parentDbName}. One builder = ONE root's namespace: a name is declared once (two roots that both name a
+     * {@code res_44} are two builders — one tree per root, as prime-context serves them).
+     */
     public TenantSpec tenant(String dbName, String parentDbName) {
+        if (specs.containsKey(dbName)) throw new IllegalStateException("tenant " + dbName + " is declared twice in one tree");
         TenantSpec s = new TenantSpec(dbName, parentDbName);
         specs.put(dbName, s);
+        return s;
+    }
+
+    /** A tier declared before, by its database name: to go on filling it. */
+    public TenantSpec spec(String dbName) {
+        TenantSpec s = specs.get(dbName);
+        if (s == null) throw new IllegalStateException("no tenant " + dbName + " declared");
         return s;
     }
 

@@ -17,6 +17,10 @@ small and stays small. First consumer: **wifi-sphere**.
   `SessionSupervisor` — the root tenant by the session's ingress, the reseller tiers leaf to root, routing, credit control
   through one ledger port, rerouting by cause, the finish (one CDR message per session, a record per tier, on `cdr_<root>`).
   An application answers only its own questions. See `seed-sessionflow/README.md`.
+- `seed-sessionflow-samples` — the acceptance side of the base, test code only (nothing ships): the four signaling machines as statewalk
+  4.0 `MachineSpec`s with their fake channels and decoders (AdPlayback, EslCall, WifiGateway, SmsSubmit) and the four `RoutesphereFlow`
+  samples (AdFlow, VoiceFlow, WifiFlow, SmsFlow) with the scenarios every sample runs — two roots, 1–3 tiers, credit, the finish, a crash.
+  The model for P2–P5. Report: `docs/agents/P1-T-report.md`.
 - `seed-switch-ledger` — the SWITCH LEDGER on the base: the base's `LedgerPort` over the switch's own MemLedger (package accounts, one
   reserve row per tier per session, settled exactly at the end), the call switch's account order, the one credit primitive, the orphan
   reaper, the call's C14 remainder (`WindowRenewal`). For a switch that follows the call (wifi-sphere); the base never depends on it. See
