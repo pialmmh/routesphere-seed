@@ -111,6 +111,9 @@ public final class Lab implements AutoCloseable {
 
     public void cancel(String id, String cause) { frame(id, new LabEvents.Cancel(cause)); }
 
+    /** Answer the session and hang it up: it ends SUCCEEDED. */
+    public void hangupWhenAnswered(String id) { answer(id); hangup(id); }
+
     public void frame(String id, StatemachineEvent e) {
         try {
             wire.inject(id, e).toCompletableFuture().get(5, TimeUnit.SECONDS);

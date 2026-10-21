@@ -20,9 +20,14 @@ public final class CdrSinks {
 
     private CdrSinks() {}
 
-    /** One message per call on {@code topic} (the deployed name: {@code cdr_<root tenant>}), acks=all, idempotent. */
+    /** One message per session on ONE {@code topic}, acks=all, idempotent. */
     public static CdrSink kafka(String bootstrapServers, String topic, String clientId) {
         return new KafkaCdrSink(bootstrapServers, topic, clientId);
+    }
+
+    /** §C · One message per session on its ROOT's topic, {@code prefix + root} — the deployed {@code cdr_<root>} (prefix {@code "cdr_"}). */
+    public static CdrSink kafkaPerRoot(String bootstrapServers, String prefix, String clientId) {
+        return KafkaCdrSink.perRoot(bootstrapServers, prefix, clientId);
     }
 
     /** One file per minute under {@code directory}, one line per call. */
