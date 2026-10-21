@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.samples.sms;
 
+import com.telcobright.seed.campaign.api.TaskState;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.samples.bed.CrashingStore;
 import com.telcobright.seed.sessionflow.samples.scene.FlowBed;
@@ -78,6 +79,8 @@ class SmsFlowTest {
         assertEquals(new BigDecimal("98.80"), w.balance("btcl", 44), "the reseller: 2 × 0.40 + 0.40");
         assertEquals(new BigDecimal("99.00"), w.balance("res_44_7", 801));
         assertEquals("DELIVERED", b.session("m-3t").endCause);
+        assertEquals(3, w.closedTasks.size(), "every message's task closed once by the base");
+        assertEquals(TaskState.SENT, w.closedTasks.get(2).state());
         assertEquals(0, w.ledger.openReserves());
         b.assertBackInThePools("m-3t");
     }
@@ -123,6 +126,7 @@ class SmsFlowTest {
         b.frame("m-fo", http("unilever", "hi"));
         b.frame("m-fo", SmsFrame.submitError(0x58));
         assertEquals("smsc:submit_sm smsc-2 BRAND>8801711000002 segments=1", b.wire("m-fo").get(1), "the failover");
+        assertEquals(1, b.session("m-fo").routePlan.attempts().size(), "the refused submit recorded on the plan");
         b.frame("m-fo", SmsFrame.submitOk("msg-fo"));
         b.frame("m-fo", SmsFrame.dlr("DELIVRD"));
         assertEquals(2, verbs("reserve", "m-fo"), "the failover never re-reserves");
@@ -133,6 +137,8 @@ class SmsFlowTest {
         assertEquals("INVALID_DESTINATION", b.session("m-bad").endCause);
         assertEquals("client:REJECTED INVALID_DESTINATION", b.wire("m-bad").get(1));
         assertEquals(2, verbs("release", "m-bad"), "never accepted: every reserve back");
+        assertEquals(TaskState.FAILED, w.closedTasks.get(w.closedTasks.size() - 1).state(), "its task failed");
+        assertEquals("INVALID_DESTINATION", w.closedTasks.get(w.closedTasks.size() - 1).endCause());
         assertEquals(new BigDecimal("99.40"), w.balance("res_44", 701));
     }
 

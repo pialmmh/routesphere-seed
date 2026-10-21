@@ -1,5 +1,7 @@
 package com.telcobright.seed.sessionflow.samples.ad;
 
+import com.telcobright.seed.campaign.api.CampaignTask;
+import com.telcobright.seed.campaign.api.TaskState;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.samples.ad.AdFlow.Campaign;
 import com.telcobright.seed.sessionflow.samples.ad.AdPlayback.AdTimings;
@@ -100,6 +102,10 @@ class AdFlowTest {
         assertTrue(sdr.shown());
         assertEquals(15, sdr.watchedSeconds());
         assertEquals("SUCCEEDED", sdr.outcome());
+        assertEquals(3, w.closedTasks.size(), "the task of every view closed once by the base");
+        CampaignTask task = w.closedTasks.get(2);
+        assertEquals("v-3t", task.uniqueId());
+        assertEquals(TaskState.SENT, task.state(), "a view watched to its end completes its task");
         b.assertBackInThePools("v-3t");
     }
 
@@ -124,6 +130,8 @@ class AdFlowTest {
         assertEquals("NOT_SHOWN", charging.session("v-uc").endCause);
         assertEquals(new BigDecimal("99.40"), w.balance("res_44", 701), "unshown: charge — the reserve is kept");
         assertEquals(2, verbs("settle", "v-uc"));
+        assertEquals(TaskState.FAILED, w.closedTasks.get(0).state(), "never shown: the task failed");
+        assertEquals("NOT_SHOWN", w.closedTasks.get(0).endCause());
 
         FlowBed<AdContext, AdOut, AdFrame> refunding = bed(false, NEVER_SHOWN_300_MS);
         refunding.frame("v-ur", start(World.AD_BTCL, "zone-701"));

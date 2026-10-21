@@ -1,6 +1,8 @@
 package com.telcobright.seed.sessionflow.samples.ad;
 
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.seed.campaign.api.CampaignKind;
+import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
@@ -16,6 +18,7 @@ import com.telcobright.statewalk.session.events.Established;
 import com.telcobright.statewalk.session.events.SignalingProgress;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +74,8 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
         view.originatingCallingNumber = f.msisdn();
         view.originatingCalledNumber = rule;
         view.callerIp = f.gateway();
+        view.task = CampaignTask.minted(view.sessionId(), view.root, CampaignKind.AD, f.msisdn(), f.zone(), f.site(), f.app(),
+            Instant.ofEpochMilli(f.atMs()), Map.of()).processing();             // layer 1's row, handed to the core; the base closes it
         return null;
     }
 

@@ -1,6 +1,8 @@
 package com.telcobright.seed.sessionflow.samples.sms;
 
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.seed.campaign.api.CampaignKind;
+import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
@@ -14,6 +16,7 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -60,6 +63,8 @@ public final class SmsFlow extends RoutesphereFlow<SmsContext> {
         sms.segments = f.segments();
         sms.originatingCallingNumber = f.sender();
         sms.originatingCalledNumber = f.receiver();
+        sms.task = CampaignTask.minted(sms.sessionId(), sms.root, CampaignKind.SMS, f.receiver(), null, null, f.user(),
+            Instant.ofEpochMilli(f.atMs()), Map.of()).processing();             // the campaign_task row; the base closes it at the finish
         return null;
     }
 

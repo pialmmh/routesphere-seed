@@ -1,6 +1,9 @@
 package com.telcobright.seed.sessionflow.samples.wifi;
 
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.seed.sessionflow.samples.bed.CrashingStore;
+import com.telcobright.statewalk.persistence.InMemoryPersistenceProvider;
+import com.telcobright.statewalk.persistence.PersistenceProvider;
 import com.telcobright.seed.sessionflow.samples.scene.FlowBed;
 import com.telcobright.seed.sessionflow.samples.scene.World;
 import com.telcobright.seed.sessionflow.samples.wifi.WifiGateway.WifiTimings;
@@ -33,10 +36,12 @@ class WifiFlowTest {
     @AfterEach
     void tearDown() throws Exception { for (int i = open.size() - 1; i >= 0; i--) open.get(i).close(); }
 
-    private FlowBed<WifiContext, WifiOut, WifiFrame> bed(RoutesphereSettings s) {
+    private FlowBed<WifiContext, WifiOut, WifiFrame> bed(RoutesphereSettings s) { return bed(s, null); }
+
+    private FlowBed<WifiContext, WifiOut, WifiFrame> bed(RoutesphereSettings s, PersistenceProvider store) {
         WifiFlow flow = new WifiFlow(w.kit(s), SUBSCRIBERS, World.RATES, GATES);
         FlowBed<WifiContext, WifiOut, WifiFrame> b = new FlowBed<>(flow, WifiContext::new, WifiGateway.spec(GATEWAY, WifiGatewayContext::new),
-            new WifiChannel(), WifiFrames::decode);
+            new WifiChannel(), WifiFrames::decode, store);
         open.add(b);
         return b;
     }
@@ -103,6 +108,38 @@ class WifiFlowTest {
         assertEquals(new BigDecimal("1.20"), w.balance("res_44", 701), "one started minute charged, the renewed windows back");
         assertEquals(0, w.ledger.openReserves());
         b.assertBackInThePools(id);
+    }
+
+    @Test
+    void no_balance_at_the_middle_tier_of_three_gives_the_subscribers_window_back() throws Exception {
+        w.ledger.fund("res_44", 7, "0.00");
+        FlowBed<WifiContext, WifiOut, WifiFrame> b = bed(World.settings());
+        b.frame("w-mid", btclLogin("8801700000801"));
+        assertEquals(List.of("portal:deny " + MAC + " INSUFFICIENT_BALANCE"), b.wire("w-mid"));
+        assertEquals(new BigDecimal("100.00"), w.balance("res_44_7", 801), "the leaf's window came back");
+        assertEquals(1, w.ledger.journal().stream().filter(e -> e.verb().equals("release") && e.reference().startsWith("w-mid")).count());
+        assertEquals(0, w.ledger.openReserves());
+    }
+
+    @Test
+    void a_session_restored_online_on_the_next_node_closes_there_and_each_tier_pays_once() throws Exception {
+        InMemoryPersistenceProvider store = new InMemoryPersistenceProvider();
+        CrashingStore nodeA = new CrashingStore(store);
+        FlowBed<WifiContext, WifiOut, WifiFrame> a = bed(World.settings(), nodeA);
+        a.frame("w-r", btclLogin("8801700000701"));
+        a.frame("w-r", WifiFrame.opened("p-5m"));
+        assertEquals("ACTIVE/ONLINE", a.states("w-r"));
+        nodeA.crash();
+
+        FlowBed<WifiContext, WifiOut, WifiFrame> b = bed(World.settings(), store);
+        assertEquals("ACTIVE/ONLINE", b.states("w-r"));
+        assertEquals("8801700000701", b.registry().supervisorContextOf("w-r").msisdn);
+        b.frame("w-r", WifiFrame.left("LOGOUT"));
+        b.frame("w-r", WifiFrame.closed(10, 1));
+        assertEquals("-/-", b.states("w-r"));
+        assertEquals(new BigDecimal("99.40"), w.balance("res_44", 701));
+        assertEquals(2, w.ledger.journal().stream().filter(e -> e.verb().equals("settle") && e.reference().startsWith("w-r")).count());
+        assertEquals("w-r", ((WifiSdr) w.sdrs.get(0)).sessionId(), "the SDR written on node B");
     }
 
     @Test
