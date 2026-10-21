@@ -4,17 +4,18 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.SessionCause;
-import com.telcobright.seed.sessionflow.api.SessionFlowTimings;
-import com.telcobright.seed.sessionflow.dependencies.SessionFlowKit;
-import com.telcobright.seed.sessionflow.dependencies.SessionFlowSettings;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.seed.sessionflow.api.IdentificationRule;
+import com.telcobright.statewalk.session.SessionTimings;
+import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
 import com.telcobright.seed.sessionflow.testkit.TenantTreeBuilder;
 import com.telcobright.seed.switchledger.dependencies.SwitchLedgerSettings;
 import com.telcobright.seed.switchledger.dependencies.SwitchLedgers;
 import com.telcobright.seed.switchledger.samples.LedgerFlow;
-import com.telcobright.statewalk.pipeline.StepMode;
-import com.telcobright.statewalk.session.AdmissionVerdict;
+import com.telcobright.statewalk.session.Verdict;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +28,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ARCH-0077-A item 3 — the base's AdmissionChain walked through the MemLedgerPort over a REAL MemLedger (H2 in MySQL mode as its MySQL,
+ * ARCH-0077-A item 3, on P1's base (RoutesphereFlow) — the base's AdmissionChain walked through the MemLedgerPort over a REAL MemLedger (H2 in MySQL mode as its MySQL,
  * Chronicle in a temp dir, standalone). The story: the operator {@code btcl} (partner 2 = the reseller {@code res_2}, partner 9 = a direct
  * customer) and its reseller {@code res_2} (partner 701 Unilever with an SMS bucket, 702 Poorco with no package). Each tier is a SCHEMA of
  * the one database: Unilever's account 11 lives in {@code res_2.packageaccount}, the reseller's account 21 in {@code btcl.packageaccount}.
@@ -59,13 +60,19 @@ class ChainOnTheLedgerTest {
 
     private LedgerFlow flow(Map<String, BigDecimal> ratePerWindow) {
         lab.start();
-        SessionFlowKit kit = SessionFlowKit.builder()
+        return flowOn(SwitchLedgers.memLedger(lab.ledger(), SwitchLedgerSettings.standard(), Clock.system(DHAKA)), ratePerWindow);
+    }
+
+    /** The base's kit on this ledger port: the gateway's vlan rule names btcl; the budget renews every 60 s. */
+    private LedgerFlow flowOn(com.telcobright.seed.sessionflow.spi.LedgerPort port, Map<String, BigDecimal> ratePerWindow) {
+        RoutesphereKit kit = RoutesphereKit.builder()
             .tenants(TenantLookup.of(root))
-            .ledger(SwitchLedgers.memLedger(lab.ledger(), SwitchLedgerSettings.standard(), Clock.system(DHAKA)))
-            .cdrSink(cdrs)
+            .identification(java.util.List.of(new IdentificationRule("vlan", "gw-1:310", "btcl")))
+            .ledger(port)
+            .cdr(cdrs)
             .zone(DHAKA)
             .clock(Clock.system(DHAKA))
-            .settings(new SessionFlowSettings(4, 2, 60, new SessionFlowTimings(2, 2, 2, 3, 20, 2), 60, 0, false))
+            .settings(new RoutesphereSettings(4, 2, 60, new SessionTimings(2, 2, 2, 20), 60, 0, 0, false, 200))
             .build();
         return new LedgerFlow(kit, Map.of("AA:01", 701, "AA:02", 702, "AA:09", 9), ratePerWindow);
     }
@@ -73,10 +80,7 @@ class ChainOnTheLedgerTest {
     private static final Map<String, BigDecimal> LEAF_PAYS = Map.of("res_2#701", new BigDecimal("10"));
     private static final Map<String, BigDecimal> BOTH_PAY = Map.of("res_2#701", new BigDecimal("10"), "btcl#2", new BigDecimal("5"));
 
-    private static AdmissionVerdict admit(LedgerFlow flow, LedgerFlow.Session session) {
-        assertThat(flow.preprocess(session)).isNull();
-        return flow.admission(session, StepMode.LIVE);
-    }
+    private static Verdict admit(LedgerFlow flow, LedgerFlow.Session session) { return flow.admit(session, true); }
 
     // ── the walk ────────────────────────────────────────────────────────────
 
@@ -168,7 +172,7 @@ class ChainOnTheLedgerTest {
         flow.renewReserves(session);                                                    // 30 held
         flow.charge = level -> new BigDecimal("25");
 
-        flow.settle(session);
+        flow.settle(session, Outcome.SUCCEEDED);
 
         assertThat(session.settlements).hasSize(2);
         assertThat(session.settlements.get(0).closed()).isTrue();
@@ -189,13 +193,39 @@ class ChainOnTheLedgerTest {
         assertThat(admit(flow, session).accepted()).isTrue();                           // 10 held
         flow.charge = level -> new BigDecimal("14");
 
-        flow.settle(session);
+        flow.settle(session, Outcome.SUCCEEDED);
 
         assertThat(session.settlements.get(0).returned()).isEqualByComparingTo("-4");
         assertThat(session.settlements.get(0).balanceAfter()).isEqualByComparingTo("86");
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("86");
         assertThat(lab.cachedReserveRows("res_2")).isZero();
         LedgerLab.await("the write-behind", () -> lab.dbReserveRows("res_2") == 0 && lab.dbBalance("res_2", 11).compareTo(new BigDecimal("86")) == 0);
+    }
+
+    // ── §L.1 · the second end of a restored session moves nothing ──────────
+
+    @Test
+    void aSessionEndedAgainAfterARestart_fromItsOlderRow_movesNothingOnTheSwitchLedger() {
+        LedgerFlow flow = flow(BOTH_PAY);
+        LedgerFlow.Session session = LedgerFlow.session("w-10", "AA:01");
+        assertThat(admit(flow, session).accepted()).isTrue();                           // 10 held on account 11, 5 on account 21
+        String olderRow = com.telcobright.statewalk.persistence.SnapshotSerializer.contextToBase64Json(session);
+        flow.charge = level -> new BigDecimal("4");
+        flow.settle(session, Outcome.SUCCEEDED);                                      // settled at 4 each: 96 and 46; the rows die
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("96");
+        assertThat(lab.cachedBalance("btcl", 21)).isEqualByComparingTo("46");
+
+        LedgerFlow afterTheRestart = flowOn(SwitchLedgers.memLedger(lab.ledger(), SwitchLedgerSettings.standard(), Clock.system(DHAKA)), BOTH_PAY);
+        afterTheRestart.charge = level -> new BigDecimal("9");                          // a longer talk time the second time (E §9)
+        LedgerFlow.Session restored = (LedgerFlow.Session) com.telcobright.statewalk.persistence.SnapshotSerializer
+            .contextFromBase64Json(olderRow, LedgerFlow.Session.class.getName());
+        afterTheRestart.settle(restored, Outcome.SUCCEEDED);
+
+        assertThat(lab.cachedBalance("res_2", 11)).as("nothing moved the second time").isEqualByComparingTo("96");
+        assertThat(lab.cachedBalance("btcl", 21)).isEqualByComparingTo("46");
+        assertThat(restored.settlements).as("the switch ledger finds no row open: its words are OWED, its money is none")
+            .allMatch(s -> !s.closed() && s.note().contains("nothing moved"));
+        assertThat(restored.tiers).extracting(t -> t.debitReference).containsExactly("w-10#L0", "w-10#L1");
     }
 
     // ── the refusals ────────────────────────────────────────────────────────
@@ -205,10 +235,10 @@ class ChainOnTheLedgerTest {
         LedgerFlow flow = flow(Map.of("res_2#701", new BigDecimal("10"), "btcl#2", new BigDecimal("500")));   // the reseller holds 50
         LedgerFlow.Session session = LedgerFlow.session("w-7", "AA:01");
 
-        AdmissionVerdict verdict = admit(flow, session);
+        Verdict verdict = admit(flow, session);
 
         assertThat(verdict.accepted()).isFalse();
-        assertThat(verdict.rejectCause()).isEqualTo(SessionCause.INSUFFICIENT_BALANCE);
+        assertThat(verdict.cause()).isEqualTo(SessionCause.INSUFFICIENT_BALANCE);
         assertThat(session.levels).isEmpty();
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
         assertThat(lab.cachedBalance("btcl", 21)).isEqualByComparingTo("50");
@@ -222,10 +252,10 @@ class ChainOnTheLedgerTest {
         LedgerFlow flow = flow(Map.of("res_2#702", new BigDecimal("10")));
         LedgerFlow.Session session = LedgerFlow.session("w-8", "AA:02");
 
-        AdmissionVerdict verdict = admit(flow, session);
+        Verdict verdict = admit(flow, session);
 
         assertThat(verdict.accepted()).isFalse();
-        assertThat(verdict.rejectCause()).isEqualTo(SessionCause.UNRATED);
+        assertThat(verdict.cause()).isEqualTo(SessionCause.UNRATED);
         assertThat(lab.cachedReserveRows("res_2")).isZero();
     }
 
@@ -235,10 +265,10 @@ class ChainOnTheLedgerTest {
         lab.ledger().shutdown();
         LedgerFlow.Session session = LedgerFlow.session("w-9", "AA:01");
 
-        AdmissionVerdict verdict = admit(flow, session);
+        Verdict verdict = admit(flow, session);
 
         assertThat(verdict.accepted()).isFalse();
-        assertThat(verdict.rejectCause()).isEqualTo(SessionCause.BILLING_SYSTEM_ERROR);
+        assertThat(verdict.cause()).isEqualTo(SessionCause.BILLING_SYSTEM_ERROR);
         assertThat(session.systemFault).isEqualTo(SessionCause.BILLING_SYSTEM_ERROR);
     }
 }

@@ -1,53 +1,39 @@
 package com.telcobright.seed.sessionflow.api;
 
 import com.telcobright.statewalk.persistence.PersistenceMode;
-import com.telcobright.statewalk.persistence.PersistenceProvider;
-import com.telcobright.statewalk.registry.StatemachineRegistry;
-import com.telcobright.statewalk.registry.Supervisor;
-import com.telcobright.statewalk.state.StateMap;
+import com.telcobright.statewalk.session.SessionHandler;
+import com.telcobright.statewalk.session.SessionSupervisor;
+import com.telcobright.statewalk.session.events.SessionActive;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import java.io.InputStream;
+import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The session base's statewalk pin is 3.3.0 (ARCH-0087 — the owner's "fix the statewalk lib" of 2026-10-16): {@code PersistenceMode}
- * exists only from 3.3.0, so this class does not compile against 3.2.0 — that is the pin's proof. Persistence stays OFF in the base:
- * {@code SessionFlowEngine.buildRegistry} sets none, and a registry built with {@code PersistenceMode.OFF} never opens its store (the
- * supplier here throws if it is ever asked). A lane turns persistence on by its own config key, never the base.
+ * The seed's statewalk pin is 4.0.0 (P1, §A): the base {@link RoutesphereFlow} IS a statewalk 4.0 {@link SessionHandler} of the final
+ * {@link SessionSupervisor}, and {@code SessionActive} (the fix round's G-1, the budget child's start) exists only from 4.0.0 — this class
+ * does not compile against 3.x. The RESOLVED jar is read too: its Maven properties name 4.0.0, whatever a nearer pin might say
+ * (feedback "prove the RESOLVED version").
  */
 class StatewalkPinTest {
 
     @Test
-    void off_isTheWordAConfigKeyParses() {
+    void theBaseIsTheHandlerOfStatewalk4sFinalSupervisor() {
+        assertThat(SessionHandler.class).isAssignableFrom(RoutesphereFlow.class);
+        assertThat(SessionSupervisor.CONNECTING).isEqualTo("CONNECTING");
+        assertThat(new SessionActive(1L, new com.telcobright.statewalk.session.events.Established(1L, "party", null, null)).atMs()).isEqualTo(1L);
         assertThat(PersistenceMode.parse("off")).isSameAs(PersistenceMode.OFF);
     }
 
     @Test
-    void off_buildsARegistryWithoutEverOpeningAStore() {
-        Supplier<PersistenceProvider> neverOpened = () -> {
-            throw new AssertionError("a store must never be opened when persistence is off");
-        };
-        StatemachineRegistry<Object> registry = StatemachineRegistry.<Object>builder("statewalk-pin-proof")
-            .supervisor("proof", ProofSupervisor::new, 1)
-            .threads(1)
-            .persistence(PersistenceMode.OFF, neverOpened)
-            .build();
-        try {
-            assertThat(registry.getName()).isEqualTo("statewalk-pin-proof");
-            assertThat(registry.activeIdCount()).isZero();
-        } finally {
-            registry.shutdown();
-        }
-    }
-
-    /** The smallest supervisor a registry pools: one state of its own (IDLE is statewalk's, auto-injected), nothing to do. */
-    static final class ProofSupervisor extends Supervisor<Object> {
-        @Override
-        protected StateMap defineStates() {
-            return StateMap.builder().initialState("PROVING").state("PROVING").interim().timeoutStay(1, TimeUnit.MINUTES).build();
+    void theResolvedStatewalkJarIs400() throws Exception {
+        try (InputStream in = SessionSupervisor.class.getResourceAsStream("/META-INF/maven/com.telcobright/statewalk/pom.properties")) {
+            assertThat(in).as("statewalk's pom.properties on the classpath").isNotNull();
+            Properties p = new Properties();
+            p.load(in);
+            assertThat(p.getProperty("version")).isEqualTo("4.0.0");
         }
     }
 }

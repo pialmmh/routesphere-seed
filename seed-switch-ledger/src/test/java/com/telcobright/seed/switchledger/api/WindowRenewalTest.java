@@ -5,9 +5,10 @@ import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.SessionCause;
-import com.telcobright.seed.sessionflow.api.SessionFlowTimings;
-import com.telcobright.seed.sessionflow.dependencies.SessionFlowKit;
-import com.telcobright.seed.sessionflow.dependencies.SessionFlowSettings;
+import com.telcobright.seed.sessionflow.api.IdentificationRule;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.statewalk.session.SessionTimings;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
 import com.telcobright.seed.sessionflow.testkit.TenantTreeBuilder;
@@ -15,7 +16,6 @@ import com.telcobright.seed.switchledger.LedgerLab;
 import com.telcobright.seed.switchledger.dependencies.SwitchLedgerSettings;
 import com.telcobright.seed.switchledger.dependencies.SwitchLedgers;
 import com.telcobright.seed.switchledger.samples.LedgerFlow;
-import com.telcobright.statewalk.pipeline.StepMode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -54,17 +54,17 @@ class WindowRenewalTest {
     private LedgerFlow flow(String balance, String rate) {
         lab.account("res_2", 11, 1, "OTH_ea", balance).start();
         var ledger = SwitchLedgers.over(lab.ledger(), SwitchLedgerSettings.standard(), Clock.system(DHAKA));
-        SessionFlowKit kit = SessionFlowKit.builder()
-            .tenants(TenantLookup.of(root)).ledger(ledger.port()).cdrSink(new RecordingCdrSink()).zone(DHAKA).clock(Clock.system(DHAKA))
-            .settings(new SessionFlowSettings(4, 2, 60, new SessionFlowTimings(2, 2, 2, 3, 20, 2), 60, 0, false))
+        RoutesphereKit kit = RoutesphereKit.builder()
+            .tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("vlan", "gw-1:310", "btcl")))
+            .ledger(ledger.port()).cdr(new RecordingCdrSink()).zone(DHAKA).clock(Clock.system(DHAKA))
+            .settings(new RoutesphereSettings(4, 2, 60, new SessionTimings(2, 2, 2, 20), 60, 0, 0, false, 200))
             .build();
         return new LedgerFlow(kit, Map.of("AA:01", 701), Map.of("res_2#701", new BigDecimal(rate)), ledger.balances());
     }
 
     private static LedgerFlow.Session admitted(LedgerFlow flow, String id) {
         LedgerFlow.Session session = LedgerFlow.session(id, "AA:01");
-        assertThat(flow.preprocess(session)).isNull();
-        assertThat(flow.admission(session, StepMode.LIVE).accepted()).isTrue();
+        assertThat(flow.admit(session, true).accepted()).isTrue();
         return session;
     }
 

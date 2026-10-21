@@ -32,7 +32,7 @@ class ResellerPartnerRuleTest {
         .build();
 
     private Partner standsFor(String child, String parent) {
-        return SessionFlowSteps.resellerPartnerOf(root.findTenantByDbName(child), root.findTenantByDbName(parent));
+        return RoutesphereFlow.resellerPartnerOf(root.findTenantByDbName(child), root.findTenantByDbName(parent));
     }
 
     @Test

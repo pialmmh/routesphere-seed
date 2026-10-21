@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.telcobright</groupId>
         <artifactId>routesphere-seed-parent</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>2.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>seed-bom</artifactId>
@@ -23,13 +23,13 @@
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-config</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
             <!-- the config doorbell: kafka/redis change notification -> debounced re-fetch -->
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-config-client</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
 
             <!-- the per-tenant DynamicContext cache: Map<tenantId, Snapshot<T>>, loaded per tenant by the
@@ -37,7 +37,7 @@
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-context</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
 
             <!-- the generic campaign service: campaign + campaign_task, runnable/targeting/quota rules,
@@ -45,7 +45,7 @@
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-campaign</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
 
             <!-- the common request routing: dialplan (default of call + SMS) or a named ROUTING POLICY
@@ -53,41 +53,41 @@
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-routing</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
 
-            <!-- the routed session base: the session graph with PREPROCESSING in front, the chain admission per tier,
-                 the ledger port on orchestrix's prepaid roads, the per-tier CDR writer (ad-sphere first; the call switch
-                 adopts it in a later local window) -->
+            <!-- the routed session base (P1): RoutesphereFlow, the ONE base flow of ad, call, WiFi and SMS — the handler of
+                 statewalk 4.0's SessionSupervisor; the root tenant first, the chain admission per tier, one ledger port, the
+                 per-tier CDR writer -->
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-sessionflow</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
             <!-- the tenant trees every product walks: the map of sibling tenants, the prime-context tree loader, the doorbell -->
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-tenant</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-idgen</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
             <!-- the switch ledger on the base: the LedgerPort over MemLedger (package accounts, reserve rows), the account order,
                  the credit primitive, the orphan reaper, the C14 remainder — for a switch that follows the call (wifi-sphere) -->
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-switch-ledger</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>${project.version}</version>
             </dependency>
-
-            <!-- session state machines (flat model; call/SMS/WiFi all ride it) -->
+            <!-- the session machines of every lane (P1, 2026-10-22): statewalk 4.0.0 — the final SessionSupervisor the base
+                 RoutesphereFlow implements the handler of. statewalk-v2 and state-walk v1 stay out of the seed. -->
             <dependency>
                 <groupId>com.telcobright</groupId>
-                <artifactId>statewalk-v2</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <artifactId>statewalk</artifactId>
+                <version>${statewalk.version}</version>
             </dependency>
 
             <!-- the entity cache: in-memory + chronicle-queue WAL + gRPC API

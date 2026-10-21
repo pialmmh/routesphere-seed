@@ -1,7 +1,7 @@
 package com.telcobright.seed.sessionflow.api;
 
 /**
- * What a session came to, as its settlement reads it: answered by {@link SessionFlowSteps#settleOutcome} and priced by the
+ * What a session came to, as its settlement reads it: answered by {@code RoutesphereFlow.settleOutcome} and priced by the
  * lane's {@link com.telcobright.seed.sessionflow.dependencies.RefundPolicy}.
  */
 public enum SettleOutcome {

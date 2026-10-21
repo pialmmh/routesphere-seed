@@ -1,33 +1,62 @@
 package com.telcobright.seed.sessionflow.api;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The settlement of a call, for every application: every tier pays what the application's settle rule says and the rest
- * of its reserve goes back. It runs exactly once per call, whatever way the call ended.
- *
- * <p>This is the work behind {@link SessionFlow#settle}; the rule itself is {@link SessionFlowSteps#chargeAtSettle}.
+ * (e) The money at the end of a session, for every application, exactly once per session whatever way it ended — under the session's
+ * money lock (the budget child renews on its own cell):
+ * <ul>
+ *   <li>{@link #settle} — an ANSWERED session (statewalk's SUCCEEDED, and its FAILED after the answer, D-A1): every tier is finalized by
+ *       {@code finalizeCost} — delivered → rate × billed units, the rest back; not delivered → the refund rule;</li>
+ *   <li>{@link #release} — a session never answered: every reserve back; only a session OFFERED and never consumed may pay, when the lane's
+ *       refund rule charges it (the ad's {@code unshown}).</li>
+ * </ul>
+ * A tier the ledger did not take is OWED: one ERROR names the reference, the CDR says {@code settle: OWED}.
  */
-final class SessionSettlement<C extends SessionFlowContext> {
+final class SessionSettlement<C extends RoutesphereContext> {
 
-    private final SessionFlow<C> flow;
+    private final RoutesphereFlow<C> flow;
 
-    SessionSettlement(SessionFlow<C> flow) { this.flow = flow; }
+    private SessionSettlement(RoutesphereFlow<C> flow) { this.flow = flow; }
 
-    /** Once per call: the balance child's SETTLING and the supervisor's end both come here, and the second finds it done. */
-    void settle(C ctx) {
-        synchronized (ctx) {
-            if (ctx.reservesClosed) return;
-            ctx.reservesClosed = true;
+    static <C extends RoutesphereContext> SessionSettlement<C> of(RoutesphereFlow<C> flow) { return new SessionSettlement<>(flow); }
+
+    void settle(C ctx, Outcome outcome) {
+        ctx.money.lock();
+        try {
+            if (!closeOnce(ctx)) return;
+            fixBilledDuration(ctx);
+            List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
+            for (LevelAdmission level : ctx.levels) settlements.add(finalizeTier(ctx, level, outcome));
+            ctx.settlements = List.copyOf(settlements);
+        } finally {
+            ctx.money.unlock();
         }
-        fixBilledDuration(ctx);
-        List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
-        for (LevelAdmission level : ctx.levels) settlements.add(settleLevel(ctx, level));
-        ctx.settlements = List.copyOf(settlements);
+    }
+
+    void release(C ctx) {
+        ctx.money.lock();
+        try {
+            if (!closeOnce(ctx)) return;
+            fixBilledDuration(ctx);
+            List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
+            for (LevelAdmission level : ctx.levels) settlements.add(giveBack(ctx, level));
+            ctx.settlements = List.copyOf(settlements);
+        } finally {
+            ctx.money.unlock();
+        }
+    }
+
+    /** Exactly once per session: the second ask (a re-entered final, a restored session ending again) finds it done. */
+    private static boolean closeOnce(RoutesphereContext ctx) {
+        if (ctx.reservesClosed) return false;
+        ctx.reservesClosed = true;
+        return true;
     }
 
     /** The duration the tiers are charged for is fixed here, once: the CDR carries the same number. */
@@ -35,31 +64,42 @@ final class SessionSettlement<C extends SessionFlowContext> {
         ctx.durationSec = Math.max(0, flow.safely(ctx, "billedDuration", () -> flow.billedDuration(ctx, flow.kit().clock().millis()), ctx.durationSec));
     }
 
-    private TierSettlement settleLevel(C ctx, LevelAdmission level) {
+    private TierSettlement finalizeTier(C ctx, LevelAdmission level, Outcome outcome) {
+        if (!holdsReserve(level)) return TierSettlement.nothing(level.getLevelIndex());
+        try {
+            TierSettlement done = flow.finalizeCost(ctx, level, outcome);
+            return done != null ? done : TierSettlement.nothing(level.getLevelIndex());
+        } catch (RuntimeException e) {
+            return owed(ctx, level, null, e);
+        }
+    }
+
+    /** Never answered: the reserve goes back — unless the refund rule charges a session offered and never consumed (its whole reserve). */
+    private TierSettlement giveBack(C ctx, LevelAdmission level) {
         if (!holdsReserve(level)) return TierSettlement.nothing(level.getLevelIndex());
         BigDecimal charged = null;
         try {
-            charged = flow.chargeAtSettle(ctx, level);
-            if (charged == null || charged.signum() < 0) charged = BigDecimal.ZERO;
-            return flow.kit().ledger().settle(level, charged);
+            charged = flow.chargeByTheRefundRule(ctx, level);
+            if (charged.signum() > 0) return flow.kit().ledger().settle(level, charged);
+            flow.kit().ledger().release(level, ctx.endCause == null ? SessionCause.NO_ANSWER : ctx.endCause);
+            AdmissionChain.of(flow).journalRelease(ctx, level);
+            return TierSettlement.of(level, BigDecimal.ZERO, level.getBalanceBefore());
         } catch (RuntimeException e) {
             return owed(ctx, level, charged, e);
         }
     }
 
-    /** The ledger did not take the settlement: nothing is lost silently — one error line names everything that is owed. */
     private TierSettlement owed(C ctx, LevelAdmission level, BigDecimal charged, RuntimeException why) {
-        flow.counters().owed.incrementAndGet();
-        flow.log.error("[{}] {} | OWED: the settlement of tier {} ({}) partner {} was NOT taken — reference {}, reserved {} {}, to charge {}: {}",
-            flow.name(), ctx.sessionKey, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), level.getDebitReference(),
+        flow.kit().counters().owed.incrementAndGet();
+        RoutesphereFlow.log.error("[{}] {} | OWED: the settlement of tier {} ({}) partner {} was NOT taken — reference {}, reserved {} {}, to charge {}: {}",
+            flow.name(), ctx.sessionId(), level.getLevelIndex(), level.getDbName(), level.getPartnerId(), level.getDebitReference(),
             level.getTotalReserved(), level.getUom(), charged, why.toString());
         return TierSettlement.owed(level, charged == null ? BigDecimal.ZERO : charged, why.toString());
     }
 
     /**
-     * A tier the ledger was asked to hold — money, or a counted reservation of zero: the call switch's step reserves the rate even
-     * when it is zero and its settlement must run once for every such tier, unconditionally, because the reserve row dies there
-     * (a zero-rated tier skipped at settle leaves its row behind: BTCL, 2026-09-28). The base's own reserve never holds zero.
+     * A tier the ledger was asked to hold — money, or a counted reservation of zero (the call switch reserves a zero rate too, and its
+     * settlement must run once for every such tier: the reserve row dies there).
      */
     static boolean holdsReserve(LevelAdmission level) {
         if (level.getDebitReference() == null) return false;

@@ -2,7 +2,7 @@
 
 The Telcobright service seed: the proven parts of routesphere — per-tenant/
 per-channel **config**, cached DB entities (**chronicle-db-cache** / "neymar
-cache"), **omniqueue**, **statewalk-v2** — packaged so a new product starts
+cache"), **omniqueue**, **statewalk** (4.0.0) — packaged so a new product starts
 small and stays small. First consumer: **wifi-sphere**.
 
 - `seed-bom` — import this, pick à la carte.
@@ -13,10 +13,10 @@ small and stays small. First consumer: **wifi-sphere**.
   default, or a named ROUTING POLICY — a DB entity with one JSON document — picked in config. See
   `seed-routing/README.md`.
 
-- `seed-sessionflow` — the BASE CALL PROCESSING PIPELINE of every switch: one base class (`SessionFlow`) runs a voice call,
-  an SMS and an ad view through the same multi-tenant flow — a pooled machine, identify the partner, the tenant chain
-  (authorize, rate, reserve), route, signal, settle, one CDR message per call. An application overrides only its own
-  steps. See `seed-sessionflow/README.md`.
+- `seed-sessionflow` — `RoutesphereFlow`, the ONE base flow of every switch (P1): the handler of statewalk 4.0's final
+  `SessionSupervisor` — the root tenant by the session's ingress, the reseller tiers leaf to root, routing, credit control
+  through one ledger port, rerouting by cause, the finish (one CDR message per session, a record per tier, on `cdr_<root>`).
+  An application answers only its own questions. See `seed-sessionflow/README.md`.
 - `seed-switch-ledger` — the SWITCH LEDGER on the base: the base's `LedgerPort` over the switch's own MemLedger (package accounts, one
   reserve row per tier per session, settled exactly at the end), the call switch's account order, the one credit primitive, the orphan
   reaper, the call's C14 remainder (`WindowRenewal`). For a switch that follows the call (wifi-sphere); the base never depends on it. See

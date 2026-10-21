@@ -7,7 +7,7 @@ package com.telcobright.seed.sessionflow.api;
 public record IdentificationRule(String kind, String match, String tenant) {
 
     public IdentificationRule {
-        if (kind == null || kind.isBlank()) throw new IllegalArgumentException("an identification rule needs its kind (listen, esl)");
+        if (kind == null || kind.isBlank()) throw new IllegalArgumentException("an identification rule needs its kind (listen, esl, vlan, topic)");
         if (match == null || match.isBlank()) throw new IllegalArgumentException("an identification rule of kind " + kind + " needs its match");
         if (tenant == null || tenant.isBlank()) throw new IllegalArgumentException("the identification rule " + kind + " " + match + " names no tenant");
     }

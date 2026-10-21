@@ -7,23 +7,21 @@
     <parent>
         <groupId>com.telcobright</groupId>
         <artifactId>routesphere-seed-parent</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>2.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>seed-sessionflow</artifactId>
     <name>seed-sessionflow</name>
-    <description>The base call processing pipeline of a Telcobright switch, as a library (design: routesphere
-        docs/architecture/call-flow-base.md, 2026-10-03). One base class, SessionFlow: every application — an ad view, a voice
-        call, an SMS — is a Call and runs the same multi-tenant flow: launch a pooled machine, preprocess, identify the
-        partner, walk the tenant chain leaf to root (authorize, rate, reserve), route, signal, settle, publish one CDR
-        record per tier to Kafka. An application overrides only its own steps. The machines come from a pool of a fixed
-        size (statewalk 3.3.0 — the SW-T1/SW-T2 fixes of 2026-10-16; persistence stays OFF here, a lane turns it on by its own config
-        key). The ledger of orchestrix's prepaid roads is here too (OrchestrixLedger). First user:
-        ad-sphere (AdCallFlow).</description>
+    <description>The base flow of a Telcobright switch, as a library (P1, design routesphere-flow.html, 2026-10-21):
+        RoutesphereFlow, the ONE base of the ad, the voice call, the WiFi session and the SMS — the SessionHandler of statewalk
+        4.0's final SessionSupervisor (IDLE · INIT · ADMITTING · ROUTING · CONNECTING · ACTIVE · SUCCEEDED | FAILED). The library
+        keeps the states; the base keeps the routesphere lifecycle: the root tenant by its ingress (identifySiblingLevelTenants),
+        the reseller tiers leaf to root (iterateResellerTenants, identifyEntryPartner, identifyPartner), routing, credit control
+        through one ledger port (reserveBalance, finalizeCost), rerouting (handleRerouting) and the finish (finishSession: the CDR
+        per tier, the task, the SDR). An application answers only its own questions. statewalk ${statewalk.version}; the ledger of
+        orchestrix's prepaid roads is here too (OrchestrixLedger).</description>
 
     <properties>
-        <!-- 3.3.0 (tag v3.3.0, a6879ca): the SW-T1 fixes + persistence by config + SW-T2 (ARCH-0087); the base sets no persistence (OFF) -->
-        <statewalk.version>3.3.0</statewalk.version>
         <jackson.version>2.19.2</jackson.version>
         <kafka.version>3.7.1</kafka.version>
     </properties>
@@ -39,6 +37,14 @@
             <groupId>com.telcobright</groupId>
             <artifactId>rtc-domain</artifactId>
             <version>1.0-SNAPSHOT</version>
+            <!-- P1 §A: state-walk v1 stays out of the seed — rtc-domain carries it for its own CampaignTask entity, which the
+                 seed never loads (the seed's task is seed-campaign's CampaignTask) -->
+            <exclusions>
+                <exclusion>
+                    <groupId>com.telcobright</groupId>
+                    <artifactId>state-walk</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.telcobright</groupId>
@@ -78,6 +84,13 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- §L.4's proof only: statewalk's JDBC store on an in-memory database, one table per lane (test scope; no runtime dependency) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.2.224</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

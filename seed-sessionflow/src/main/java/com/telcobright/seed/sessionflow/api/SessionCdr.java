@@ -6,6 +6,7 @@ import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.CdrJson;
 import com.telcobright.seed.sessionflow.spi.SessionJournal;
+import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -18,33 +19,37 @@ import java.util.Map;
  * nobody was admitted for still gets one record, on the tenant it entered, with zero amounts and its cause.
  *
  * <p>The switch only publishes. billing-core writes the record and the summary input; summary-service sums them.
- * This is the work behind the CDR step of {@link SessionFlow#end}; the application's fields are {@link SessionFlowSteps#fillCdr}.
+ * The work behind (g)'s CDR step of {@link RoutesphereFlow#finishSession}; the application's fields are {@link RoutesphereFlow#fillCdr}.
  *
  * <p>R1-6: a call that was handed over has a line in the journal of the calls in the air, written with its records made as the
  * next start would publish them ({@link #lostRecordsOf}); its own end publishes its real record and marks that line done
  * (publish FIRST, then done: a death in between publishes the call twice, and billing-core takes a call once per tier).
  */
-final class SessionCdr<C extends SessionFlowContext> {
+final class SessionCdr<C extends RoutesphereContext> {
 
-    private final SessionFlow<C> flow;
+    private final RoutesphereFlow<C> flow;
     private final CdrAssembler assembler;
 
-    SessionCdr(SessionFlow<C> flow) {
+    private SessionCdr(RoutesphereFlow<C> flow) {
         this.flow = flow;
-        this.assembler = new CdrAssembler(flow.kit().zone(), flow.kit().clock().millis() * 1000);
+        this.assembler = flow.kit().cdrAssembler();
     }
 
-    void publish(C ctx, String outcome) {
+    static <C extends RoutesphereContext> SessionCdr<C> of(RoutesphereFlow<C> flow) { return new SessionCdr<>(flow); }
+
+    /** (g) The session's ONE message: the application's {@code cdrPerTier}, on the root's road ({@code cdr_<root>}); once per session. */
+    void publish(C ctx, Outcome outcome) {
         if (ctx.cdrPublished) return;
-        List<CdrEvent> tiers = assemble(ctx, outcome);
-        if (tiers.isEmpty()) return;
-        flow.kit().cdrSink().publish(ctx.sessionKey, tiers);
+        List<CdrEvent> tiers = flow.cdrPerTier(ctx, outcome);
+        if (tiers == null || tiers.isEmpty()) return;
+        flow.kit().cdr().publish(AdmissionChain.rootDbOf(ctx), ctx.sessionId(), tiers);
         ctx.cdrPublished = true;
-        flow.counters().cdrPublished.incrementAndGet();
-        markDone(ctx.sessionKey);
+        flow.kit().counters().cdrPublished.incrementAndGet();
+        markDone(ctx.sessionId());
     }
 
-    private List<CdrEvent> assemble(C ctx, String outcome) {
+    /** One record per tier, the leaf first (a tier that rotated: one per span); a session nobody was admitted for: one, on its entry. */
+    List<CdrEvent> assemble(C ctx, Outcome outcome) {
         int serviceGroup = flow.serviceGroup(ctx);
         String cause = flow.cdrCause(ctx, outcome);
         if (ctx.levels.isEmpty()) return unadmitted(ctx, serviceGroup, cause);
@@ -65,22 +70,22 @@ final class SessionCdr<C extends SessionFlowContext> {
         return spans;
     }
 
-    private static boolean rotated(SessionFlowContext ctx, LevelAdmission level) {
+    private static boolean rotated(RoutesphereContext ctx, LevelAdmission level) {
         return !ctx.closedSpans.isEmpty() && ctx.closedSpans.get(0).level().getLevelIndex() == level.getLevelIndex();
     }
 
     /** Nobody was admitted (or the call was free and had no tier): one record on the tenant the call entered. */
     private List<CdrEvent> unadmitted(C ctx, int serviceGroup, String cause) {
-        Tenant tenant = ctx.entryTenant != null ? ctx.entryTenant : flow.kit().tenants().root(ctx.tenantName).orElse(null);
+        Tenant tenant = ctx.entryTenant != null ? ctx.entryTenant : ctx.tree != null ? ctx.tree.tree() : null;
         if (tenant == null) return lost(ctx, cause);
         Integer payer = ctx.partner != null ? ctx.partner.getIdPartner() : flow.payerWhenUnknown(ctx, tenant);
         return List.of(sealed(ctx, null, assembler.unadmittedRecord(ctx, tenant, payer, serviceGroup, cause)));
     }
 
     private List<CdrEvent> lost(C ctx, String cause) {
-        flow.counters().cdrLost.incrementAndGet();
-        flow.log.error("[{}] {} | the CDR has NO tenant to be written on (cause {}, tenant named: {}) — not published", flow.name(),
-            ctx.sessionKey, cause, ctx.tenantName);
+        flow.kit().counters().cdrLost.incrementAndGet();
+        RoutesphereFlow.log.warn("[{}] {} | the CDR has NO tenant to be written on (cause {}, root: {}) — not published", flow.name(),
+            ctx.sessionId(), cause, ctx.root);
         return List.of();
     }
 
@@ -146,8 +151,8 @@ final class SessionCdr<C extends SessionFlowContext> {
                 closed += done[0];
                 owed += done[1];
             }
-            flow.kit().cdrSink().publish(left.callId(), tiers);
-            flow.counters().cdrPublished.incrementAndGet();
+            flow.kit().cdr().publish(left.callId(), tiers);
+            flow.kit().counters().cdrPublished.incrementAndGet();
             journal.done(left.callId());
             for (CdrEvent cdr : tiers) {
                 money = money.add(cdr.inPartnerCost == null ? BigDecimal.ZERO : cdr.inPartnerCost);
@@ -183,8 +188,8 @@ final class SessionCdr<C extends SessionFlowContext> {
                 closed++;
             } catch (RuntimeException e) {
                 owed++;
-                flow.counters().owed.incrementAndGet();
-                flow.log.error("[{}] {} | OWED: the reserve {} ({} {}) of tier {} ({}) partner {} of a call left in the air was NOT closed as reserved: {}",
+                flow.kit().counters().owed.incrementAndGet();
+                RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} ({} {}) of tier {} ({}) partner {} of a call left in the air was NOT closed as reserved: {}",
                     flow.name(), left.callId(), first.reference(), reserved, first.uom(), first.tier(), first.tenant(), first.partnerId(), e.toString());
             }
         }
@@ -196,8 +201,8 @@ final class SessionCdr<C extends SessionFlowContext> {
             flow.kit().ledger().release(levelOf(held), SessionCause.LOST_AT_RESTART);
             return true;
         } catch (RuntimeException e) {
-            flow.counters().owed.incrementAndGet();
-            flow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} of a call a stopped process left before its hand-over was NOT given back: {}",
+            flow.kit().counters().owed.incrementAndGet();
+            RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} of a call a stopped process left before its hand-over was NOT given back: {}",
                 flow.name(), callId, held.reference(), held.amount(), held.uom(), held.tier(), held.tenant(), held.partnerId(), e.toString());
             return false;
         }
@@ -227,7 +232,7 @@ final class SessionCdr<C extends SessionFlowContext> {
             }
             return tiers;
         } catch (RuntimeException e) {
-            flow.log.error("[{}] {} | the record a stopped process left in the air could not be read — it stays in {} for the next start: {}",
+            RoutesphereFlow.log.error("[{}] {} | the record a stopped process left in the air could not be read — it stays in {} for the next start: {}",
                 flow.name(), left.callId(), flow.kit().journal().where(), e.toString());
             return List.of();
         }
@@ -237,7 +242,7 @@ final class SessionCdr<C extends SessionFlowContext> {
         try {
             flow.kit().journal().done(callId);
         } catch (RuntimeException e) {
-            flow.log.warn("[{}] {} | its record is published; its line in {} could not be marked done (a restart publishes it again, billing-core takes it once): {}",
+            RoutesphereFlow.log.warn("[{}] {} | its record is published; its line in {} could not be marked done (a restart publishes it again, billing-core takes it once): {}",
                 flow.name(), callId, flow.kit().journal().where(), e.toString());
         }
     }
