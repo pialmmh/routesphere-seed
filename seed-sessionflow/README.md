@@ -89,6 +89,17 @@ the root and its snapshot's version. The live objects (the `RootTree`, the `Leve
 are `@JsonIgnore`; the base brings them back from the root's snapshot before it touches money. A subclass follows the same rule.
 `billedUnits` sees `ctx.restoredAtMs` (§L.3: whether the downtime of a restored session is billed is the lane's decision).
 
+**One recovery road per lane** (P1-F3) — a process that dies leaves sessions in the air; a lane picks ONE way to finish them:
+
+| road | the kit / the engine | what the next start does |
+|---|---|---|
+| statewalk's store | `persistence(RESUME, provider)`, `SessionJournals.none()` | restores every unfinished session from its row and ends it itself (its timers, its wire, settle once per (session, tier)) |
+| the journal of the sessions in the air (R1-6) | `journal(SessionJournals.file(path))`, the store OFF or SAVE | closes every session the journal holds: never handed over → every reserve back, one record at 0; handed over → charged as reserved (A2), LOST_AT_RESTART |
+
+The engine refuses the journal together with RESUME at `start()`: a session in both would be closed by the journal and then restored
+and ended again. A lane that persists its sessions takes RESUME; the journal is for a lane that runs without a store (the ad's road
+before statewalk 4.0). Which road each lane takes is its own round's decision (P2 for the ad).
+
 ## 7 · Packages
 
 ```
