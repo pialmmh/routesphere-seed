@@ -219,6 +219,21 @@ class CreditControlTest {
     }
 
     @Test
+    void theFirstRenewalAtTheInitialDelay_thenOnePerPeriod_B10() throws Exception {
+        lab = new Lab(Lab.settings(2).withReserveInitialDelaySec(1), kit -> new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
+            @Override protected TierRate rateNextWindow(LabContext ctx, LevelAdmission tier) { return TierRate.of(BigDecimal.ONE, BigDecimal.ONE, "BDT", "880"); }
+        });
+        lab.dial("i-1", Lab.BTCL_DOOR, 1);
+        lab.answer("i-1");
+        assertThat(lab.engine.registry().childStateOf("i-1", BudgetChild.TYPE)).isEqualTo(BudgetChild.FIRST_RENEWAL);
+        awaitRenewals(lab.ctx("i-1"), 2, 3000);
+        assertThat(lab.engine.registry().childStateOf("i-1", BudgetChild.TYPE)).as("then one per period").isEqualTo(BudgetChild.RENEWING);
+        lab.hangup("i-1");
+        assertThat(lab.ctx("i-1").tiers.get(0).reservationCount).isEqualTo(2);
+        assertThat(lab.ledger.openReserves()).isZero();
+    }
+
+    @Test
     void aPersistingFlowThatRenewsFasterThanAMinute_isRefusedAtStart() {
         lab = new Lab();
         RoutesphereKit kit = RoutesphereKit.builder().tenants(com.telcobright.seed.sessionflow.spi.TenantLookup.of(lab.btcl)).ledger(lab.ledger)
