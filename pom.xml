@@ -22,6 +22,8 @@
         <module>seed-campaign</module>
         <module>seed-routing</module>
         <module>seed-sessionflow</module>
+        <!-- the acceptance side of RoutesphereFlow (P1 §H): the samples' signaling machines and scenarios; test code only -->
+        <module>seed-sessionflow-samples</module>
         <module>seed-tenant</module>
         <module>seed-idgen</module>
         <module>seed-switch-ledger</module>
