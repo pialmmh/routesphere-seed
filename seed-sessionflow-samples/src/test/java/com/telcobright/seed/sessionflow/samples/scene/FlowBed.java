@@ -49,12 +49,26 @@ public final class FlowBed<C extends RoutesphereContext, O, I> implements AutoCl
         RoutesphereEngine.Builder<C> b = RoutesphereEngine.of(flow, () -> keep(contexts.get())).signaling(signaling).channel(channel, decoder);
         if (store != null) b.persistence(PersistenceMode.RESUME, () -> store);
         this.engine = b.start();
+        if (store != null) awaitTheRestore();
         this.supervisorsAtStart = registry().poolStatistics(flow.name()).available();
         this.signalingAtStart = registry().poolStatistics(signalingType).available();
         this.budgetsAtStart = flow.kit().settings().renews() ? registry().poolStatistics(BudgetChild.TYPE).available() : -1;
     }
 
     private C keep(C c) { contexts.add(c); return c; }
+
+    /**
+     * The registry seats every restored session inside its build, but each machine's rehydrate runs as the first task on its own chain: a
+     * test that reads the states at once can see a pooled supervisor still in IDLE. Wait until every chain is quiet.
+     */
+    private void awaitTheRestore() {
+        try {
+            assertTrue(engine.registry().awaitIdle(5, SECONDS), "the restored sessions are seated");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while the restore ran", e);
+        }
+    }
 
     public StatemachineRegistry<C> registry() { return engine.registry(); }
 
