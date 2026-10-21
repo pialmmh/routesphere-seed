@@ -1,7 +1,7 @@
 # P1 · stream B (the base) — report
 
 Branch `p1-base` (worktree `routesphere-seed/worktrees/p1-base`), from `seed-context` @ 1297f1d + the brief 4c2e0c5.
-Code head **1418404** (B11); this report is the commit after it. Written 2026-10-22 ~05:35 +06, unattended (the owner asleep).
+Code head **4d934d1** (P1-F3, §9); the round's first code head was 1418404 (B11). This report is the commit after it. Written 2026-10-22 ~05:35 +06, unattended (the owner asleep).
 Nothing pushed. Nothing left running. Nothing written to `~/.m2` (one early `install` was removed again, see §8).
 
 ## 0 · In one look
@@ -220,3 +220,26 @@ Decisions the base made where the design page left a gap — please confirm:
   (the 2.0.0-SNAPSHOT version dirs, the four artifact dirs that did not exist before, the 2.0.0 lines of the metadata files) at 04:35;
   every later build ran `test` only. Nothing else outside the worktree and the scratch dir was written.
 - The lab's tests on the real registry use real time (1–3 s per budget-child test); the whole seed-sessionflow suite runs in ~40 s.
+
+## 9 · P1-F — the architect's three fixes (05:41 → 05:53 +06)
+
+Same rules: branch `p1-base`, one commit per item, the whole reactor after each, test first (each red seen before its fix).
+
+| item | commit | the red before the fix | the fix | reactor after |
+|---|---|---|---|---|
+| F1 (T's §10.1) step (d) cannot see the candidate under admission | c26ba99 | the test did not compile (no accessor); a lane routing by `ctx.chosen` under admission threw `NullPointerException` in `routing` → both candidates refused `INTERNAL_ERROR` → the session FAILED | `RoutesphereContext.candidateBeingAdmitted()` (live, never persisted; null outside admission — the reject path now clears it too); `routing`'s javadoc says to route by it | 354/0/0/3 |
+| F2 the closed spans lost in a restore | ed6ac24 | all three of the review's points, confirmed with soft assertions: (i) the reserves `rr#L0, rr#L0#W2, rr.2#L0` — the second rotation repeated `rr.2#L0`, the ledger answered the old settled reserve, account 88 never held (10.00); (ii) the CDR's spans `rr.1, rr.2` only (the first purchase's span lost, the rest renumbered); (iii) `spanSeconds` 150.0 instead of 30.0 | `api/SpanLine` (spanNo, the closed tier's `TierLine`, its `TierSettlement`, startedAtMs, endedAtMs) persisted in `ctx.spans`; `keepTiers()` keeps them, `SpanRotation` keeps them at the rotation, `bringBackTheLiveTiers` rebuilds `closedSpans` on the root's snapshot | 355/0/0/3 |
+| F3 two recovery roads for one crash | 4d934d1 | the journal + `PersistenceMode.RESUME` engine started ("Expecting code to raise a throwable") | `RoutesphereEngine.Builder.start()` refuses the pair, naming the journal, RESUME and "one recovery road per lane"; the journal with SAVE or OFF, RESUME alone, start; the README's §6 table of the two roads | 357/0/0/3 |
+
+The tests: `base/RoutingByCandidateTest` (2: the first candidate has no route → NO_ROUTE, its reserve `rc-1#L0` released; the second
+routed to its creative, `rc-1#2#L0` settled; null outside admission, also when nothing was admitted), `base/RotationRestoreTest` (1:
+rotate → the row → a restore on the next node → rotate again → end at 210 s on a manual clock: reserves `rr#L0, rr#L0#W2, rr.2#L0,
+rr.3#L0` each once, settles once per span, balances 0 / 0 / 9.00, `spanNo` 3, `spanSeconds` 30, the CDR `rr.1:2 · rr.2:1 · rr.3:1` with
+120 / 60 / 30 s), `base/OneRecoveryRoadTest` (2).
+
+**Clean copy of 4d934d1** (`git -C <wt> archive 4d934d1 | tar -x -C <scratch>/clean`, then `mvn -o -q test` at its root, offline):
+**357/0/0/3** — seed-sessionflow 139, seed-switch-ledger 50, seed-tenant 14, seed-campaign 72, seed-config 5, seed-config-client 5,
+seed-context 20/0/0/1, seed-idgen 19, seed-routing 33/0/0/2. No OrchestrixLedgerTest flake in this round's runs.
+
+Left for the merge: T's AdFlow keeps its own copy of the candidate under admission — switch it to `ctx.candidateBeingAdmitted()` (the
+architect does it at the merge, as agreed). A lane that persists and rotates (the WiFi, P4) now restores its spans; nothing else to do.

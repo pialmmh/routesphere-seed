@@ -216,7 +216,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      */
     protected Partner identifyPartner(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
 
-    /** (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the chosen creative; an SMS — the SMSC. */
+    /**
+     * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
+     * SMSC. Asked once per candidate INSIDE the admission walk, after its tiers reserved and before the last gate (C8) — so route by
+     * {@code ctx.candidateBeingAdmitted()}: {@code ctx.chosen} is set only when a candidate was admitted. An empty plan refuses this
+     * candidate with NO_ROUTE (its reserves go back) and the next is tried.
+     */
     protected abstract RoutePlan routing(C ctx);
 
     /**
@@ -658,12 +663,16 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * After a restore the live pictures are gone (they are never persisted): the root's snapshot is taken again by the root (§L.6 — the
-     * version it started with is noted when it moved), and the live tiers are rebuilt from their persisted lines on it.
+     * version it started with is noted when it moved), and the live tiers and the closed spans (O4) are rebuilt from their persisted lines
+     * on it.
      */
     final void bringBackTheLiveTiers(C ctx) {
         if (ctx.tree == null && ctx.root != null) retakeTheRootsSnapshot(ctx);
         if (ctx.levels.isEmpty() && !ctx.tiers.isEmpty()) {
             ctx.levels = ctx.tiers.stream().map(line -> line.toLevel(ctx.tree)).toList();
+        }
+        if (ctx.closedSpans.isEmpty() && !ctx.spans.isEmpty()) {
+            ctx.closedSpans = ctx.spans.stream().map(line -> line.toSpan(ctx.tree)).toList();
         }
     }
 

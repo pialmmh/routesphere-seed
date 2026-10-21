@@ -89,7 +89,8 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
 
         /**
          * The store (statewalk's one row per session). §L.4: use a POOLED {@code DataSource}; the lane's table is the flow's name. §L.2: a
-         * persisting flow that renews must renew at most once a minute — refused at {@link #start} otherwise.
+         * persisting flow that renews must renew at most once a minute — refused at {@link #start} otherwise. P1-F3: RESUME and the kit's
+         * journal of the sessions in the air are two recovery roads — refused together at {@link #start}.
          */
         public Builder<C> persistence(PersistenceMode mode, Supplier<? extends PersistenceProvider> provider) {
             this.persistenceMode = Objects.requireNonNull(mode, "mode");
@@ -101,7 +102,21 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
             if (signaling == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its signaling machine (.signaling(spec))");
             if (channel == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its channel and decoder (.channel(channel, decoder))");
             refuseAFastPersistedCadence();
+            refuseTwoRecoveryRoads();
             return new RoutesphereEngine<>(this);
+        }
+
+        /**
+         * P1-F3 · ONE recovery road per lane: the journal of the sessions in the air (the next start closes a dead process's sessions, charged
+         * as reserved, LOST_AT_RESTART) OR statewalk's store in RESUME (the next node restores them and ends them itself). Both = a session in
+         * both is closed by the journal and then restored and ended again. The journal beside a store that only SAVEs (or none) is allowed.
+         */
+        private void refuseTwoRecoveryRoads() {
+            if (persistenceMode != PersistenceMode.RESUME || !flow.kit().journal().keeps()) return;
+            throw new IllegalStateException("[" + flow.name() + "] one recovery road per lane: the kit keeps a journal of the sessions in the air ("
+                + flow.kit().journal().where() + ") AND the store RESUMEs them — a session in both would be closed by the journal at the start"
+                + " (charged as reserved, LOST_AT_RESTART) and then restored and ended again by statewalk. Keep the journal with the store at SAVE"
+                + " or OFF, or RESUME with no journal (SessionJournals.none())");
         }
 
         private void refuseAFastPersistedCadence() {

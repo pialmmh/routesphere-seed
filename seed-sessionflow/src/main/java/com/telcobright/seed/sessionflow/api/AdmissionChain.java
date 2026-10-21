@@ -40,6 +40,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
             if (refusal == null) return accept(ctx, candidate, index);
             ctx.lastRefusal = refusal;
         }
+        ctx.trying = null;                                       // outside admission there is no candidate under admission
         return Verdict.reject(flow.safely(ctx, "rejectCause", () -> flow.rejectCause(ctx), SessionCause.INTERNAL_ERROR));
     }
 
