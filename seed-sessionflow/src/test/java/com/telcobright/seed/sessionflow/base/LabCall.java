@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.base;
 
 import com.telcobright.seed.sessionflow.base.LabEvents.Answer;
+import com.telcobright.seed.sessionflow.base.LabEvents.Cancel;
 import com.telcobright.seed.sessionflow.base.LabEvents.Dial;
 import com.telcobright.seed.sessionflow.base.LabEvents.Fail;
 import com.telcobright.seed.sessionflow.base.LabEvents.Hangup;
@@ -63,6 +64,7 @@ public final class LabCall {
                     .stay(Ring.class, null, (self, e) -> new SignalingProgress(now(), "RINGING", null))
                     .on(Answer.class, "ANSWERED", null, null, (self, e) -> new Established(((Answer) e).atMs(), ctx(self).hop, "PCMA", null))
                     .on(Fail.class, "INIT", null, null, (self, e) -> new SignalingFailed(now(), ((Fail) e).cause(), ((Fail) e).code()))
+                    .on(Cancel.class, "DONE", null, null, (self, e) -> new SignalingFailed(now(), ((Cancel) e).cause(), 487))
                     .on(Reject.class, "DONE", null, null, FAILED_BY_THE_COMMAND)
                     .on(Stop.class, "DONE", null, null, FAILED_BY_THE_COMMAND)
                 .state("ANSWERED").interim().timeout(0)
