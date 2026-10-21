@@ -157,6 +157,25 @@ class CreditControlTest {
         assertThat(published.of("c-1")).as("the CDR sink took the session once").hasSize(1);
     }
 
+    @Test
+    void theBaseSettlesOncePerContext_aSecondAskNeverReachesTheLedger() {
+        lab = new Lab();
+        LabContext ctx = new LabContext();
+        ctx.facts = new LabFacts("o-1", 1L, Lab.BTCL_DOOR, 3, "8801");
+        lab.flow.onStart(ctx, new SessionStart(ctx.facts));
+        ctx.candidates = List.of(Candidate.SELF);
+        assertThat(lab.flow.admit(ctx).accepted()).isTrue();
+        ctx.answer = new Established(System.currentTimeMillis(), "carrier-a", null, null);
+
+        lab.flow.settle(ctx, Outcome.SUCCEEDED);
+        lab.flow.settle(ctx, Outcome.SUCCEEDED);
+        lab.flow.release(ctx);
+
+        assertThat(lab.ledger.timesAsked("settle")).as("three tiers, asked once each").isEqualTo(3);
+        assertThat(lab.ledger.timesAsked("release")).isZero();
+        assertThat(ctx.reservesClosed).isTrue();
+    }
+
     // ── the budget child ────────────────────────────────────────────────────
 
     @Test
