@@ -2,6 +2,8 @@ package com.telcobright.seed.sessionflow.samples.bed;
 
 import com.telcobright.statewalk.channel.Delivery;
 import com.telcobright.statewalk.channel.TestChannel;
+import com.telcobright.statewalk.persistence.PersistenceMode;
+import com.telcobright.statewalk.persistence.PersistenceProvider;
 import com.telcobright.statewalk.registry.MachineSpec;
 import com.telcobright.statewalk.registry.StatemachineRegistry;
 import com.telcobright.statewalk.session.SessionHandler;
@@ -43,16 +45,28 @@ public final class Bed<O, I> implements AutoCloseable {
 
     public <X> Bed(String name, Script script, SessionHandler<BedContext> handler, MachineSpec<X> signaling, TestChannel<O, I> channel,
                    BiFunction<String, I, Delivery> decoder) {
+        this(name, script, handler, signaling, channel, decoder, null);
+    }
+
+    /** A node of the lane on a store ({@code PersistenceMode.RESUME}): built, it restores every unfinished session before its channel opens. */
+    public <X> Bed(String name, Script script, MachineSpec<X> signaling, TestChannel<O, I> channel, BiFunction<String, I, Delivery> decoder,
+                   PersistenceProvider store) {
+        this(name, script, new ScriptedHandler(script), signaling, channel, decoder, store);
+    }
+
+    public <X> Bed(String name, Script script, SessionHandler<BedContext> handler, MachineSpec<X> signaling, TestChannel<O, I> channel,
+                   BiFunction<String, I, Delivery> decoder, PersistenceProvider store) {
         this.script = script;
         this.channel = channel;
         this.signalingType = signaling.name();
-        this.reg = StatemachineRegistry.<BedContext>builder(name)
+        StatemachineRegistry.Builder<BedContext> b = StatemachineRegistry.<BedContext>builder(name)
             .supervisor(SessionSupervisor.spec(SUPERVISOR, script::newContext, handler), 8)
             .signaling(signaling, 8)
             .channel(channel, decoder)
             .globalTimeout(1, TimeUnit.HOURS, SessionSupervisor.FAILED)
-            .threads(2)
-            .build();
+            .threads(2);
+        if (store != null) b.persistence(PersistenceMode.RESUME, () -> store);
+        this.reg = b.build();
         this.supervisorsAtStart = reg.poolStatistics(SUPERVISOR).available();
         this.signalingAtStart = reg.poolStatistics(signalingType).available();
     }
