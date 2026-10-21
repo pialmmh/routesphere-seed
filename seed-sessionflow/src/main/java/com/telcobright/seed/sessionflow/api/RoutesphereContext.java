@@ -108,7 +108,7 @@ public class RoutesphereContext extends SessionContext {
     @JsonIgnore public transient volatile List<LevelAdmission> levels = List.of();
     /** The tiers the candidate being admitted has reserved so far (live, admission only). */
     @JsonIgnore transient volatile List<LevelAdmission> walking = new ArrayList<>();
-    /** The candidate being admitted (live, admission only). */
+    /** The candidate being admitted (live, admission only) — read it through {@link #candidateBeingAdmitted()}. */
     @JsonIgnore transient volatile Candidate trying;
     /** The persisted picture of {@link #levels}: ids and amounts, in the same order. */
     public volatile List<TierLine> tiers = List.of();
@@ -159,6 +159,13 @@ public class RoutesphereContext extends SessionContext {
 
     /** The session's own id in its domain (the facts'), or null before {@code SessionStart}. The CDR's call id and the ledger's key. */
     public String sessionId() { return facts == null ? null : facts.sessionId(); }
+
+    /**
+     * The candidate the admission walk is on right now — what step (d) {@code routing} routes by (it runs inside the walk, before
+     * {@link #chosen} is set), and what any admission hook may read. Live, never persisted; null outside admission (before it, after the
+     * candidate was admitted — then {@link #chosen} names it — and after every candidate was refused).
+     */
+    public Candidate candidateBeingAdmitted() { return trying; }
 
     /** The service was established (a call answered, an ad viewed, an SMS submitted). */
     public boolean answered() { return answer != null; }

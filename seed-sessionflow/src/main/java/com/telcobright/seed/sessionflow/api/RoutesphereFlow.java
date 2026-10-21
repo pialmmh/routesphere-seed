@@ -216,7 +216,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      */
     protected Partner identifyPartner(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
 
-    /** (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the chosen creative; an SMS — the SMSC. */
+    /**
+     * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
+     * SMSC. Asked once per candidate INSIDE the admission walk, after its tiers reserved and before the last gate (C8) — so route by
+     * {@code ctx.candidateBeingAdmitted()}: {@code ctx.chosen} is set only when a candidate was admitted. An empty plan refuses this
+     * candidate with NO_ROUTE (its reserves go back) and the next is tried.
+     */
     protected abstract RoutePlan routing(C ctx);
 
     /**
