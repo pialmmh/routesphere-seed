@@ -27,7 +27,7 @@ import java.util.Set;
  * of the root by the dialed prefix, in order, as the plan (C8); the call switch's v1 re-route table (C12); every started minute
  * charged at the end, the rest back (C17).
  */
-public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
+public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
 
     /** A route of a root's dialplan: the dialed prefix it serves and the ESL target it transfers to (its destination is filled per call). */
     public record DialplanRoute(String prefix, EslTarget target) {}
@@ -38,6 +38,7 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
     private final Set<String> dids;
     private final Map<String, Integer> sipAccountCaps;
     private final SipAccountSlots sipSlots = new SipAccountSlots();
+    private final boolean perSecond;
 
     /** The DID range: a called number starting with it is a DID call (C4's INVALID_DID applies to it). */
     public static final String DID_RANGE = "0967";
@@ -58,7 +59,14 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
      */
     public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
                      Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids, Map<String, Integer> sipAccountCaps) {
+        this(kit, partnerBySource, ratePerMinute, routesByRoot, dids, sipAccountCaps, false);
+    }
+
+    /** @param perSecond bill the talk time by the second (C17: charged = rate / 60 × seconds) instead of every started minute */
+    public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
+                     Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids, Map<String, Integer> sipAccountCaps, boolean perSecond) {
         super(kit);
+        this.perSecond = perSecond;
         this.partnerBySource = Map.copyOf(partnerBySource);
         this.ratePerMinute = Map.copyOf(ratePerMinute);
         this.routesByRoot = Map.copyOf(routesByRoot);
@@ -158,9 +166,13 @@ public final class VoiceFlow extends RoutesphereFlow<VoiceContext> {
         return TierRate.of(tier.getRate(), tier.getRate(), tier.getUom(), tier.getRatePrefix());
     }
 
-    /** C17: every started minute of the answered talk time; an unanswered call is not delivered (the refund rule: nothing). */
+    /**
+     * C17: every started minute of the answered talk time — or, billed by the second, the talk time in minutes (rate / 60 × seconds); an
+     * unanswered call is not delivered (the refund rule: nothing).
+     */
     @Override
     protected BigDecimal billedUnits(VoiceContext call) {
+        if (perSecond) return BigDecimal.valueOf(call.durationSec).divide(BigDecimal.valueOf(60), 6, java.math.RoundingMode.HALF_UP);
         return BigDecimal.valueOf(Math.max(1, (long) Math.ceil(call.durationSec / 60.0)));
     }
 
