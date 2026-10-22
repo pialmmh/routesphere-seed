@@ -1,12 +1,13 @@
 # P1 · stream T — the testkit and the four samples (report)
 
-**Status: done.** Every item of §H is built and green, on top of stream B up to **B9** (p1-base @ 2ffb0e7). Nothing is in progress.
+**Status: done.** Every item of §H is built and green, on top of stream B up to **F3** (p1-base @ 3cb2882). The architect's follow-ups T10
+(§12, the R-1 evidence) and T11 (F1's accessor in AdFlow) are done too. Nothing is in progress.
 Branch `p1-samples` (worktree `routesphere-seed/worktrees/p1-samples`); the report is its last commit. Nothing pushed.
 
 | | |
 |---|---|
-| the reactor, clean copy of 6f71283 (the code of this branch's head), offline, alone | **414 / 0 / 0 / 3** (tests / failures / errors / skipped) |
-| this stream's tests | 68 in `seed-sessionflow-samples` (4 of them the `@Disabled` R-1 proofs of §12) + 4 in the testkit (`seed-sessionflow`) |
+| the reactor, clean copy of 3bf4340 (the code of this branch's head), offline, alone | **430 / 0 / 0 / 7** (tests / failures / errors / skipped) |
+| this stream's tests | 69 in `seed-sessionflow-samples` (4 of them the `@Disabled` R-1 proofs of §12) + 4 in the testkit (`seed-sessionflow`) |
 | mutants run against the samples | 7 — all 7 red, every file restored byte-identical |
 | consumer repos touched | none |
 
@@ -34,7 +35,11 @@ Branch `p1-samples` (worktree `routesphere-seed/worktrees/p1-samples`); the repo
 | 16d3c28 | merge p1-base @ **B10–B11** (clean, nothing to change) |
 | ac13bf8 | **T10a** R-1 evidence (a) and (b): the crash switch, the crashing ledger and CDR road, the per-second voice billing |
 | 097e8e8 | **T10b** R-1 evidence (b2) and (c) |
-| (this commit) | **T10c** §12 of this report |
+| c0d5b39 | **T10c** §12 of this report |
+| 49a5483 | merge p1-base @ **F3** (F1–F3 and B's report §9; clean, the samples as they were) |
+| b2c4797 | **T11** AdFlow's step (d) routes by the base's `ctx.candidateBeingAdmitted()` (F1); AdContext's own copy dropped |
+| 3bf4340 | **T12** C21 on the voice sample: the base's dry run (`simulate`) |
+| (this commit) | **T13** this report brought up to date |
 
 ## 1 · Where the code is, and why a module
 
@@ -180,7 +185,7 @@ Each sample is a `RoutesphereFlow` subclass: decisions only, no per-session fiel
 | `rateAtLevel` | one minute | the whole view | per segment × segments | one window (a minute) |
 | `applyRootRules` | the digit filter (C5) | — | — | — |
 | `confirmAdmission` | — | the campaign's quota | — | — |
-| (d) `routing` | the root's dialplan by prefix | the candidate's creative | the root's SMSCs in order | the site's gate |
+| (d) `routing` | the root's dialplan by prefix | the creative of `ctx.candidateBeingAdmitted()` (F1) | the root's SMSCs in order | the site's gate |
 | `rerouteActionFor` | the v1 table (C12) | default (none) | THROTTLED / QUEUE_FULL / SMSC_SYSTEM_ERROR | default (none) |
 | renews (budget child) | by settings: one more minute | no | no | by settings: one more window |
 | `delivered` / `settleOutcome` / `refundPolicy` | defaults (answered) | shown; FAILED / CONSUMED / OFFERED_NOT_CONSUMED; REFUND + unshown by config | DELIVERED; accepted-not-delivered = OFFERED_NOT_CONSUMED; refund by config | defaults |
@@ -227,7 +232,7 @@ Each sample is a `RoutesphereFlow` subclass: decisions only, no per-session fiel
 | C18 | BalanceClosed → SUCCESS / FAILED | base settle copies the settlements | `one_two_and_three_tiers…` (3 settlements). **Deviation**, see §10.3 |
 | C19 | SUCCESS.entry: CDR per tier, the slot once | base `finishSession` | `one_two_and_three_tiers…`; `a_partner_with_one_channel…` |
 | C20 | FAILED.entry | base release + `Reject` → `uuid_kill` | `refusals…` (every parked leg killed); `reroutes_stop_at_the_plans_cap…` (USER_BUSY to the caller, every reserve back). The no-balance announcement is not in the sample. |
-| C21 | the simulator | — | **not covered**: the base has `ctx.dryRun` but no road a sample can drive a dry admission by (§11) |
+| C21 | the simulator | the base's `simulate(ctx)` (B11) | `the_simulator_walks_the_tiers_with_their_rates…` (admitted with every tier's rate and the route; a closed partner refused; nothing reserved, no CDR, no slot) |
 | C22 | CallBridged | `EslCall` CHANNEL_BRIDGE (stay) | `EslCallTest.an_answered_call…` (other uuid; BRIDGED) |
 | C23 | ACTIVE's own deadline | statewalk `MAX_DURATION_REACHED` + `Stop` | `the_maximum_duration_stops_the_answered_call…` (settled, never released; the CDR's cause) |
 
@@ -262,12 +267,14 @@ checked byte-identical (`git diff --quiet`).
 
 ## 9 · The numbers
 
-- Clean copy: `git archive 6f71283 | tar -x` into a fresh directory, `mvn -o -q test`, nothing else running: **414 / 0 / 0 / 3**
-  (the report's own commit adds this file only).
-- Per module: seed-campaign 72/0/0/0 · seed-config 5/0/0/0 · seed-config-client 5/0/0/0 · seed-context 20/0/0/1 · seed-idgen 19/0/0/0 · seed-routing 33/0/0/2 · seed-sessionflow 132/0/0/0 (stream B's base tests + this stream's 4 testkit tests) · **seed-sessionflow-samples 64/0/0/0** · seed-switch-ledger 50/0/0/0 · seed-tenant 14/0/0/0.
-  The samples per class: VoiceFlowTest 14 · VoiceFlowDoorbellTest 1 · EslCallTest 7 · EslCallRestoreTest 2 · AdFlowTest 8 · AdPlaybackTest 7 · SmsFlowTest 7 · SmsSubmitTest 7 · WifiFlowTest 6 · WifiGatewayTest 5.
-- Never two Maven builds at once: one run with two builds side by side turned `OrchestrixLedgerTest.aReserveNeverWaitsLongerThanTheAdmissionHasLeft…`
-  red (a timing test of stream B's area, 200 ms budget) — green in every run alone.
+- Clean copy: `git archive 3bf4340 | tar -x` into a fresh directory, `mvn -o -q test`, nothing else running: **430 / 0 / 0 / 7**
+  (the 7 skipped = the reactor's 3 as before + the 4 `@Disabled` R-1 proofs; the report's own commit adds this file only).
+- Per module: seed-campaign 72/0/0/0 · seed-config 5/0/0/0 · seed-config-client 5/0/0/0 · seed-context 20/0/0/1 · seed-idgen 19/0/0/0 · seed-routing 33/0/0/2 · seed-sessionflow 143/0/0/0 (stream B's base tests + this stream's 4 testkit tests) · **seed-sessionflow-samples 69/0/0/4** · seed-switch-ledger 50/0/0/0 · seed-tenant 14/0/0/0.
+  The samples per class: VoiceFlowTest 15 · VoiceFlowDoorbellTest 1 · EslCallTest 7 · EslCallRestoreTest 2 · RestoreLostUpTest 4 (all skipped: R-1) · AdFlowTest 8 · AdPlaybackTest 7 · SmsFlowTest 7 · SmsSubmitTest 7 · WifiFlowTest 6 · WifiGatewayTest 5.
+- The earlier clean copies: 383/0/0/3 at c092e2e, 412/0/0/3 at aa75d11, 414/0/0/3 at 6f71283 (each green).
+- Never two Maven builds at once: twice a run beside another Maven build — once my own, once stream B's in its own worktree — turned
+  `OrchestrixLedgerTest.aReserveNeverWaitsLongerThanTheAdmissionHasLeft…` red (a timing test of stream B's area, 200 ms budget). Green in
+  every run alone; since then every run waits until no other Maven process runs.
 - The clean copy of 232ed6a showed ONE red: `SmsFlowTest.a_message_restored_while_it_waits…` read `IDLE/SUBMITTED` instead of
   `ACTIVE/SUBMITTED` right after the node was built. statewalk seats a restored session inside `build()`, but each machine's rehydrate
   runs as the first task on its own chain, so a read at once can still see the pooled supervisor in IDLE (frames are not affected: they
@@ -276,10 +283,11 @@ checked byte-identical (`git diff --quiet`).
 
 ## 10 · Findings for the base's owner and the architect
 
-1. **B0's step (d) cannot see the candidate being tried.** `routing(ctx)` runs inside a candidate's walk, before `ctx.chosen` is set, and the
-   base's cursor `ctx.trying` is package-private. A lane that routes by its candidate (the ad: the candidate's creative) cannot read it.
-   AdFlow keeps its own `AdContext.candidate`, set at step (c). Suggested: a public `ctx.trying()`, or the candidate passed to `routing`.
-2. **statewalk, after a crash between the signaling machine's final element and the supervisor's final row:** the restored supervisor sits
+1. **B0's step (d) could not see the candidate being tried** — CLOSED. `routing(ctx)` runs inside a candidate's walk, before `ctx.chosen`
+   is set, and the base's cursor was package-private; AdFlow kept a copy of its own. B's F1 (c26ba99) added
+   `RoutesphereContext.candidateBeingAdmitted()`; T11 (b2c4797) moved AdFlow onto it and dropped the copy.
+2. **statewalk, after a crash between the signaling machine's final element and the supervisor's final row** (proved with money in §12,
+   R-1): the restored supervisor sits
    in ACTIVE with no signaling machine; nothing sends `ServiceEnd`, and only ACTIVE's own deadline (`activeMaxSec`: hours for a call) ends it,
    as MAX_DURATION_REACHED, the downtime billed as talk time. The money is safe (idempotent per (session, tier)), but the second CDR carries
    another duration and cause; billing must keep the first (it does: by (tenant, uuid)). For the owner / statewalk: should a restore that
@@ -299,7 +307,7 @@ checked byte-identical (`git diff --quiet`).
 
 ## 11 · What is left
 
-- C21 (the simulator) — no road for a dry admission in the base yet.
+- **R-1 — the owner's ruling** on an up lost in a crash (§12): the four proofs stay `@Disabled` until then.
 - The ad's per-second rate (`billedUnits` = watched seconds) and the SMS's segment-level receipts — hooks exist, the samples do not
   exercise them (and see §10.6).
 - The doorbell per root runs in the voice sample only; the other three samples use the static `TenantLookup.of(btcl, ccl)`.
