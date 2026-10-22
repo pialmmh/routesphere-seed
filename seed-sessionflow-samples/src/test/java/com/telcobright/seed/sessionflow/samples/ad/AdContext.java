@@ -12,9 +12,4 @@ public final class AdContext extends RoutesphereContext {
     public volatile boolean shown;
     /** The seconds the view's answer says were watched. */
     public volatile int watchedSeconds;
-    /**
-     * The candidate being tried — then the one admitted. The base's step (d) {@code routing} runs inside the candidate's walk, before
-     * {@code chosen} is set, and its own cursor ({@code trying}) is not public: the flow keeps its own, set at step (c).
-     */
-    public volatile AdCandidate candidate;
 }

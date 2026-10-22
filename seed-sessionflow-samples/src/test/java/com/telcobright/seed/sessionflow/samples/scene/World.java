@@ -6,6 +6,8 @@ import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.seed.sessionflow.spi.CdrSink;
+import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.InMemoryLedger;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
@@ -101,12 +103,19 @@ public final class World {
     public RoutesphereKit kit(RoutesphereSettings settings) { return kit(settings, TenantLookup.of(btcl, ccl)); }
 
     /** The same on another source of the trees (seed-tenant's TenantTrees: one snapshot per root, reloaded by its doorbell). */
-    public RoutesphereKit kit(RoutesphereSettings settings, TenantLookup tenants) {
+    public RoutesphereKit kit(RoutesphereSettings settings, TenantLookup tenants) { return kit(settings, tenants, ledger, cdrs); }
+
+    /** The kit of ONE node whose handles on the world die with it (P1 T10: a {@code CrashingLedger}, a {@code CrashingCdrSink}). */
+    public RoutesphereKit kit(RoutesphereSettings settings, LedgerPort nodesLedger, CdrSink nodesCdrRoad) {
+        return kit(settings, TenantLookup.of(btcl, ccl), nodesLedger, nodesCdrRoad);
+    }
+
+    private RoutesphereKit kit(RoutesphereSettings settings, TenantLookup tenants, LedgerPort books, CdrSink cdrRoad) {
         return RoutesphereKit.builder()
             .tenants(tenants)
             .identification(rules())
-            .ledger(ledger)
-            .cdr(cdrs)
+            .ledger(books)
+            .cdr(cdrRoad)
             .sdr((sessionId, sdr) -> sdrs.add(sdr))
             .tasks((ctx, task) -> closedTasks.add(task))
             .zone(DHAKA)

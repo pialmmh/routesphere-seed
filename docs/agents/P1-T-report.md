@@ -1,12 +1,13 @@
 # P1 · stream T — the testkit and the four samples (report)
 
-**Status: done.** Every item of §H is built and green, on top of stream B up to **B9** (p1-base @ 2ffb0e7). Nothing is in progress.
+**Status: done.** Every item of §H is built and green, on top of stream B up to **F3** (p1-base @ 3cb2882). The architect's follow-ups T10
+(§12, the R-1 evidence) and T11 (F1's accessor in AdFlow) are done too. Nothing is in progress.
 Branch `p1-samples` (worktree `routesphere-seed/worktrees/p1-samples`); the report is its last commit. Nothing pushed.
 
 | | |
 |---|---|
-| the reactor, clean copy of 6f71283 (the code of this branch's head), offline, alone | **414 / 0 / 0 / 3** (tests / failures / errors / skipped) |
-| this stream's tests | 64 in `seed-sessionflow-samples` + 4 in the testkit (`seed-sessionflow`) |
+| the reactor, clean copy of 3bf4340 (the code of this branch's head), offline, alone | **430 / 0 / 0 / 7** (tests / failures / errors / skipped) |
+| this stream's tests | 69 in `seed-sessionflow-samples` (4 of them the `@Disabled` R-1 proofs of §12) + 4 in the testkit (`seed-sessionflow`) |
 | mutants run against the samples | 7 — all 7 red, every file restored byte-identical |
 | consumer repos touched | none |
 
@@ -29,8 +30,16 @@ Branch `p1-samples` (worktree `routesphere-seed/worktrees/p1-samples`); the repo
 | aa75d11 | the module in the seed's README |
 | 232ed6a | merge p1-base @ **B8** (clean, nothing to change) |
 | 80517a4 | the samples' bed waits for the restore before a test reads the states (the clean copy of 232ed6a caught the race) |
-| 6f71283 | merge p1-base @ **B9** (clean, nothing to change) — the head the final clean copy ran |
-| (this file) | **T9** the report |
+| 6f71283 | merge p1-base @ **B9** (clean, nothing to change) |
+| 0d02cf7 | **T9** this report (the first version) |
+| 16d3c28 | merge p1-base @ **B10–B11** (clean, nothing to change) |
+| ac13bf8 | **T10a** R-1 evidence (a) and (b): the crash switch, the crashing ledger and CDR road, the per-second voice billing |
+| 097e8e8 | **T10b** R-1 evidence (b2) and (c) |
+| c0d5b39 | **T10c** §12 of this report |
+| 49a5483 | merge p1-base @ **F3** (F1–F3 and B's report §9; clean, the samples as they were) |
+| b2c4797 | **T11** AdFlow's step (d) routes by the base's `ctx.candidateBeingAdmitted()` (F1); AdContext's own copy dropped |
+| 3bf4340 | **T12** C21 on the voice sample: the base's dry run (`simulate`) |
+| (this commit) | **T13** this report brought up to date |
 
 ## 1 · Where the code is, and why a module
 
@@ -176,7 +185,7 @@ Each sample is a `RoutesphereFlow` subclass: decisions only, no per-session fiel
 | `rateAtLevel` | one minute | the whole view | per segment × segments | one window (a minute) |
 | `applyRootRules` | the digit filter (C5) | — | — | — |
 | `confirmAdmission` | — | the campaign's quota | — | — |
-| (d) `routing` | the root's dialplan by prefix | the candidate's creative | the root's SMSCs in order | the site's gate |
+| (d) `routing` | the root's dialplan by prefix | the creative of `ctx.candidateBeingAdmitted()` (F1) | the root's SMSCs in order | the site's gate |
 | `rerouteActionFor` | the v1 table (C12) | default (none) | THROTTLED / QUEUE_FULL / SMSC_SYSTEM_ERROR | default (none) |
 | renews (budget child) | by settings: one more minute | no | no | by settings: one more window |
 | `delivered` / `settleOutcome` / `refundPolicy` | defaults (answered) | shown; FAILED / CONSUMED / OFFERED_NOT_CONSUMED; REFUND + unshown by config | DELIVERED; accepted-not-delivered = OFFERED_NOT_CONSUMED; refund by config | defaults |
@@ -223,7 +232,7 @@ Each sample is a `RoutesphereFlow` subclass: decisions only, no per-session fiel
 | C18 | BalanceClosed → SUCCESS / FAILED | base settle copies the settlements | `one_two_and_three_tiers…` (3 settlements). **Deviation**, see §10.3 |
 | C19 | SUCCESS.entry: CDR per tier, the slot once | base `finishSession` | `one_two_and_three_tiers…`; `a_partner_with_one_channel…` |
 | C20 | FAILED.entry | base release + `Reject` → `uuid_kill` | `refusals…` (every parked leg killed); `reroutes_stop_at_the_plans_cap…` (USER_BUSY to the caller, every reserve back). The no-balance announcement is not in the sample. |
-| C21 | the simulator | — | **not covered**: the base has `ctx.dryRun` but no road a sample can drive a dry admission by (§11) |
+| C21 | the simulator | the base's `simulate(ctx)` (B11) | `the_simulator_walks_the_tiers_with_their_rates…` (admitted with every tier's rate and the route; a closed partner refused; nothing reserved, no CDR, no slot) |
 | C22 | CallBridged | `EslCall` CHANNEL_BRIDGE (stay) | `EslCallTest.an_answered_call…` (other uuid; BRIDGED) |
 | C23 | ACTIVE's own deadline | statewalk `MAX_DURATION_REACHED` + `Stop` | `the_maximum_duration_stops_the_answered_call…` (settled, never released; the CDR's cause) |
 
@@ -258,12 +267,14 @@ checked byte-identical (`git diff --quiet`).
 
 ## 9 · The numbers
 
-- Clean copy: `git archive 6f71283 | tar -x` into a fresh directory, `mvn -o -q test`, nothing else running: **414 / 0 / 0 / 3**
-  (the report's own commit adds this file only).
-- Per module: seed-campaign 72/0/0/0 · seed-config 5/0/0/0 · seed-config-client 5/0/0/0 · seed-context 20/0/0/1 · seed-idgen 19/0/0/0 · seed-routing 33/0/0/2 · seed-sessionflow 132/0/0/0 (stream B's base tests + this stream's 4 testkit tests) · **seed-sessionflow-samples 64/0/0/0** · seed-switch-ledger 50/0/0/0 · seed-tenant 14/0/0/0.
-  The samples per class: VoiceFlowTest 14 · VoiceFlowDoorbellTest 1 · EslCallTest 7 · EslCallRestoreTest 2 · AdFlowTest 8 · AdPlaybackTest 7 · SmsFlowTest 7 · SmsSubmitTest 7 · WifiFlowTest 6 · WifiGatewayTest 5.
-- Never two Maven builds at once: one run with two builds side by side turned `OrchestrixLedgerTest.aReserveNeverWaitsLongerThanTheAdmissionHasLeft…`
-  red (a timing test of stream B's area, 200 ms budget) — green in every run alone.
+- Clean copy: `git archive 3bf4340 | tar -x` into a fresh directory, `mvn -o -q test`, nothing else running: **430 / 0 / 0 / 7**
+  (the 7 skipped = the reactor's 3 as before + the 4 `@Disabled` R-1 proofs; the report's own commit adds this file only).
+- Per module: seed-campaign 72/0/0/0 · seed-config 5/0/0/0 · seed-config-client 5/0/0/0 · seed-context 20/0/0/1 · seed-idgen 19/0/0/0 · seed-routing 33/0/0/2 · seed-sessionflow 143/0/0/0 (stream B's base tests + this stream's 4 testkit tests) · **seed-sessionflow-samples 69/0/0/4** · seed-switch-ledger 50/0/0/0 · seed-tenant 14/0/0/0.
+  The samples per class: VoiceFlowTest 15 · VoiceFlowDoorbellTest 1 · EslCallTest 7 · EslCallRestoreTest 2 · RestoreLostUpTest 4 (all skipped: R-1) · AdFlowTest 8 · AdPlaybackTest 7 · SmsFlowTest 7 · SmsSubmitTest 7 · WifiFlowTest 6 · WifiGatewayTest 5.
+- The earlier clean copies: 383/0/0/3 at c092e2e, 412/0/0/3 at aa75d11, 414/0/0/3 at 6f71283 (each green).
+- Never two Maven builds at once: twice a run beside another Maven build — once my own, once stream B's in its own worktree — turned
+  `OrchestrixLedgerTest.aReserveNeverWaitsLongerThanTheAdmissionHasLeft…` red (a timing test of stream B's area, 200 ms budget). Green in
+  every run alone; since then every run waits until no other Maven process runs.
 - The clean copy of 232ed6a showed ONE red: `SmsFlowTest.a_message_restored_while_it_waits…` read `IDLE/SUBMITTED` instead of
   `ACTIVE/SUBMITTED` right after the node was built. statewalk seats a restored session inside `build()`, but each machine's rehydrate
   runs as the first task on its own chain, so a read at once can still see the pooled supervisor in IDLE (frames are not affected: they
@@ -272,10 +283,11 @@ checked byte-identical (`git diff --quiet`).
 
 ## 10 · Findings for the base's owner and the architect
 
-1. **B0's step (d) cannot see the candidate being tried.** `routing(ctx)` runs inside a candidate's walk, before `ctx.chosen` is set, and the
-   base's cursor `ctx.trying` is package-private. A lane that routes by its candidate (the ad: the candidate's creative) cannot read it.
-   AdFlow keeps its own `AdContext.candidate`, set at step (c). Suggested: a public `ctx.trying()`, or the candidate passed to `routing`.
-2. **statewalk, after a crash between the signaling machine's final element and the supervisor's final row:** the restored supervisor sits
+1. **B0's step (d) could not see the candidate being tried** — CLOSED. `routing(ctx)` runs inside a candidate's walk, before `ctx.chosen`
+   is set, and the base's cursor was package-private; AdFlow kept a copy of its own. B's F1 (c26ba99) added
+   `RoutesphereContext.candidateBeingAdmitted()`; T11 (b2c4797) moved AdFlow onto it and dropped the copy.
+2. **statewalk, after a crash between the signaling machine's final element and the supervisor's final row** (proved with money in §12,
+   R-1): the restored supervisor sits
    in ACTIVE with no signaling machine; nothing sends `ServiceEnd`, and only ACTIVE's own deadline (`activeMaxSec`: hours for a call) ends it,
    as MAX_DURATION_REACHED, the downtime billed as talk time. The money is safe (idempotent per (session, tier)), but the second CDR carries
    another duration and cause; billing must keep the first (it does: by (tenant, uuid)). For the owner / statewalk: should a restore that
@@ -295,9 +307,69 @@ checked byte-identical (`git diff --quiet`).
 
 ## 11 · What is left
 
-- C21 (the simulator) — no road for a dry admission in the base yet.
+- **R-1 — the owner's ruling** on an up lost in a crash (§12): the four proofs stay `@Disabled` until then.
 - The ad's per-second rate (`billedUnits` = watched seconds) and the SMS's segment-level receipts — hooks exist, the samples do not
   exercise them (and see §10.6).
 - The doorbell per root runs in the voice sample only; the other three samples use the static `TenantLookup.of(btcl, ccl)`.
 - A persisted lane WITH a budget child (§L.2 refuses a renewal faster than 60 s on a persisting registry, so such a test runs over a minute).
 - The architect's merge of B then T, and the suite on the merge head in a clean copy.
+
+## 12 · R-1 — an up lost in a crash: the money cases (T10, the architect's follow-up)
+
+§10.2 showed the harmless case: a crash AFTER the final state's settle, where the ledger's idempotency absorbs the second end. T10 proves
+its twins at the flow level: a crash BEFORE the settle, and a crash that loses the answer. There are four proofs in
+`voice/RestoreLostUpTest`. Each asserts what the session SHOULD come to, and each is
+`@Disabled("R-1: statewalk restore — an up lost in a crash; waits for the owner's ruling")`, so the suite stays green. Each was run
+once with the annotation removed; the output is below. Nothing in statewalk or the base was changed.
+
+**How the crash is made.** One switch (`bed/Crash`) is shared by the node's store (`CrashingStore`), its ledger
+(`scene/CrashingLedger`) and its CDR road (`scene/CrashingCdrSink`). After it fires, nothing the dead node does reaches the world. A slow
+ledger (`holdSettlesUntilTheCrash`) holds the supervisor's settle until the death. A flow held inside ACTIVE's entry (`HeldAtTheAnswer`)
+keeps the supervisor's ACTIVE element from landing. To make the money visible, the voice sample bills by the second (C17's rule:
+rate / 60 × seconds) at 60.00 a minute at the leaf (one a second) and 30.00 at the reseller.
+
+| case | the row the store kept | restored as | what happens next, today | real | charged | CDR |
+|---|---|---|---|---|---|---|
+| **(a)** the caller hangs up; the node dies before the settle reaches the ledger | ACTIVE + EslCall TERMINATED | `ACTIVE/-`: the supervisor alone (its machine is final) | nothing sends the end again; ACTIVE's own deadline (6 s in the test) ends it, FAILED | talk 1.004 s | billed **6.001 s**: the leaf **6.00** (honest 1.00), the reseller **3.00** (honest 0.50) | MAX_DURATION_REACHED |
+| **(b)** the far end answers; the node dies before the supervisor's ACTIVE lands; the caller talks on | CONNECTING + EslCall ANSWERED | `CONNECTING/ANSWERED` | CONNECTING's deadline (3 s) fails it as never answered: `Reject` down → **`uuid_kill c-r1 NORMAL_TEMPORARY_FAILURE`** (the talking call is cut) → both reserves **released** | talking 3.0 s, then cut | **0.00** | TIMEOUT_CONNECTING, no answer time |
+| **(b2)** as (b), but the caller hangs up first | CONNECTING + EslCall ANSWERED | `CONNECTING/ANSWERED` | the restored machine's `ServiceEnd` reaches a supervisor in CONNECTING, which has no rule for it: **lost**; the deadline then releases | talk 0.531 s | **0.00** (honest 0.53) | TIMEOUT_CONNECTING, no answer time |
+| **(c)** as (a), with the budget child (period 60 s §L.2, first renewal 2 s B8) | ACTIVE + EslCall TERMINATED + Budget FIRST_RENEWAL | `ACTIVE/-` + Budget FIRST_RENEWAL | the restored child **renews a window for the ended call** (one per tier: 60.00 + 30.00 held), then ACTIVE's deadline (10 s) | talk 1.007 s | billed **10.001 s**: the leaf **10.00** (honest 1.01) | MAX_DURATION_REACHED |
+
+The red lines of the run (the numbers line of each test follows):
+
+```
+(a)  …billed_to_the_hangup_not_to_actives_maximum:102         ==> expected: <NORMAL_CLEARING> but was: <MAX_DURATION_REACHED>
+(b)  …is_not_cut_and_is_charged_for_its_talk:146 an answered call is not cut by the switch ==> expected: <false> but was: <true>
+(b2) …reaches_the_restored_supervisor_and_the_call_is_charged_for_its_talk:192 ==> expected: <NORMAL_CLEARING> but was: <TIMEOUT_CONNECTING>
+(c)  …renews_no_window_for_a_call_that_already_ended:242 no window is renewed for a call that ended ==> expected: <0> but was: <2>
+```
+
+```
+R-1(a) real talk 1.004 s (answer → hangup) · billed 6.001 s · the leaf paid 6.00 (honest: 1.00) · the reseller paid 3.00 (honest: 0.50) · the CDR's cause MAX_DURATION_REACHED · 1 CDR message(s) · the row at the crash: ACTIVE + EslCall TERMINATED · restored as ACTIVE/- · ended 5.0 s after the restore, 6.0 s after the answer · the ledger: [reserve res_44#701 60.00, reserve btcl#44 30.00, settle res_44#701 6.00, settle btcl#44 3.00]
+R-1(b) answered, then talking for 3.0 s until the switch ended it · the row at the crash: CONNECTING + EslCall ANSWERED · restored as CONNECTING/ANSWERED · node B's wire: [uuid_kill c-r1 NORMAL_TEMPORARY_FAILURE] · the CDR's cause TIMEOUT_CONNECTING, answer time null, billed 0.0 s · the ledger: [reserve res_44#701 60.00, reserve btcl#44 30.00, release res_44#701 60.00, release btcl#44 30.00] · the leaf paid 0.00
+R-1(b2) real talk 0.531 s (answer on node A → hangup on node B) · restored as CONNECTING/ANSWERED · after the hangup CONNECTING/- (the ServiceEnd reached a supervisor in CONNECTING) · node B's wire [] · the CDR's cause TIMEOUT_CONNECTING, answer time null, billed 0.0 s · the ledger: [reserve res_44#701 60.00, reserve btcl#44 30.00, release res_44#701 60.00, release btcl#44 30.00] · the leaf paid 0.00 (honest: 0.53)
+R-1(c) real talk 1.007 s · the row at the crash: ACTIVE + EslCall TERMINATED + Budget FIRST_RENEWAL · restored as ACTIVE/- + Budget FIRST_RENEWAL · windows reserved after the hangup: 2 · billed 10.001 s, the CDR's cause MAX_DURATION_REACHED · the leaf paid 10.00 (honest: 1.01) · the ledger: [reserve res_44#701 60.00, reserve btcl#44 30.00, reserve res_44#701 60.00, reserve btcl#44 30.00, settle res_44#701 10.00, settle btcl#44 5.00]
+```
+
+The two runs (T10a, then all four) gave the same numbers to within a few milliseconds.
+
+**What it means for money, at production timings.**
+- **(a)** The billed time is "answer → ACTIVE's maximum", whatever the talk. With the base's default maximum (3600 s), a 1-second call is
+  billed an hour — far beyond its reserve of one minute (plus renewals), so the overrun is debited (C17's negative return). Idempotency
+  does not help: the first settle never reached the ledger.
+- **(b) and (b2)** An answered call is charged nothing: every reserve is released, so the revenue is lost. In (b) the switch also kills a
+  live call at CONNECTING's deadline (the base's default is 120 s).
+- **(c)** The restored budget child renews every period for a call that ended — until ACTIVE's maximum (3600 s / 60 s ≈ 60 windows per
+  tier). The windows come back at the final settle, but they are held all that time, so they can drain a reseller's balance and refuse
+  its other calls. The settle then bills as in (a).
+- **What the four share.** The signaling machine's last `up` (its `ServiceEnd`, or its `Established`) was published to the supervisor on
+  the dead node. The supervisor's next element never landed. The restore re-seats each machine from its own last landed element, and the
+  two disagree. statewalk does not re-send the lost up.
+
+**Ways out, for the owner (nothing built — evidence only):**
+1. statewalk: on restore, when the signaling machine's element is past its answer or final while the supervisor's is behind, re-publish
+   the machine's last up. The EslCall's context still holds its `ServiceEnd` (`ended`); its `Established` would need keeping the same way.
+   The supervisor then answers or ends as it would have.
+2. Land the supervisor's own element BEFORE the money in the final entry (a "settling" picture). 4.0's final graph has no such state.
+3. The lane, through §L.3's hook (`billedUnits` sees `restoredAtMs`): cap a restored session's billed time at what its machine saw. The
+   supervisor's restored context does not carry the machine's end today; the machine's context does.

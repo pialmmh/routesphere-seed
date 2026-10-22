@@ -341,6 +341,31 @@ class VoiceFlowTest {
         assertEquals("CONNECTING/TRYING", b.states("c-sip3"), "the account's channel came back at the end of c-sip1");
     }
 
+    // ── C21 · the simulator: the base's dry run ──────────────────────────────────────────────────────────
+
+    @Test
+    void the_simulator_walks_the_tiers_with_their_rates_and_finds_the_route_with_nothing_reserved_and_nothing_written() throws Exception {
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), PARTNERS, World.RATES, ROUTES);
+        VoiceContext walton = new VoiceContext();
+        walton.facts = new EslFacts("c-dry", System.currentTimeMillis(), World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.8", "1001");
+        com.telcobright.seed.sessionflow.api.DryRun dry = flow.simulate(walton);
+        assertTrue(dry.admitted(), "C21: the same walk as a live call: " + dry.cause());
+        assertEquals(List.of("res_44_7/801 1.00", "res_44/7 0.80", "btcl/44 0.40"),
+            dry.levels().stream().map(l -> l.getDbName() + "/" + l.getPartnerId() + " " + l.getRate()).toList(), "every tier with its own rate");
+        assertEquals("GP-trunk", ((EslTarget) dry.plan().current()).routeName());
+        assertFalse(dry.trace().isEmpty(), "every step traced");
+
+        VoiceContext closed = new VoiceContext();
+        closed.facts = new EslFacts("c-dry-x", System.currentTimeMillis(), World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.4", "1001");
+        com.telcobright.seed.sessionflow.api.DryRun refused = flow.simulate(closed);
+        assertFalse(refused.admitted());
+        assertEquals("PARTNER_DEACTIVATED", refused.cause());
+
+        assertTrue(w.ledger.journal().isEmpty(), "nothing reserved");
+        assertEquals(0, w.cdrs.count(), "no CDR written");
+        assertEquals(0, flow.kit().slots().held(), "no slot taken");
+    }
+
     // ── a crash mid-call, and a crash between the settle and the final row (§L.1) ──────────────────────────
 
     @Test

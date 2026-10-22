@@ -93,7 +93,6 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     @Override
     protected Tier identifyEntryPartner(AdContext view, Candidate candidate) {
         AdCandidate k = (AdCandidate) candidate;
-        view.candidate = k;                                                        // step (d) routes this one (see AdContext.candidate)
         return k.house() || k.payerPartnerId() == null ? null : entryOfPartner(view, k.payerPartnerId());
     }
 
@@ -111,10 +110,11 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
         return k.house() || quota.claim(k.campaignId()) ? Verdict.ok() : Verdict.reject("QUOTA_GONE");
     }
 
-    /** The candidate's creative is the one hop. */
+    /** The creative of the candidate under admission is the one hop (step (d) runs inside the candidate's walk, before {@code chosen}). */
     @Override
     protected RoutePlan routing(AdContext view) {
-        return view.candidate == null ? RoutePlan.none() : RoutePlan.one(view.candidate.creative());
+        AdCandidate k = (AdCandidate) view.candidateBeingAdmitted();
+        return k == null ? RoutePlan.none() : RoutePlan.one(k.creative());
     }
 
     /** AdPlayback's phases: the hand-over (OFFERED), then the screen (SHOWING). */

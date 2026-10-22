@@ -6,7 +6,6 @@ import com.telcobright.statewalk.persistence.PersistenceProvider;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -24,19 +23,25 @@ public final class CrashingStore implements PersistenceProvider {
     public static final Set<String> SESSION_FINALS = Set.of("SUCCEEDED", "FAILED");
 
     private final PersistenceProvider store;
-    private final AtomicBoolean dead = new AtomicBoolean();
+    private final Crash dead;
     private final AtomicInteger droppedWrites = new AtomicInteger();
     private volatile String dieBeforeTheFinalRowOf;
 
-    public CrashingStore(PersistenceProvider store) { this.store = store; }
+    public CrashingStore(PersistenceProvider store) { this(store, new Crash()); }
+
+    /** The node's handle on the store, dying with the node's other handles ({@link Crash}: its ledger, its CDR road). */
+    public CrashingStore(PersistenceProvider store, Crash crash) {
+        this.store = store;
+        this.dead = crash;
+    }
 
     /** The node dies now: every later call from it is cut off from the store. */
-    public void crash() { dead.set(true); }
+    public void crash() { dead.now(); }
 
     /** The node dies at the moment the final row of {@code sessionId} is written: that row never lands. */
     public CrashingStore dieBeforeTheFinalRowOf(String sessionId) { this.dieBeforeTheFinalRowOf = sessionId; return this; }
 
-    public boolean isDead() { return dead.get(); }
+    public boolean isDead() { return dead.isDead(); }
 
     /** Writes the dead node attempted (they never landed). */
     public int droppedWrites() { return droppedWrites.get(); }
@@ -49,29 +54,29 @@ public final class CrashingStore implements PersistenceProvider {
     private boolean theFinalRowKillsTheNode(MachineSnapshot snapshot) {
         String victim = dieBeforeTheFinalRowOf;
         if (victim == null || !victim.equals(snapshot.machineId()) || !SESSION_FINALS.contains(snapshot.currentState())) return false;
-        dead.set(true);
+        dead.now();
         droppedWrites.incrementAndGet();
         return true;
     }
 
     @Override public Optional<MachineSnapshot> load(String machineId, String registryName) {
-        return dead.get() ? Optional.empty() : store.load(machineId, registryName);
+        return dead.isDead() ? Optional.empty() : store.load(machineId, registryName);
     }
 
-    @Override public List<MachineSnapshot> loadAll(String machineId) { return dead.get() ? List.of() : store.loadAll(machineId); }
+    @Override public List<MachineSnapshot> loadAll(String machineId) { return dead.isDead() ? List.of() : store.loadAll(machineId); }
 
     @Override public void delete(String machineId, String registryName) { if (!dropped()) store.delete(machineId, registryName); }
 
     @Override public List<MachineSnapshot> loadMatured(String registryName, long nowMs) {
-        return dead.get() ? List.of() : store.loadMatured(registryName, nowMs);
+        return dead.isDead() ? List.of() : store.loadMatured(registryName, nowMs);
     }
 
     @Override public List<MachineSnapshot> loadAllForRegistry(String registryName) {
-        return dead.get() ? List.of() : store.loadAllForRegistry(registryName);
+        return dead.isDead() ? List.of() : store.loadAllForRegistry(registryName);
     }
 
     @Override public List<MachineSnapshot> loadUnfinishedForRegistry(String registryName, Set<String> finalStates) {
-        return dead.get() ? List.of() : store.loadUnfinishedForRegistry(registryName, finalStates);
+        return dead.isDead() ? List.of() : store.loadUnfinishedForRegistry(registryName, finalStates);
     }
 
     @Override public void quarantine(String machineId, String registryName, String reason) {
@@ -81,7 +86,7 @@ public final class CrashingStore implements PersistenceProvider {
     @Override public void bindDefaultTable(String tableName) { store.bindDefaultTable(tableName); }
 
     @Override public int deleteFinishedBefore(String registryName, Set<String> finalStates, long updatedBeforeMs) {
-        return dead.get() ? 0 : store.deleteFinishedBefore(registryName, finalStates, updatedBeforeMs);
+        return dead.isDead() ? 0 : store.deleteFinishedBefore(registryName, finalStates, updatedBeforeMs);
     }
 
     @Override public long rotate() { return store.rotate(); }
@@ -89,7 +94,7 @@ public final class CrashingStore implements PersistenceProvider {
     @Override public long rotate(String registryName) { return store.rotate(registryName); }
 
     private boolean dropped() {
-        if (!dead.get()) return false;
+        if (!dead.isDead()) return false;
         droppedWrites.incrementAndGet();
         return true;
     }
