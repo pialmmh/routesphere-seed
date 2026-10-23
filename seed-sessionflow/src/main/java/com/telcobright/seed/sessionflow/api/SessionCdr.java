@@ -37,13 +37,21 @@ final class SessionCdr<C extends RoutesphereContext> {
 
     static <C extends RoutesphereContext> SessionCdr<C> of(RoutesphereFlow<C> flow) { return new SessionCdr<>(flow); }
 
-    /** (g) The session's ONE message: the application's {@code cdrPerTier}, on the root's road ({@code cdr_<root>}); once per session. */
-    void publish(C ctx, Outcome outcome) {
+    /**
+     * (g) The session's records, once per session: the application's {@code cdrPerTier} — on the records road, with the SDR's rows, to its
+     * root's writer (the journal's line is done after the commit); else ONE message on the root's road ({@code cdr_<root>}).
+     */
+    void publish(C ctx, Outcome outcome, Object sdr) {
         if (ctx.cdrPublished) return;
         List<CdrEvent> tiers = flow.cdrPerTier(ctx, outcome);
         if (tiers == null || tiers.isEmpty()) return;
-        flow.kit().cdr().publish(AdmissionChain.rootDbOf(ctx), ctx.sessionId(), tiers);
+        if (flow.kit().records() != null) flow.writeRecords(ctx, outcome, tiers, sdr);
+        else publishToTheSink(ctx, tiers);
         ctx.cdrPublished = true;
+    }
+
+    private void publishToTheSink(C ctx, List<CdrEvent> tiers) {
+        flow.kit().cdr().publish(AdmissionChain.rootDbOf(ctx), ctx.sessionId(), tiers);
         flow.kit().counters().cdrPublished.incrementAndGet();
         markDone(ctx.sessionId());
     }

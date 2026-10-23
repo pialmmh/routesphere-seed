@@ -11,8 +11,8 @@ import java.sql.Statement;
  * billing-core's tables of the records road on an in-process H2 database, for the tests of every product (P1-R §C): in each tier's schema
  * {@code cdr} — billing-core's PostgreSQL columns (its {@code sql/postgres/billing-tables.sql}), or the legacy 104 on MySQL — {@code cdrerror}
  * like it, and {@code summary_affected}; the unique index billing-core's PostgreSQL DDL makes ({@code ux_cdr_call}), and on MySQL the by-hand
- * one ({@code cdr_idempotency.sql}) only when asked. H2 runs in the dialect's mode ({@link #url}); its types are billing-core's, a
- * {@code text} as {@code VARCHAR}; a partition is not made (H2 has none).
+ * one ({@code cdr_idempotency.sql}) only when asked; and the batch lock's functions ({@link H2Locks}). H2 runs in the dialect's mode
+ * ({@link #url}); its types are billing-core's, a {@code text} as {@code VARCHAR}; a partition is not made (H2 has none).
  */
 public final class RecordTables {
 
@@ -57,9 +57,13 @@ public final class RecordTables {
         return "jdbc:h2:mem:" + name + ";MODE=" + mode + ";DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1";
     }
 
-    /** Each tier's schema with its three tables; {@code byHandIndex} = MySQL's {@code ux_cdr_uniquebillid} too (PostgreSQL always has its own). */
+    /**
+     * Each tier's schema with its three tables, and the batch lock's functions ({@link H2Locks}); {@code byHandIndex} = MySQL's
+     * {@code ux_cdr_uniquebillid} too (PostgreSQL always has its own).
+     */
     public static void create(DataSource db, RecordDialect dialect, boolean byHandIndex, String... tiers) {
         try (Connection c = db.getConnection(); Statement st = c.createStatement()) {
+            for (String alias : H2Locks.aliases()) st.execute(alias);
             for (String tier : tiers) createTier(st, tier, dialect, byHandIndex);
         } catch (SQLException e) {
             throw new IllegalStateException("the records tables could not be made: " + e.getMessage(), e);

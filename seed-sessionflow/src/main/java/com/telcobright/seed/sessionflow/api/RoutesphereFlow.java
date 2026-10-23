@@ -10,6 +10,7 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.CdrTableSql;
+import com.telcobright.seed.sessionflow.internal.SessionRecords;
 import com.telcobright.seed.sessionflow.internal.SummaryEntries;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -253,15 +255,17 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected boolean handleRerouting(C ctx, SignalingFailed failed) { return rerouteByTable(ctx, failed.cause()); }
 
     /**
-     * (g) The finish, from both finals, once: the teardown, the channel slot, the CDR per tier (one message, leaf first, on
-     * {@code cdr_<root>}), the task, the SDR, the application's own close. No step's failure stops the next.
+     * (g) The finish, from both finals, once: the teardown, the channel slot, the SDR made, the CDR per tier (the records road: with the SDR's
+     * rows in its batch's ONE transaction; else one message, leaf first, on {@code cdr_<root>}), the task, the SDR to its sink, the
+     * application's own close. No step's failure stops the next.
      */
     protected final void finishSession(C ctx, Outcome outcome) {
         guarded(ctx, "TEARDOWN", () -> tearDown(ctx, outcome));
         guarded(ctx, "RELEASE_SLOT", () -> kit.slots().release(ctx.sessionId()));
-        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome));
+        Object sdr = safely(ctx, "BUILD_SDR", () -> buildSdr(ctx, outcome), null);
+        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome, sdr));
         guarded(ctx, "CLOSE_TASK", () -> SessionTaskClose.of(this).close(ctx, outcome));
-        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, outcome));
+        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, sdr));
         guarded(ctx, "ON_ENDED", () -> onEnded(ctx, outcome));
         kit.counters().ended.incrementAndGet();
     }
@@ -449,6 +453,23 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The records road (P1-R §B) — the reusable method: the session's records (its CDR per tier, its SDR) handed to the writer of its root,
+     * which writes them and their summary input in ONE transaction per batch and marks the session's line in the journal done after the
+     * commit. The finish uses it; a lane may for records of its own.
+     */
+    protected final void writeRecords(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
+        kit.records().write(recordsOf(ctx, outcome, tiers, sdr));
+    }
+
+    /** The session's records as its writer takes them: each tier record's statements and summary entry (the hooks), then its SDR's rows. */
+    final SessionRecords recordsOf(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
+        List<SessionRecords.TierRecord> records = new ArrayList<>(tiers.size());
+        for (CdrEvent record : tiers) records.add(new SessionRecords.TierRecord(record, cdrStatements(ctx, record), summaryEntryOf(ctx, record)));
+        List<RecordStatement> sdrRows = sdr == null ? List.of() : sdrStatements(ctx, outcome, sdr);
+        return new SessionRecords(tiers.get(0).callId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
+    }
 
     /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
     protected final RecordStore storeOf(CdrEvent record) {
@@ -677,8 +698,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         onTeardown(ctx, outcome);
     }
 
-    private void writeTheSdr(C ctx, Outcome outcome) {
-        Object sdr = buildSdr(ctx, outcome);
+    private void writeTheSdr(C ctx, Object sdr) {
         if (sdr != null) kit.sdr().write(ctx.sessionId(), sdr);
     }
 

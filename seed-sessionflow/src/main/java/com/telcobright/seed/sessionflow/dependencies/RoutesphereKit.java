@@ -5,6 +5,7 @@ import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.ChannelSlots;
 import com.telcobright.seed.sessionflow.internal.FlowCounters;
+import com.telcobright.seed.sessionflow.internal.RecordRoad;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.SdrSink;
@@ -33,7 +34,7 @@ public final class RoutesphereKit {
     private final CdrSink cdr;
     private final SdrSink sdr;
     private final TaskSink tasks;
-    private final RecordStores records;
+    private final RecordRoad records;
     private final SessionJournal journal;
     private final Clock clock;
     private final ZoneId zone;
@@ -50,7 +51,7 @@ public final class RoutesphereKit {
         this.zone = required(b.zone, "zone (the CDR's wall clock)");
         this.sdr = b.sdr;
         this.tasks = b.tasks;
-        this.records = b.records;
+        this.records = b.records == null ? null : new RecordRoad(b.records, b.journal, counters);
         this.journal = b.journal;
         this.clock = b.clock;
         this.settings = b.settings;
@@ -78,8 +79,11 @@ public final class RoutesphereKit {
     /** Where the closed task row goes. */
     public TaskSink tasks() { return tasks; }
 
-    /** The records road's stores, one per root (P1-R); null = the lane's CDR goes to its CDR sink. */
-    public RecordStores recordStores() { return records; }
+    /** The records road (P1-R): one writer per root store; null = the lane's CDR goes to its CDR sink. */
+    public RecordRoad records() { return records; }
+
+    /** The records road's stores, one per root; null = the lane's CDR goes to its CDR sink. */
+    public RecordStores recordStores() { return records == null ? null : records.stores(); }
 
     /** The sessions in the air (R1-6): none unless the host keeps one. */
     public SessionJournal journal() { return journal; }

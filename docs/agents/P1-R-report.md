@@ -6,7 +6,8 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 | | |
 |---|---|
 | the reactor on c32e374, before any change | **430 / 0 / 0 / 7** (tests / failures / errors / skipped) |
-| after R1 | **446 / 0 / 0 / 7** |
+| after R1 (77f4cc5) | **446 / 0 / 0 / 7** |
+| after R2, from \`clean\` | **454 / 0 / 0 / 7** |
 
 ## 0 · The commits
 
@@ -143,6 +144,57 @@ A harness fault, caught and fixed (and named by the architect the same hour): th
 so Maven kept the last mutant's class; the plain run after them went red (Duration1 null = R1-M12's class). Fixed: a restore writes a fresh
 mtime; every source of seed-sessionflow was touched and recompiled before the measured runs. The 446 are clean: each mutated spot has a test
 that went red under its mutant and is green in that run.
+
+## 2 · R2 — §B, the writer
+
+**What is new** (seed-sessionflow \`internal/\` unless named):
+
+| file | what |
+|---|---|
+| \`RecordRoad\` | the kit's road (\`kit.records()\`): one \`RecordWriter\` per root store, started at the root's first session; the ping's thread; \`awaitIdle\`; \`close\` drains (5 s) then stops |
+| \`RecordWriter\` | ONE platform thread (\`records-<root>\`) and its queue per root; a batch = the first session waiting + whatever comes until N tier records or T after the first (defaults 200 / 250 ms, \`RecordStores.batch\`); a batch that did not commit is tried again 1 s, 2 s, … 30 s apart (\`RecordStores.retries\`); after the commit: the pings handed over, every session's journal line done, the counters |
+| \`RecordBatch\` | ONE transaction, billing-core's order: autocommit off → the lock of every tier → per session its records (the once rule) then its SDR rows → per tier ONE \`summary_affected\` row (\`entity_type\` cdr, \`op\` add, the blob) of the records written now — none for a tier with none (SummaryOutboxWriter.java:51) → commit → the locks let go; any failure rolls the whole batch back |
+| \`BatchLock\` | billing-core's \`billing_batch_<tier>\` (MySqlCdrBatchRunner.java:143) for every tier of the batch, in name order. MySQL \`GET_LOCK(name, 30)\`, \`RELEASE_LOCK\` after the commit/rollback (MySqlEdge.java:32-54); PostgreSQL \`pg_try_advisory_xact_lock(key)\` asked for up to 30 s, released by the commit, \`key\` = billing-core's \`LockKeyOf\` (PostgresEdge.java:163-172: SHA-256's first 8 bytes) — its session lock and our transaction lock are one lock space, so they serialize |
+| \`spi/SummaryPing\`, \`dependencies/SummaryPings\`, \`KafkaSummaryPing\`, \`PingRoad\` | the port the application hands in (\`RecordStores.ping\`; none = no ping, said once at the road's start); billing-core's shape: one topic, no key, \`{"tenant","entity","rows"}\` (SummaryChangeNotificationPublisher.java:183-198, 234-243); on its own thread (a queue of 256, the newest dropped when full, said once a minute — :63, 183-187, 291-305) |
+| \`SessionRecords\` | one session's records as the writer takes them: per tier record its statements and summary entry, then the SDR's rows |
+| \`RoutesphereFlow\` | \`writeRecords(ctx, outcome, tiers, sdr)\` — the reusable method; \`finishSession\` now makes the SDR first (\`BUILD_SDR\`), so its rows go in the CDR's transaction; the SDR still goes to the \`SdrSink\` too (a lane that writes it elsewhere) |
+| \`SessionCdr.publish\` | the records road when the kit has one, else the CDR sink as before (and \`markDone\` there, as before) |
+| \`RoutesphereEngine.close\` | after statewalk drove every live session to its end: the road commits what it was handed (bounded) |
+| \`FlowCounters\` | \`recordBatches\`, \`recordsWritten\`, \`recordsWrittenBefore\`; \`cdrPublished\` counts a session after its commit |
+| testkit \`H2Locks\` | H2 has no GET_LOCK nor advisory lock: the lab defines them as Java functions that grant and write down each call — so the REAL lock statements run in every test (the brief said "H2 none"; this runs the lock instead, and proves it) |
+| samples | \`World.kitOnRecords\`, \`scene/WorldRecords\` (one H2 database per root, billing-core's tables in every tier, \`ad_sdr\`), \`AdFlow.sdrStatements\` (the \`AdSdr\` as a row, \`on conflict do nothing\`), H2 in the samples' test scope |
+
+**Tests:** \`RecordWriterTest\` 6 — C3 (500 sessions ending at once from 500 virtual threads: every record once in its tier, each tier's
+summary input = its rows, one writer thread for every statement, 5–60 batches, all committed = no deadlock), the MySQL lock's place
+(the three tiers' locks in name order after \`begin\` and before the first statement, let go after the \`commit\`), the PostgreSQL key (billing-core's
+formula written again in the test), one summary row per tier of only what was written now, the pings on their own thread + each journal line
+done with its records already committed (a journal that looks), a batch rolled back whole and tried again until it commits; samples
+\`AdRecordsTest\` 2 — C1 (four views on two roots and 1/2/3 tiers: one cdr row per tier record in its tier's schema, the columns as billing-core
+writes them, each tier's summary entries = exactly its rows, ONE summary row per batch in its root's tier, the journal empty after the commit),
+C5 (the \`AdSdr\` row in the same transaction; with ccl's \`ad_sdr\` gone the view's CDR and summary input rolled back and the view kept in the
+journal; the table back → written).
+
+| mutant | red |
+|---|---|
+| R2-M1 a writer per session, not per root | C3, the pings/journal test |
+| R2-M2 autocommit left on (every statement its own transaction) | C5, the rolled-back-whole test, the MySQL lock test |
+| R2-M3 a record written before is summed too | the summary-row test |
+| R2-M4 no batch lock | the MySQL lock test, the PostgreSQL key test |
+| R2-M5 the lock let go before the commit | the MySQL lock test |
+| R2-M6 the lock named after the root, not billing-core's per tier | the MySQL lock test, the PostgreSQL key test |
+| R2-M7 the tiers locked in the order they come | the MySQL lock test |
+| R2-M8 the PostgreSQL key = the name's hashCode | the PostgreSQL key test |
+| R2-M9 the ping on the writer's thread | the pings/journal test |
+| R2-M10 the journal's line done before the commit | the pings/journal test, C5 |
+| R2-M11 a batch of one session | C3, the pings/journal test |
+| R2-M12 a batch that failed is dropped | C5, the rolled-back-whole test |
+| R2-M13 the SDR's rows not written | C5, the rolled-back-whole test |
+| R2-M14 the finish's records to the CDR sink | C1, C5 |
+
+Two faults of mine, caught by the runs: (1) the mutant harness let Maven stop at the first module with a red, so a samples test never ran
+under a mutant that broke a base test — now every module runs (\`-Dmaven.test.failure.ignore\`), and the list above is the full one;
+(2) C1 asserted \`Duration1 = 0\`, but the sample's \`DurationSec\` is its real answer→end time (0.001–0.002 s): red 3 runs in 6 — C1 now
+asserts the rule (\`Duration1 = RoundedDuration = DurationSec\`), green 6 runs in 6, and the mutant runs were made again after it.
 
 ## 9 · Findings and questions for the owner (so far)
 

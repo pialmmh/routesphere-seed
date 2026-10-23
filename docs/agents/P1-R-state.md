@@ -5,4 +5,10 @@ One line per item, newest last. Times are Dhaka (+06).
 - 2026-10-23 17:09 · START — worktree `p1-records` from `routesphere-flow` c32e374; the reactor there **430/0/0/7** (confirmed, offline, under the lock).
 - 2026-10-23 17:55 · **R1 done** (§A) — `RecordStatement` (+ the probe), `RecordId`, `RecordStores`/`RecordStore`/`RecordDialect`, the hooks
   `cdrStatements` / `sdrStatements` / `summaryEntryOf`, the default `CdrTableSql` (MySQL + PostgreSQL, billing-core's once rule), the default
-  summary entry, the blob; C6 green; 15 R1 mutants red; the reactor **446/0/0/7**. Commit: this one (R1). Next: R2 (the writer). Blocked: nothing.
+  summary entry, the blob; C6 green; 13 R1 mutants red; the reactor **446/0/0/7**. Commit **77f4cc5**. Next: R2 (the writer). Blocked: nothing.
+- 2026-10-23 18:32 · **R2 done** (§B) — the writer: one platform thread + queue per root (`RecordWriter`), batches N/T, ONE transaction per
+  batch (`RecordBatch`) under billing-core's per-tier lock (`BatchLock`: GET_LOCK / pg_try_advisory_xact_lock, billing-core's names and key),
+  one `summary_affected` row per tier of the records written now, the ping after the commit on its own thread (`PingRoad`, `SummaryPing`,
+  `SummaryPings.kafka`), the journal's done after the commit; a failed batch rolled back whole and tried again (1 s … 30 s); the finish takes
+  the records road when the kit has one; the SDR's rows in the same transaction. C1, C3, C5 green; 14 R2 mutants red; the reactor from
+  clean **454/0/0/7**. Commit: this one (R2). Next: R3 (park / unpark). Blocked: nothing.

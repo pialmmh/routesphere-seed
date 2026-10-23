@@ -1,22 +1,39 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
+import com.telcobright.seed.sessionflow.spi.SummaryPing;
+
 import javax.sql.DataSource;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
  * The records road a host hands its kit (P1-R, the owner's ruling of 2026-10-23): the application makes its CDR and SDR SQL, the base writes
  * it — the records and the summary input ({@code summary_affected}) of a batch of sessions in ONE transaction — into each root's own store.
- * One store per root; a lane on this road has no CDR sink ({@code RoutesphereKit} refuses both at once).
+ * One store per root; a lane on this road has no CDR sink ({@code RoutesphereKit} refuses both at once). The knobs come from the product's
+ * profile; nothing here is read from the environment.
  */
 public final class RecordStores {
 
+    /** The defaults: a batch of 200 tier records or 250 ms; a failed batch tried again 1 s, 2 s, … 30 s apart. */
+    public static final int BATCH_RECORDS = 200;
+    public static final Duration BATCH_WITHIN = Duration.ofMillis(250), RETRY_FIRST = Duration.ofSeconds(1), RETRY_CAP = Duration.ofSeconds(30);
+
     private final Map<String, RecordStore> byRoot;
+    private final int batchRecords;
+    private final Duration batchWithin, retryFirst, retryCap;
+    private final SummaryPing ping;
 
     private RecordStores(Builder b) {
         this.byRoot = Map.copyOf(b.byRoot);
+        this.batchRecords = b.batchRecords;
+        this.batchWithin = b.batchWithin;
+        this.retryFirst = b.retryFirst;
+        this.retryCap = b.retryCap;
+        this.ping = b.ping;
     }
 
     public static Builder builder() { return new Builder(); }
@@ -26,8 +43,26 @@ public final class RecordStores {
 
     public Collection<RecordStore> all() { return byRoot.values(); }
 
+    /** A batch closes at this many tier records… */
+    public int batchRecords() { return batchRecords; }
+
+    /** …or this long after its first, whichever comes first. */
+    public Duration batchWithin() { return batchWithin; }
+
+    /** A failed batch is tried again after this, then twice as long each time… */
+    public Duration retryFirst() { return retryFirst; }
+
+    /** …up to this. */
+    public Duration retryCap() { return retryCap; }
+
+    /** The summary ping after each commit; {@link SummaryPing#NONE} = summary-service polls. */
+    public SummaryPing ping() { return ping; }
+
     public static final class Builder {
         private final Map<String, RecordStore> byRoot = new LinkedHashMap<>();
+        private int batchRecords = BATCH_RECORDS;
+        private Duration batchWithin = BATCH_WITHIN, retryFirst = RETRY_FIRST, retryCap = RETRY_CAP;
+        private SummaryPing ping = SummaryPing.NONE;
 
         private Builder() {}
 
@@ -44,6 +79,24 @@ public final class RecordStores {
             }
             return this;
         }
+
+        public Builder batch(int records, Duration within) {
+            if (records <= 0 || within == null || within.isNegative() || within.isZero()) throw new IllegalArgumentException("a batch needs records > 0 and a time > 0");
+            this.batchRecords = records;
+            this.batchWithin = within;
+            return this;
+        }
+
+        public Builder retries(Duration first, Duration cap) {
+            if (first == null || cap == null || first.isNegative() || first.isZero() || cap.compareTo(first) < 0) {
+                throw new IllegalArgumentException("a retry waits more than nothing, and the cap is not shorter than the first wait");
+            }
+            this.retryFirst = first;
+            this.retryCap = cap;
+            return this;
+        }
+
+        public Builder ping(SummaryPing v) { this.ping = Objects.requireNonNull(v, "ping"); return this; }
 
         /** Refuses to build without a store: a road with nowhere to write is not a road. */
         public RecordStores build() {
