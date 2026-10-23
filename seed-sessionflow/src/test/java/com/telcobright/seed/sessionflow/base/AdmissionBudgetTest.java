@@ -39,9 +39,9 @@ class AdmissionBudgetTest {
             .ledger(ledger).cdr(new RecordingCdrSink()).zone(ZoneId.of("Asia/Dhaka")).clock(clock).settings(Lab.settings(0)).build();
         return new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
             @Override protected List<Candidate> selectCandidates(LabContext ctx) { return candidates; }
-            @Override protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
+            @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
                 Payer p = (Payer) candidate;
-                return p.partnerId() == 0 ? null : entryOfPartner(ctx, p.partnerId());
+                return p.partnerId() == 0 ? null : byPartnerId(ctx, p.partnerId());
             }
             @Override protected boolean isFree(LabContext ctx, Candidate candidate) { return ((Payer) candidate).free(); }
         };

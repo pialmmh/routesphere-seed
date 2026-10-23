@@ -96,9 +96,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     /** The inversion: the payer is the candidate's advertiser, found in its tier of THIS view's tree; the house ad has none. */
     @Override
-    protected Tier identifyEntryPartner(AdContext view, Candidate candidate) {
+    protected Tier identifyPartner(AdContext view, Candidate candidate) {
         AdCandidate k = (AdCandidate) candidate;
-        return k.house() || k.payerPartnerId() == null ? null : entryOfPartner(view, k.payerPartnerId());
+        return k.house() || k.payerPartnerId() == null ? null : byPartnerId(view, k.payerPartnerId());
     }
 
     /** The whole view at this tier's per-view rate. */

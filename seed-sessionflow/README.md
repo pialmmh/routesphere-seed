@@ -29,7 +29,7 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     @Override public String name() { return "AdSupervisor"; }                     // the registered name = the lane's own table (§L.4)
     @Override protected int serviceGroup(AdContext c) { return 30; }
     @Override protected String identifyTenant(RoutesphereFacts f) { return byListener(((AdFacts) f).listen()); }   // (a) the HTTP listener
-    @Override protected Tier identifyEntryPartner(AdContext c, Candidate k) { return entryOfPartner(c, ((AdCandidate) k).advertiserId()); }   // (c)
+    @Override protected Tier identifyPartner(AdContext c, Candidate k) { return byPartnerId(c, ((AdCandidate) k).advertiserId()); }   // (c)
     @Override protected TierRate rateAtLevel(AdContext c, Tier t, Partner p) { ... }                       // (e) the tier's rate; null = UNRATED
     @Override protected RoutePlan routing(AdContext c) { return RoutePlan.one(((AdCandidate) c.candidateBeingAdmitted()).creative()); }  // (d)
     @Override protected boolean delivered(AdContext c, Outcome o) { return c.shown; }                       // the call: c.answered()
@@ -50,17 +50,17 @@ RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdFlow(kit), AdCo
 
 ## 3 · The owner's methods
 
-■ = abstract: every lane answers it. There are nine: `name`, `serviceGroup`, `identifyTenant`, `identifyEntryPartner`, `routing`, `rateAtLevel`, `delivered`,
+■ = abstract: every lane answers it. There are nine: `name`, `serviceGroup`, `identifyTenant`, `identifyPartner`, `routing`, `rateAtLevel`, `delivered`,
 `refundPolicy`, `rerouteActionFor` (the owner's word of 2026-10-23: a lane that forgot one would be billed like a call).
-The money stays shared with its defaults (`reserveBalance`, `finalizeCost`, `settleOutcome`, `identifyPartner`); (b), (g) and every
+The money stays shared with its defaults (`reserveBalance`, `finalizeCost`, `settleOutcome`, `partnerAbove`); (b), (g) and every
 statewalk call are final. `RoutesphereFlowDriftTest` guards the set.
 
 | | method | default | when the base asks |
 |---|---|---|---|
 | (a) | `identifyTenant(facts)` ■ | the lane's door: `byListener` · `byEslSocket` · `byVlan` · `byTopic` · `byIngress` (the kit's rules); null → `NO_TENANT`, never a default root | `onStart` (IDLE → INIT) |
 | (b) | `iterateResellerTenants(leaf)` | FINAL: leaf → reseller → … → root, in the root's own tree | `admit` |
-| (c) | `identifyEntryPartner(ctx, candidate)` ■ | who pays, in which tier | `admit`, per candidate |
-| (c) | `identifyPartner(tier)` | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant | `admit`, above the leaf |
+| (c) | `identifyPartner(ctx, candidate)` ■ | who pays at the leaf: `byPartnerId` · `byPartnerName` inside the session's own tree; null → `PARTNER_NOT_FOUND` | `admit`, per candidate |
+| (c) | `partnerAbove(tier)` | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant | `admit`, above the leaf |
 | (d) | `routing(ctx)` ■ | a `RoutePlan` of `Route` hops, made once at admission (C8) | `admit`; `nextHop` reads it |
 | (e) | `reserveBalance(ctx, tier, partner)` | `rateAtLevel` ■ + ONE unit through the ledger port, `<session>#L<tier>` | `admit`, per tier |
 | (e) | `finalizeCost(ctx, tier, outcome)` | `delivered` ■ → rate × `billedUnits` (null = as reserved), else the refund rule (`refundPolicy` ■ on `settleOutcome`) | `settle` (answered) |
@@ -74,7 +74,7 @@ session offered and never consumed (the ad's `unshown`). An answered session is 
 
 ## 4 · Per root
 
-Every lookup of a session is scoped to the root its ingress named: the entry partner (`entryOfPartner` — the root's OWN partner
+Every lookup of a session is scoped to the root its ingress named: the entry partner (`byPartnerId` — the root's OWN partner
 map; an id two tiers hold names nobody), the tier walk (a chain that ends at another root is refused `PARTNER_NOT_FOUND`), the
 rates, the CDR's topic. The session takes its root's snapshot at its start (`ctx.tree`, `ctx.treeVersion`) and keeps it to its end;
 the doorbell (`config_event_loader_<root>`) reloads that root only. A restored session takes its root's snapshot again.

@@ -45,9 +45,9 @@ class AdmissionWalkTest {
     private Lab labWith(List<Candidate> candidates, Map<String, String> rates) {
         return new Lab(Lab.settings(0), kit -> new LabFlow(kit, rates, Lab.hops("carrier-a"), Set.of()) {
             @Override protected List<Candidate> selectCandidates(LabContext ctx) { return candidates; }
-            @Override protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
+            @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
                 Payer p = (Payer) candidate;
-                return p.partnerId() == 0 ? null : entryOfPartner(ctx, p.partnerId());
+                return p.partnerId() == 0 ? null : byPartnerId(ctx, p.partnerId());
             }
             @Override protected boolean isFree(LabContext ctx, Candidate candidate) { return ((Payer) candidate).free(); }
         });

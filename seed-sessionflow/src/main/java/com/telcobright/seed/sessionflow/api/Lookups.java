@@ -43,6 +43,22 @@ public final class Lookups {
     /** The root of an ingress as the lane's facts carry it; null = no door. */
     public String byIngress(Ingress ingress) { return ingress == null ? null : rules.get().tenantOf(ingress).orElse(null); }
 
+    // ── a partner inside the session's own tree (identifyPartner) ──
+
+    /** The leaf of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = no id, or no such partner there. */
+    public Tier byPartnerId(RoutesphereContext ctx, Integer partnerId) {
+        if (partnerId == null || ctx.tree == null) return null;
+        EntryPartner entry = ctx.tree.entryOf(partnerId);
+        return entry == null ? null : Tier.entry(entry);
+    }
+
+    /** The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share the name. */
+    public Tier byPartnerName(RoutesphereContext ctx, String partnerName) {
+        if (partnerName == null || partnerName.isBlank() || ctx.tree == null) return null;
+        EntryPartner entry = ctx.tree.entryNamed(partnerName);
+        return entry == null ? null : Tier.entry(entry);
+    }
+
     private String byDoor(String kind, String match) {
         return match == null || match.isBlank() ? null : byIngress(new Ingress(kind, match));
     }

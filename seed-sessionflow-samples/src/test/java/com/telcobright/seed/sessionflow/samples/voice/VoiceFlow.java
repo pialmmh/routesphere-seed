@@ -98,9 +98,9 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
 
     /** C1: the partner by the source address, found in the call's OWN root's tree; none → PARTNER_NOT_FOUND. */
     @Override
-    protected Tier identifyEntryPartner(VoiceContext call, Candidate candidate) {
+    protected Tier identifyPartner(VoiceContext call, Candidate candidate) {
         Integer partnerId = partnerBySource.get(call.root + "|" + facts(call).sourceIp());
-        return partnerId == null ? null : entryOfPartner(call, partnerId);
+        return partnerId == null ? null : byPartnerId(call, partnerId);
     }
 
     /** C4 · the entry tier, before the partner's slot: a call to the DID range must reach a DID this root knows. */

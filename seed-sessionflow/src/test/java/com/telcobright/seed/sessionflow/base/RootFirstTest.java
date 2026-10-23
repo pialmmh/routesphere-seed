@@ -106,7 +106,7 @@ class RootFirstTest {
     @Test
     void anOverrideThatFindsThePayerInAnotherRootsTree_isRefusedPartnerNotFound_theBelt() {
         lab = new Lab(Lab.settings(0), kit -> new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
-            @Override protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
+            @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
                 var tele2 = kit.tenants().snapshot("tele2").orElseThrow();            // a lookup across roots: the bug the belt stops
                 return Tier.entry(tele2.entryOf(1));
             }

@@ -58,6 +58,20 @@ public final class RootTree {
         return partner == null ? null : new EntryPartner(owner, partner);
     }
 
+    /** The tier of THIS tree that holds the ONE partner of this name (no case), with that partner; null = none, or two partners share it. */
+    public EntryPartner entryNamed(String partnerName) {
+        EntryPartner found = null;
+        for (Tenant t : tiersOf(tree)) {
+            if (t.getContext() == null || t.getContext().getPartners() == null) continue;
+            for (Partner p : t.getContext().getPartners().values()) {
+                if (p == null || !partnerName.equalsIgnoreCase(p.getPartnerName())) continue;
+                if (found != null) return null;
+                found = new EntryPartner(t, p);
+            }
+        }
+        return found;
+    }
+
     /** The partner of a tier of THIS tree, by the tier's database name and the partner's id; null = none. */
     public Partner partnerOf(String dbName, int partnerId) {
         Tenant tier = tier(dbName).orElse(null);

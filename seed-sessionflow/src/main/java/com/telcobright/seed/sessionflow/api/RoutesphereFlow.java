@@ -38,8 +38,8 @@ import java.util.function.Supplier;
  *   every call                    the lane's ONE name: statewalk's table, the log        name■ · serviceGroup■ (the CDR's group)
  *   onStart       IDLE → INIT     the root by the lane's door, its snapshot, the task   (a) identifyTenant■ · buildTask
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyEntryPartner■ · (b) iterateResellerTenants
- *                                 per tier check · authorize · root rules · reserve      (c) identifyPartner · (e) reserveBalance → rateAtLevel■
+ *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyPartner■ · (b) iterateResellerTenants
+ *                                 per tier check · authorize · root rules · reserve      (c) partnerAbove · (e) reserveBalance → rateAtLevel■
  *                                 the route at the root, the last gate                   (d) routing■ · confirmAdmission
  *   nextHop       ROUTING         the plan's current hop                                 (d) routing■ (made once, at admission)
  *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
@@ -54,7 +54,7 @@ import java.util.function.Supplier;
  * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
  * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule and its failover by cause — an SMS or an ad
  * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
- * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code identifyPartner}); the tier walk
+ * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
  * (b), the finish (g) and every statewalk call are final.
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
@@ -229,17 +229,24 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected final List<Tier> iterateResellerTenants(Tier leaf) { return leaf.ancestorChain(); }
 
     /**
-     * (c) Who pays for this candidate, found in which tier of the session's OWN tree (the lowest in-partner first): a call from the
-     * wire, an ad from the chosen campaign's advertiser. Null = nobody ({@code PARTNER_NOT_FOUND}, or a free candidate runs with no
-     * tier). {@link #entryOfPartner} finds a partner by id in the session's tree.
+     * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —
+     * the caller's partner (by its ip or number prefix); the ad — the chosen campaign's advertiser (the candidate names it); the WiFi — the
+     * subscriber; the SMS — the bind's account. The helpers find a partner inside the session's tree: {@link #byPartnerId},
+     * {@link #byPartnerName}. Null = nobody: {@code PARTNER_NOT_FOUND} (a free candidate runs with no tier).
      */
-    protected abstract Tier identifyEntryPartner(C ctx, Candidate candidate);
+    protected abstract Tier identifyPartner(C ctx, Candidate candidate);
+
+    /** (c) helper · The leaf of a partner whose id is known, INSIDE THE SESSION'S OWN TREE; null = no id, or this tree holds no such partner. */
+    protected final Tier byPartnerId(C ctx, Integer partnerId) { return kit.lookups().byPartnerId(ctx, partnerId); }
+
+    /** (c) helper · The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share it. */
+    protected final Tier byPartnerName(C ctx, String partnerName) { return kit.lookups().byPartnerName(ctx, partnerName); }
 
     /**
      * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}
      * → partner {@code <id>} of this tier, else the partner named as the tenant below ({@link #resellerPartnerOf}).
      */
-    protected Partner identifyPartner(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
+    protected Partner partnerAbove(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
 
     /**
      * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
@@ -462,13 +469,6 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-
-    /** The entry of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = this tree holds no such partner. */
-    protected final Tier entryOfPartner(C ctx, int partnerId) {
-        if (ctx.tree == null) return null;
-        EntryPartner entry = ctx.tree.entryOf(partnerId);
-        return entry == null ? null : Tier.entry(entry);
-    }
 
     /** What is left of this session's admission budget, in milliseconds (a dry run: {@code Long.MAX_VALUE}). */
     protected final long admissionTimeLeftMs(C ctx) {

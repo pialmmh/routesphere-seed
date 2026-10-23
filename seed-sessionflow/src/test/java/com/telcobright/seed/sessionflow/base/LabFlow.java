@@ -64,8 +64,8 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
     }
 
     @Override
-    protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
-        return entryOfPartner(ctx, ((LabFacts) ctx.facts).partnerId());
+    protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
+        return byPartnerId(ctx, ((LabFacts) ctx.facts).partnerId());
     }
 
     @Override

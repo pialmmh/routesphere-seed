@@ -66,9 +66,9 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
 
     /** [assumes D5] the subscriber is a partner of the root's tree. */
     @Override
-    protected Tier identifyEntryPartner(WifiContext session, Candidate candidate) {
+    protected Tier identifyPartner(WifiContext session, Candidate candidate) {
         Integer partnerId = partnerBySubscriber.get(session.root + "|" + session.msisdn);
-        return partnerId == null ? null : entryOfPartner(session, partnerId);
+        return partnerId == null ? null : byPartnerId(session, partnerId);
     }
 
     /** One window: a minute at this tier's rate. */

@@ -83,9 +83,9 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     }
 
     @Override
-    protected Tier identifyEntryPartner(Session session, Candidate candidate) {
+    protected Tier identifyPartner(Session session, Candidate candidate) {
         Integer partnerId = partnerByMac.get(session.mac);
-        return partnerId == null ? null : entryOfPartner(session, partnerId);
+        return partnerId == null ? null : byPartnerId(session, partnerId);
     }
 
     /** The tier's rate on its partner's first unit bucket; no rate = a free tier; a rate with no bucket = unrated (no package, no wifi). */

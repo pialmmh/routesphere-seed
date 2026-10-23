@@ -78,9 +78,9 @@ public final class SmsFlow extends RoutesphereFlow<SmsContext> {
     }
 
     @Override
-    protected Tier identifyEntryPartner(SmsContext sms, Candidate candidate) {
+    protected Tier identifyPartner(SmsContext sms, Candidate candidate) {
         Integer partnerId = partnerByUser.get(sms.root + "|" + sms.user);
-        return partnerId == null ? null : entryOfPartner(sms, partnerId);
+        return partnerId == null ? null : byPartnerId(sms, partnerId);
     }
 
     /** Every segment, reserved at admission at this tier's per-segment rate: a message is rated before it is sent. */

@@ -13,7 +13,9 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 
 | commit | item |
 |---|---|
-| (item 0) | the records road removed (R13) |
+| 1caa152 | **item 0** — the records road removed (R13) |
+| 4a8b22a | **item 1** — `identifyTenant` forced, with the door helpers |
+| (item 2) | **item 2** — `identifyPartner`, `partnerAbove`, `byPartnerId` / `byPartnerName` |
 
 ## Item 0 · the records road leaves (R13)
 
@@ -58,6 +60,45 @@ The owner's correction: a switch never writes a CDR table; it publishes to Kafka
 words ("needs cdr (the CDR sink)", and no word of a records road); it passed on the P1-R wording "cdr … or records" too, so it is tightened.
 
 The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
+
+## Item 1 · `identifyTenant` forced, with helpers (R1, R2)
+
+- `identifySiblingLevelTenants(SessionFacts)` → **`protected abstract String identifyTenant(RoutesphereFacts facts)`** (■ in the class table).
+  `onStart` asks it through `rootOf(ctx)`: facts that are not `RoutesphereFacts` → refused `NO_TENANT` with a history line naming the class
+  ("the session's facts are <class>, not RoutesphereFacts: they name no ingress, so no root"); a throw → `NO_TENANT` (the base's `safely`).
+- **The helpers** (final, one line each): `byListener(ip, port)` / `byListener("ip:port")`, `byEslSocket(host, port)` / `byEslSocket("host:port")`,
+  `byVlan(gateway, svlan)`, `byTopic(name)`, `byIngress(ingress)`. They live ONCE in **`api/Lookups`** (the kit makes one: `kit.lookups()`),
+  so a builder lane (item 5) reaches the same code. The "ip:port" overloads were added because the samples' facts carry the address as one word
+  (the brief's form is the two-argument one). A blank or null door answers null (never an exception).
+- **The lanes:** AdFlow `byListener(listen)`, VoiceFlow `byEslSocket(esl)`, WifiFlow `byVlan(gateway, svlan)`, SmsFlow `byTopic` for the Kafka
+  door else `byListener`, LabFlow and LedgerFlow `byIngress(facts.ingress())`.
+- **Red first:** `IdentifyTenantTest` (4 tests) — `factsThatAreNotRoutesphereFacts_areRefusedNoTenant_andTheHistoryNamesTheirClass` red on the
+  code before the note (Maven run, 1 failure of 7); then green.
+- **Mutants (4, each red, each restored with `shutil.copyfile`):** the class note removed; `identifyTenant` given a default (the ingress rule)
+  → the drift guard red; a door no rule names answered a default root → the helpers test red; the lane's null overruled by the kit's rules →
+  `aLaneThatNamesNoRoot` red.
+- **Tests touched:** `RoutesphereFlowDriftTest.FORCED` (+ `identifyTenant`); `RootFirstTest`'s javadoc (the name).
+
+## Item 2 · `identifyPartner` (R2)
+
+- `identifyEntryPartner(ctx, candidate)` → **`identifyPartner(ctx, candidate)`** (abstract; the candidate stays — the ad's payer depends on it).
+  The above-the-leaf default `identifyPartner(Tier)` → **`partnerAbove(Tier)`** (the `res_<id>` rule unchanged). The admission's trace words
+  follow the names: `IDENTIFY_PARTNER` (the leaf, was `IDENTIFY_ENTRY_PARTNER`) and `PARTNER_ABOVE` (was `IDENTIFY_PARTNER`) — no test read them.
+- **Helpers** (final, in `Lookups`): `byPartnerId(ctx, Integer id)` (= the old `entryOfPartner`, which is gone; a null id = null) and
+  `byPartnerName(ctx, name)` (new `RootTree.entryNamed`: the ONE partner of that name in the session's own tree, no case; a name two partners
+  share names nobody — D5's rule for ids, applied to names).
+- **Red first:** `IdentifyPartnerTest` (4 tests) — red by compile (the helpers missing), then green. **Mutants (4, red):** the first of two
+  partners with one name wins; the name compared with its case; `byPartnerId` without the no-id guard; `identifyPartner` given a default.
+- **Tests touched (the rename only, no expectation changed):** the anonymous `LabFlow`s of `AdmissionBudgetTest`, `AdmissionWalkTest`,
+  `RootFirstTest`, `RoutingByCandidateTest` (`identifyEntryPartner` → `identifyPartner`, `entryOfPartner` → `byPartnerId`); `LabFlow`,
+  `LedgerFlow` and the four samples the same; the drift set.
+- **The finding for the prime-context round (the brief: write it, do not invent it).** A partner by what the WIRE carries is NOT on the tree
+  the seed reads: the voice lane keeps `partnerBySource` (`<root>|<source ip>`), the WiFi lane `partnerBySubscriber` (`<root>|<msisdn>`), the
+  SMS lane `partnerByUser` (the bind's system id), the ledger sample `partnerByMac` — each a map of its own. rtc-domain's `DynamicContext`
+  DOES have call-side indexes (`routeWisePartners`, `sipAccountWisePartners`, `prefixWisePartners`, `callerIdWisePartners`,
+  `ipOrDomainWiseRoute`), but nothing says prime-context's tree road fills them per tier, and there is no index for a WiFi subscriber or an SMS
+  system id. Proposal: prime-context serves, per tier, `ingressKey → partnerId` indexes (ip, prefix, msisdn, system-id) in the tree; then
+  `byIpOrPrefix`, `bySubscriber`, `bySystemId` are one-line helpers like `byPartnerId`. Until then the lanes keep their maps.
 
 ## Open questions for the owner / the architect
 
