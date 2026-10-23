@@ -107,6 +107,21 @@ decides; a partial window arms the final cut; a refused window may rotate onto `
 when the money ends (the supervisor sends `Stop(BALANCE_EXHAUSTED)` down). A persisting lane renews at most once a minute: every tick
 rewrites the session's row (§L.2; the engine refuses less).
 
+## 5.1 · The prepaid piece (R12)
+
+Prepaid is strictly package-account + mem-ledger, and it is ONE reusable piece of the base — no lane writes money code:
+
+| api | when | what it does |
+|---|---|---|
+| reserve — `reserveBalance(ctx, tier, partner)` | ADMITTING, every tier leaf → root | the tier's rate (`rateAtLevel`: package units before money, ONE unit) held on ITS account through the one ledger port, `<session>#L<tier>` |
+| finalize — `finalizeCost(ctx, tier, outcome)` | the final state, every tier, once | the cost of the session: delivered → rate × `billedUnits` (null = the units reserved); the reserve comes back, the difference is the final adjustment (more used than reserved = an extra debit, the call's rule); not delivered → the lane's refund rule (`refundPolicy` on `settleOutcome`) |
+
+The SMS's case is the refund rule: a failed message — no SMSC took it, or it was not delivered and the lane refunds by config — returns
+its whole reserve at every tier (`SmsPrepaidPieceTest`); an answered call pays rate × its units and the rest of its reserve comes back
+(`PrepaidPieceTest`). Every verb is idempotent per (session, tier). The default ledger of a kit made from the bootstrap is the in-switch one —
+`ledger.kind: switch` (seed-switch-ledger: a MemLedger over the root's switch database, the package accounts of every tier); `orchestrix`
+(portal-api's REST roads) stays for the transition.
+
 ## 6 · Persistence
 
 `RoutesphereContext` is persisted by statewalk (Jackson): ids and amounts only — the tiers as `TierLine`s, the plan, the candidates,

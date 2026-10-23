@@ -50,3 +50,7 @@ item 6 (the kit from ONE bootstrap url).
   bootstrap read again, the root's tree / doors / ledger / CDR road / journal / topics made, served live; a reseller TIER → its root's tree
   reloaded; the same event twice = once; another app's = nothing; a root the bootstrap does not serve yet = WARN, heard again later.
   Red first (compile), 6 mutants red; sessionflow 190, samples 71, switch-ledger 54, tenant 19. Next: item 9 (the prepaid piece).
+- 2026-10-24 02:45 · **item 9 done** — no new money code: the README's "prepaid piece" (reserve / finalize, cost → refund → adjustment, the
+  SMS = the refund rule, the default ledger `switch` from the bootstrap — pinned in item 6); `PrepaidPieceTest` (an answered call pays
+  rate × units, the rest back) and `SmsPrepaidPieceTest` (a failed SMS returns its whole reserve, two ways) — green on the existing code (no
+  red to see: the item adds no behaviour), 2 mutants red. Next: item 10 (the ad answers at /shown).

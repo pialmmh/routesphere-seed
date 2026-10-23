@@ -257,6 +257,19 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
 - **Red first:** by compile. **Mutants (6, red):** the same event served twice; another application's tenant served; a root not served yet
   never heard again; the new root's doors not added; the listener never started; a bad message stops the batch.
 
+## Item 9 · the prepaid piece, documented and defaulted (R12)
+
+- No new money code: `reserveBalance` → `finalizeCost` already IS the one reserve / finalize. The README's new §5.1 "The prepaid piece" says
+  the two apis (reserve at admission, every tier, one unit at its rate; finalize at the final state: delivered → rate × billed units, the
+  reserve back and the difference the final adjustment — an overrun is an extra debit, the call's rule; not delivered → the lane's refund
+  rule), the SMS's case (the refund rule returns a failed message's whole reserve), idempotent per (session, tier).
+- **The default ledger from the bootstrap = `switch`** (seed-switch-ledger): item 6's `DeploymentReader` (a root's `ledger.kind` not said →
+  `switch`), pinned by `KitFromBootstrapTest.theLedgerKind_isTheSwitchWhenNotSaid` and mutant M6-7.
+- **The pins:** `base/PrepaidPieceTest` — an answered call (one tier, rate 1.00, billed 0.25 of the unit) pays 0.25 and 0.75 of its reserve
+  comes back; `samples/sms/SmsPrepaidPieceTest` (2) — a message no SMSC took and an accepted one not delivered (refund by config) return
+  their whole reserve at all three tiers. **No red first** (the item adds no behaviour — they pin what the base does). **Mutants (2, red):**
+  the call charged its whole reserve whatever its units; a message not delivered charged whatever the lane's rule.
+
 ## Open questions for the owner / the architect
 
 (none yet)
