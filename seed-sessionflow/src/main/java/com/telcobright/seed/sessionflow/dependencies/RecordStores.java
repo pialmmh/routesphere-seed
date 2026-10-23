@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
+import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.SummaryPing;
 
 import javax.sql.DataSource;
@@ -18,14 +19,16 @@ import java.util.Optional;
  */
 public final class RecordStores {
 
-    /** The defaults: a batch of 200 tier records or 250 ms; a failed batch tried again 1 s, 2 s, … 30 s apart. */
-    public static final int BATCH_RECORDS = 200;
+    /** The defaults: a batch of 200 tier records or 250 ms; a failed batch tried again 1 s, 2 s, … 30 s apart, parked after 7 tries (~1 min). */
+    public static final int BATCH_RECORDS = 200, RETRY_BUDGET = 7;
     public static final Duration BATCH_WITHIN = Duration.ofMillis(250), RETRY_FIRST = Duration.ofSeconds(1), RETRY_CAP = Duration.ofSeconds(30);
 
     private final Map<String, RecordStore> byRoot;
     private final int batchRecords;
     private final Duration batchWithin, retryFirst, retryCap;
+    private final int retryBudget;
     private final SummaryPing ping;
+    private final CdrSink parkInto;
 
     private RecordStores(Builder b) {
         this.byRoot = Map.copyOf(b.byRoot);
@@ -33,7 +36,9 @@ public final class RecordStores {
         this.batchWithin = b.batchWithin;
         this.retryFirst = b.retryFirst;
         this.retryCap = b.retryCap;
+        this.retryBudget = b.retryBudget;
         this.ping = b.ping;
+        this.parkInto = b.parkInto;
     }
 
     public static Builder builder() { return new Builder(); }
@@ -55,14 +60,25 @@ public final class RecordStores {
     /** …up to this. */
     public Duration retryCap() { return retryCap; }
 
+    /** The tries a failing batch gets before its writer PARKS (said once; it goes on trying at the cap). */
+    public int retryBudget() { return retryBudget; }
+
     /** The summary ping after each commit; {@link SummaryPing#NONE} = summary-service polls. */
     public SummaryPing ping() { return ping; }
+
+    /**
+     * Where a parked writer keeps the records the journal of the sessions in the air does not hold (the file CDR journal, as today:
+     * {@code CdrSinks.journal}); null = in this process only.
+     */
+    public CdrSink parkInto() { return parkInto; }
 
     public static final class Builder {
         private final Map<String, RecordStore> byRoot = new LinkedHashMap<>();
         private int batchRecords = BATCH_RECORDS;
         private Duration batchWithin = BATCH_WITHIN, retryFirst = RETRY_FIRST, retryCap = RETRY_CAP;
+        private int retryBudget = RETRY_BUDGET;
         private SummaryPing ping = SummaryPing.NONE;
+        private CdrSink parkInto;
 
         private Builder() {}
 
@@ -87,14 +103,21 @@ public final class RecordStores {
             return this;
         }
 
-        public Builder retries(Duration first, Duration cap) {
-            if (first == null || cap == null || first.isNegative() || first.isZero() || cap.compareTo(first) < 0) {
-                throw new IllegalArgumentException("a retry waits more than nothing, and the cap is not shorter than the first wait");
+        public Builder retries(Duration first, Duration cap) { return retries(first, cap, retryBudget); }
+
+        /** The waits between the tries of a failing batch, and the tries before its writer parks. */
+        public Builder retries(Duration first, Duration cap, int budget) {
+            if (first == null || cap == null || first.isNegative() || first.isZero() || cap.compareTo(first) < 0 || budget <= 0) {
+                throw new IllegalArgumentException("a retry waits more than nothing, the cap is not shorter than the first wait, and the budget is one try or more");
             }
             this.retryFirst = first;
             this.retryCap = cap;
+            this.retryBudget = budget;
             return this;
         }
+
+        /** The file CDR journal for the records a parked writer holds that the journal of the sessions in the air does not. */
+        public Builder parkInto(CdrSink v) { this.parkInto = Objects.requireNonNull(v, "parkInto"); return this; }
 
         public Builder ping(SummaryPing v) { this.ping = Objects.requireNonNull(v, "ping"); return this; }
 

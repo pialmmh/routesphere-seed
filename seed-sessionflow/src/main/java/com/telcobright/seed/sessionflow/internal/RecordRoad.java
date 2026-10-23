@@ -3,20 +3,16 @@ package com.telcobright.seed.sessionflow.internal;
 import com.telcobright.seed.sessionflow.dependencies.RecordStore;
 import com.telcobright.seed.sessionflow.dependencies.RecordStores;
 import com.telcobright.seed.sessionflow.spi.SessionJournal;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The records road of one kit (P1-R §B): one {@link RecordWriter} per root store — started at the root's first session — and the ping's own
  * thread. Closing drains what was handed in (bounded), then stops the writers: what did not commit stays in the journal of the sessions in
- * the air, for the next start.
+ * the air for the next start, or goes to the park sink when that journal does not hold it.
  */
 public final class RecordRoad implements AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(RecordRoad.class);
     /** How long a close waits for the writers to commit what they were handed. */
     public static final long DRAIN_MS = 5_000;
 
@@ -59,12 +55,12 @@ public final class RecordRoad implements AutoCloseable {
         return true;
     }
 
+    /** Commit what was handed in (at most {@link #DRAIN_MS}), then stop every writer — each says what it leaves, and where. */
     @Override
     public void close() {
         closed = true;
-        boolean drained = awaitIdle(DRAIN_MS);
+        awaitIdle(DRAIN_MS);
         writers.values().forEach(RecordWriter::stop);
         pings.close();
-        if (!drained) log.warn("the records road closed with records not committed: they stay in {} for the next start", journal.where());
     }
 }

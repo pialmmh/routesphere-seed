@@ -137,6 +137,8 @@ public final class FileSessionJournal implements SessionJournal {
 
     @Override public List<Leftover> leftovers() { return leftovers; }
 
+    @Override public synchronized boolean holds(String callId) { return open.containsKey(callId); }
+
     @Override public String where() { return file.toString(); }
 
     /** The calls in the air now: for a test and a log line. */

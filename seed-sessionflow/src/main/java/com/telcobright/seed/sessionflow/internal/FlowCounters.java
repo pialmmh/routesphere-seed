@@ -22,4 +22,8 @@ public final class FlowCounters {
     public final AtomicLong recordBatches = new AtomicLong();
     public final AtomicLong recordsWritten = new AtomicLong();
     public final AtomicLong recordsWrittenBefore = new AtomicLong();
+    /** The records road's failure road: tier records in the batches that parked a writer; times a writer parked; times it un-parked. */
+    public final AtomicLong recordsParked = new AtomicLong();
+    public final AtomicLong recordParks = new AtomicLong();
+    public final AtomicLong recordUnparks = new AtomicLong();
 }

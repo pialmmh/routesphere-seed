@@ -8,30 +8,33 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * One root's writer (P1-R §B): ONE platform thread and its queue — it blocks on JDBC, so it is never a virtual carrier of statewalk's chains.
  * Sessions are gathered into a batch (N tier records, or T after the first) and each batch is ONE transaction ({@link RecordBatch}); after
  * its commit the pings go to their own thread and every session's line in the journal of the sessions in the air is done. A batch that did
- * not commit is tried again, 1 s, 2 s, … 30 s apart.
+ * not commit is tried again, 1 s, 2 s, … 30 s apart; after the budget the writer parks ({@link RecordParking}) and goes on trying.
  */
 public final class RecordWriter {
 
     private static final Logger log = LoggerFactory.getLogger(RecordWriter.class);
-    private static final long IDLE_WAIT_MS = 200;
+    private static final long IDLE_WAIT_MS = 200, STOP_WAIT_MS = 2_000;
 
     private final RecordStore store;
     private final RecordStores settings;
     private final PingRoad pings;
     private final SessionJournal journal;
     private final FlowCounters counters;
+    private final RecordParking parking;
     private final LinkedBlockingQueue<SessionRecords> queue = new LinkedBlockingQueue<>();
-    /** Sessions handed in and not yet committed and done. */
-    private final AtomicInteger inHand = new AtomicInteger();
+    /** Handed in and not committed yet (by identity: the same session handed in twice is two). */
+    private final Set<SessionRecords> notCommitted = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
     private final Thread thread;
     private volatile boolean stopping;
 
@@ -41,22 +44,29 @@ public final class RecordWriter {
         this.pings = pings;
         this.journal = journal;
         this.counters = counters;
+        this.parking = new RecordParking(store.root(), settings.retryBudget(), journal, settings.parkInto(), counters);
         this.thread = Thread.ofPlatform().name("records-" + store.root()).daemon(true).start(this::writeWhatComes);
     }
 
     /** One session's records into the queue: never blocks the session's thread. */
     public void write(SessionRecords records) {
-        inHand.incrementAndGet();
+        notCommitted.add(records);
+        parking.handedIn(records);
         queue.add(records);
     }
 
     /** Nothing handed in waits for its commit. */
-    public boolean idle() { return inHand.get() == 0; }
+    public boolean idle() { return notCommitted.isEmpty(); }
 
-    /** Stop: the batch in hand is not tried again; what was not committed stays in the journal of the sessions in the air. */
+    /** The writer is parked: its store does not take its batches. */
+    public boolean parked() { return parking.parked(); }
+
+    /** Stop: the batch in hand is not tried again; what was not committed stays in the journal of the sessions in the air (or the park sink). */
     public void stop() {
         stopping = true;
         thread.interrupt();
+        joinTheThread();
+        parking.leftAtTheClose(List.copyOf(notCommitted));
     }
 
     private void writeWhatComes() {
@@ -97,7 +107,7 @@ public final class RecordWriter {
                 afterTheCommit(batch, RecordBatch.write(store, batch));
                 return;
             } catch (SQLException | RuntimeException e) {
-                sayTheFailure(batch, attempt, e);
+                parking.failed(batch, attempt, e, List.copyOf(queue));
                 if (!waitBeforeTry(attempt)) return;
             }
         }
@@ -110,7 +120,8 @@ public final class RecordWriter {
         counters.recordsWritten.addAndGet(written.writtenNow());
         counters.recordsWrittenBefore.addAndGet(written.writtenBefore());
         counters.cdrPublished.addAndGet(batch.size());
-        inHand.addAndGet(-batch.size());
+        parking.committed(batch.size());
+        batch.forEach(notCommitted::remove);
     }
 
     private void markDone(String sessionId) {
@@ -120,10 +131,6 @@ public final class RecordWriter {
             log.warn("[records {}] {} | its records are committed; its line in {} could not be marked done (a restart writes it again, once): {}",
                 store.root(), sessionId, journal.where(), e.toString());
         }
-    }
-
-    private void sayTheFailure(List<SessionRecords> batch, int attempt, Exception e) {
-        if (attempt == 1) log.warn("[records {}] a batch of {} session(s) did not commit, it rolled back and is tried again: {}", store.root(), batch.size(), e.toString());
     }
 
     /** 1 s, 2 s, 4 s, … up to the cap. False = the writer stops. */
@@ -136,6 +143,14 @@ public final class RecordWriter {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
+        }
+    }
+
+    private void joinTheThread() {
+        try {
+            thread.join(STOP_WAIT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

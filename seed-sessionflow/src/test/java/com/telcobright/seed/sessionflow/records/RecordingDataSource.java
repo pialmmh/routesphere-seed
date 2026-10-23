@@ -25,8 +25,15 @@ final class RecordingDataSource implements DataSource {
         this.database = database;
     }
 
+    /** True = the store does not answer: every connection asked for is refused. */
+    volatile boolean down;
+
     @Override
     public Connection getConnection() throws SQLException {
+        if (down) {
+            H2Locks.note(database, "refused");
+            throw new SQLException("the store does not answer (the test's switch)", "08001");
+        }
         Connection real = db.getConnection();
         return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> {
             noteThe(method.getName(), args);

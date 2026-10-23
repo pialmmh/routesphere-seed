@@ -11,4 +11,10 @@ One line per item, newest last. Times are Dhaka (+06).
   one `summary_affected` row per tier of the records written now, the ping after the commit on its own thread (`PingRoad`, `SummaryPing`,
   `SummaryPings.kafka`), the journal's done after the commit; a failed batch rolled back whole and tried again (1 s … 30 s); the finish takes
   the records road when the kit has one; the SDR's rows in the same transaction. C1, C3, C5 green; 14 R2 mutants red; the reactor from
-  clean **454/0/0/7**. Commit: this one (R2). Next: R3 (park / unpark). Blocked: nothing.
+  clean **454/0/0/7**. Commit **bf46c82**. Next: R3 (park / unpark). Blocked: nothing.
+- 2026-10-23 18:46 · **R3 done** (the failure road) — `RecordParking`: a failed batch tried again (1 s … 30 s), PARKED after the budget
+  (`RecordStores.retries(first, cap, budget)`, default 7 tries ≈ 1 min) said ONCE (ERROR, root + cause), `recordsParked` / `recordParks`
+  counted, every session kept in the journal of the sessions in the air, a session that journal does not hold (`SessionJournal.holds`, new
+  default; `FileSessionJournal` answers it) written to the park sink (`RecordStores.parkInto`, the file CDR journal) — at the park and for each
+  session handed in while parked; the next commit UN-PARKS, said once (`recordUnparks`); the close leaves what it could not commit the same
+  way. C4 green; 11 R3 mutants red; the reactor from clean **456/0/0/7**. Commit: this one (R3). Next: R4 (the switch ledger). Blocked: nothing.
