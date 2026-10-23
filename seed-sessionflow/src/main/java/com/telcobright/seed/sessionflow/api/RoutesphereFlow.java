@@ -439,7 +439,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      */
     protected List<RecordStatement> cdrStatements(C ctx, CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
 
-    /** The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none. */
+    /**
+     * The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none.
+     * Write them ONCE by your own key — a probe ({@link RecordStatement#probe}) or {@code ON CONFLICT DO NOTHING} ({@code INSERT IGNORE} on
+     * MySQL): a session ended a second time (a restore from an older row, §L.1) runs them again, and a plain INSERT that meets its duplicate
+     * rolls back the whole batch — every session in it — on every try, so the writer parks.
+     */
     protected List<RecordStatement> sdrStatements(C ctx, Outcome outcome, Object sdr) { return List.of(); }
 
     /**

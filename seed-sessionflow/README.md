@@ -105,7 +105,9 @@ a batch that fails      rolled back whole, tried again 1 s, 2 s, … 30 s; after
 The defaults write billing-core's own tables exactly: `cdr` (its 104 columns, + the wire's six on PostgreSQL, each value as its ingest
 maps the wire) and `summary_affected` (its `Entry` shape, a stated group's pre-rated leg), so summary-service reads them unchanged. A lane
 overrides `cdrStatements` to add its rows (the voice: `acc_chargeable`) or to write a table of its own, and gives its SDR's rows in
-`sdrStatements`. `testkit.RecordTables` makes billing-core's tables (and the lock functions) on H2 for a product's tests.
+`sdrStatements` — written ONCE by their own key (a probe, or `ON CONFLICT DO NOTHING`): a session ended a second time (a restore from an
+older row) runs them again, and a plain INSERT that meets its duplicate rolls back the whole batch on every try, so the writer parks.
+`testkit.RecordTables` makes billing-core's tables (and the lock functions) on H2 for a product's tests.
 
 ## 6 · Persistence
 
