@@ -63,6 +63,9 @@ public final class AdPlayback {
         public static AdTimings production() { return new AdTimings(5_000, 30_000, 120_000, 600_000); }
     }
 
+    /** The request the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
+    static final AdRequest SAMPLE = new AdRequest("sample", "10.10.188.5:7443", "02:00:00:00:00:01", "8801700000000", "zone", "site", "app", "10.20.0.1", 0);
+
     private AdPlayback() {}
 
     public static MachineSpec<AdPlaybackContext> spec(AdTimings t, Supplier<AdPlaybackContext> contexts) {
@@ -73,6 +76,7 @@ public final class AdPlayback {
     public static MachineSpec<AdPlaybackContext> spec(AdTimings t, Supplier<AdPlaybackContext> contexts, Function<AdRequest, SessionFacts> factsOf) {
         return MachineSpec.<AdPlaybackContext>builder()
             .name(TYPE).contextFactory(contexts)
+            .upSample(new SessionStart(factsOf.apply(SAMPLE)))                            // the facts this machine starts a view with (R2)
             .stateMap(StateMap.builder()
                 .initialState(IDLE)
 

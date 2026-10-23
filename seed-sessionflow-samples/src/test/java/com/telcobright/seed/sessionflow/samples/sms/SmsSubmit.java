@@ -58,6 +58,9 @@ public final class SmsSubmit {
         public static SmsTimings production() { return new SmsTimings(5_000, 10_000, 48 * 3600_000L); }
     }
 
+    /** The request the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
+    static final SmsRequest SAMPLE = new SmsRequest("sample", "listen", "10.10.188.7:7480", "sample-user", "BRAND", "8801700000000", "hello", 0);
+
     private SmsSubmit() {}
 
     public static MachineSpec<SmsSubmitContext> spec(SmsTimings t, Supplier<SmsSubmitContext> contexts) {
@@ -68,6 +71,7 @@ public final class SmsSubmit {
     public static MachineSpec<SmsSubmitContext> spec(SmsTimings t, Supplier<SmsSubmitContext> contexts, Function<SmsRequest, SessionFacts> factsOf) {
         return MachineSpec.<SmsSubmitContext>builder()
             .name(TYPE).contextFactory(contexts)
+            .upSample(new SessionStart(factsOf.apply(SAMPLE)))                            // the facts this machine starts a message with (R2)
             .stateMap(StateMap.builder()
                 .initialState(IDLE)
 

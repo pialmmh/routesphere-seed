@@ -6,6 +6,7 @@ import com.telcobright.seed.sessionflow.base.LabEvents.Dial;
 import com.telcobright.seed.sessionflow.base.LabEvents.Fail;
 import com.telcobright.seed.sessionflow.base.LabEvents.Hangup;
 import com.telcobright.seed.sessionflow.base.LabEvents.Ring;
+import com.telcobright.seed.sessionflow.api.Ingress;
 import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.machine.Machine;
 import com.telcobright.statewalk.registry.MachineSpec;
@@ -52,6 +53,7 @@ public final class LabCall {
     public static MachineSpec<LabCallContext> spec() {
         return MachineSpec.<LabCallContext>builder()
             .name(TYPE).contextFactory(LabCallContext::new)
+            .upSample(new SessionStart(new LabFacts("sample", 0, Ingress.esl("10.10.199.9", 8021), 1, "8801")))   // the facts it starts a call with (R2)
             .stateMap(StateMap.builder()
                 .initialState(StateMap.IDLE)
                 .state(StateMap.IDLE).timeout(0)

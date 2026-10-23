@@ -8,6 +8,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 |---|---|
 | the reactor on f41eace, before any change (from `clean`) | **465 / 0 / 0 / 3** |
 | after item 0 (from `clean`) | **434 / 0 / 0 / 3** |
+| item 1, a git-archive clean copy of 4a8b22a (offline, under the lock) | **438 / 0 / 0 / 3** |
 
 ## 0 · The commits
 
@@ -15,7 +16,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 |---|---|
 | 1caa152 | **item 0** — the records road removed (R13) |
 | 4a8b22a | **item 1** — `identifyTenant` forced, with the door helpers |
-| (item 2) | **item 2** — `identifyPartner`, `partnerAbove`, `byPartnerId` / `byPartnerName` |
+| 891326b | **item 2** — `identifyPartner`, `partnerAbove`, `byPartnerId` / `byPartnerName` |
 
 ## Item 0 · the records road leaves (R13)
 
@@ -99,6 +100,21 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   `ipOrDomainWiseRoute`), but nothing says prime-context's tree road fills them per tier, and there is no index for a WiFi subscriber or an SMS
   system id. Proposal: prime-context serves, per tier, `ingressKey → partnerId` indexes (ip, prefix, msisdn, system-id) in the tree; then
   `byIpOrPrefix`, `bySubscriber`, `bySystemId` are one-line helpers like `byPartnerId`. Until then the lanes keep their maps.
+
+## Item 3 · the facts' sample refused at build (R2)
+
+- `RoutesphereEngine.Builder.start()` → `refuseASignalingWithoutItsFactsSample()` (statewalk 4.1's `MachineSpec.upSamples()`): no
+  `SessionStart` sample → "[AdSupervisor] the signaling machine 'AdPlayback' shows no SessionStart sample — add .upSample(new SessionStart(<the
+  lane's RoutesphereFacts>)) to its spec: … every session would be refused NO_TENANT"; a sample of other facts → "… its SessionStart sample
+  carries <class>, not RoutesphereFacts …". With a store, statewalk 4.1 round-trips the sample at build — the four sample lanes' persisting
+  scenarios (restores of the call and the SMS) passed it.
+- Every spec shows its sample: `LabCall` (`LabFacts`, esl 10.10.199.9:8021), and `AdPlayback`, `EslCall`, `SmsSubmit`, `WifiGateway` — each
+  `.upSample(new SessionStart(factsOf.apply(SAMPLE)))`, so the sample is exactly what the spec's own facts function makes (a spec given another
+  facts function shows that one's facts, and is refused when they are not RoutesphereFacts).
+- **Red first:** `FactsSampleAtBuildTest` (3) and `SpecSamplesTest` (1) all red on the code before (the first red of the two refusal tests was
+  for statewalk's own reason — the test machine's state map was not valid; the map was fixed, and mutants M3-1/M3-2 show the reds for the
+  check's own reason). **Mutants (3, red):** no sample passes; a sample of other facts passes; LabCall without its sample.
+- No existing test changed.
 
 ## Open questions for the owner / the architect
 

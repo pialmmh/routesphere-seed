@@ -57,6 +57,9 @@ public final class WifiGateway {
         public static WifiTimings production() { return new WifiTimings(5_000, 5_000, 24 * 3600_000L, 5_000); }
     }
 
+    /** The login the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
+    static final DeviceLogin SAMPLE = new DeviceLogin("sample", "10.20.0.1", 2104, "02:00:00:00:00:01", "8801700000000", "zone", "site", 0);
+
     private WifiGateway() {}
 
     public static MachineSpec<WifiGatewayContext> spec(WifiTimings t, Supplier<WifiGatewayContext> contexts) {
@@ -67,6 +70,7 @@ public final class WifiGateway {
     public static MachineSpec<WifiGatewayContext> spec(WifiTimings t, Supplier<WifiGatewayContext> contexts, Function<DeviceLogin, SessionFacts> factsOf) {
         return MachineSpec.<WifiGatewayContext>builder()
             .name(TYPE).contextFactory(contexts)
+            .upSample(new SessionStart(factsOf.apply(SAMPLE)))                            // the facts this machine starts a session with (R2)
             .stateMap(StateMap.builder()
                 .initialState(IDLE)
 

@@ -13,3 +13,7 @@ One line per item, newest last. Times are Dhaka (+06).
 - 2026-10-24 00:12 · **item 2 done** — `identifyPartner(ctx, candidate)` (was identifyEntryPartner), `partnerAbove(tier)` (was
   identifyPartner(tier)), the helpers `byPartnerId` / `byPartnerName` (`RootTree.entryNamed`, a name two partners share names nobody); red
   first (the helpers missing), 4 mutants red; sessionflow 155, samples 69, switch-ledger 50 green. Next: item 3 (the facts' sample at build).
+- 2026-10-24 00:30 · **item 3 done** — the engine refuses at start a signaling machine that shows no `SessionStart` sample of RoutesphereFacts
+  (in words, both cases); LabCall + the four sample specs show theirs; red first (FactsSampleAtBuildTest 3/3, SpecSamplesTest 1/1), 3
+  mutants red; sessionflow 158, samples 70, switch-ledger 50 green (one timing flake of VoiceFlowTest's budget-child test in a direct run
+  under load, 3 reruns green). Item 1's clean copy (4a8b22a): **438/0/0/3**. Next: item 4 (one supervisor class per lane).

@@ -9,6 +9,7 @@ import com.telcobright.statewalk.persistence.PersistenceProvider;
 import com.telcobright.statewalk.registry.MachineSpec;
 import com.telcobright.statewalk.registry.StatemachineRegistry;
 import com.telcobright.statewalk.session.SessionSupervisor;
+import com.telcobright.statewalk.session.events.SessionStart;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -101,9 +102,30 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
         public RoutesphereEngine<C> start() {
             if (signaling == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its signaling machine (.signaling(spec))");
             if (channel == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its channel and decoder (.channel(channel, decoder))");
+            refuseASignalingWithoutItsFactsSample();
             refuseAFastPersistedCadence();
             refuseTwoRecoveryRoads();
             return new RoutesphereEngine<>(this);
+        }
+
+        /**
+         * R2 · The base finds a session's root by its facts' ingress, and statewalk's {@code SessionStart} carries any facts: the lane's
+         * signaling machine SHOWS the facts it starts a session with — a {@code SessionStart} sample of {@code RoutesphereFacts}
+         * ({@code MachineSpec.Builder.upSample}). Refused in words otherwise: every session would be refused {@code NO_TENANT}. (With a store,
+         * statewalk 4.1 also writes the sample and reads it back at build: facts that cannot be kept in the row fail there.)
+         */
+        private void refuseASignalingWithoutItsFactsSample() {
+            List<SessionStart> starts = signaling.upSamples().stream().filter(SessionStart.class::isInstance).map(SessionStart.class::cast).toList();
+            if (starts.isEmpty()) {
+                throw new IllegalStateException("[" + flow.name() + "] the signaling machine '" + signaling.name() + "' shows no SessionStart sample — add"
+                    + " .upSample(new SessionStart(<the lane's RoutesphereFacts>)) to its spec: the base finds the session's root by its facts' ingress,"
+                    + " and without it every session would be refused NO_TENANT");
+            }
+            for (SessionStart start : starts) {
+                if (start.facts() instanceof RoutesphereFacts) continue;
+                throw new IllegalStateException("[" + flow.name() + "] the signaling machine '" + signaling.name() + "': its SessionStart sample carries "
+                    + start.facts().getClass().getName() + ", not RoutesphereFacts — they name no ingress: every session would be refused NO_TENANT");
+            }
         }
 
         /**
