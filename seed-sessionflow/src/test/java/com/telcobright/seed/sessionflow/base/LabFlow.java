@@ -4,9 +4,11 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 
@@ -18,7 +20,7 @@ import java.util.Set;
 /**
  * The lab application on the base: decisions only (its fields are the lab's rules, final, shared by every session — never a session).
  * The payer is the partner the dial names, in the session's own root tree; every tier reserves one unit at its own rate; the plan is the
- * lab's carriers; the reroute table is the call's v1 table.
+ * lab's carriers; the reroute table is the call's v1 table; the call's rules for the rest — answered = delivered, the call's refund rule.
  */
 public class LabFlow extends RoutesphereFlow<LabContext> {
 
@@ -47,6 +49,9 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
 
     @Override public String name() { return name; }
 
+    /** (a) The root by the door the dial came in at. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
+
     @Override protected int serviceGroup(LabContext ctx) { return 0; }
 
     @Override
@@ -59,8 +64,8 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
     }
 
     @Override
-    protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
-        return entryOfPartner(ctx, ((LabFacts) ctx.facts).partnerId());
+    protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
+        return byPartnerId(ctx, ((LabFacts) ctx.facts).partnerId());
     }
 
     @Override
@@ -74,6 +79,11 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
 
     @Override
     protected RerouteAction rerouteActionFor(String cause) { return V1_TABLE.getOrDefault(cause, RerouteAction.FAIL_TERMINAL); }
+
+    @Override protected boolean delivered(LabContext ctx, Outcome outcome) { return ctx.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(LabContext ctx) { return RefundPolicy.callsRule(); }
+
 
     @Override
     protected Object buildSdr(LabContext ctx, Outcome outcome) { return "sdr:" + ctx.sessionId() + ":" + outcome + ":" + ctx.endCause; }

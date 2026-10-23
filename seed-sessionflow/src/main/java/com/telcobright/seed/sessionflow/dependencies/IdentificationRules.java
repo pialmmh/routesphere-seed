@@ -29,6 +29,26 @@ public final class IdentificationRules {
         return List.copyOf(rules);
     }
 
+    /**
+     * The rules as §C.1 carries them inside {@code config.routesphere} (P1-E item 6): {@code identification: {rules: [{root, kind, match}]}}
+     * (a bare list too; {@code tenant} for {@code root} too). The root's word is the rule's tenant: the served root's name.
+     */
+    public static List<IdentificationRule> fromRoutesphere(Map<String, ?> routesphere) {
+        Object identification = routesphere == null ? null : routesphere.get(KEY);
+        Object entries = identification instanceof Map<?, ?> m ? m.get("rules") : identification;
+        if (entries == null) return List.of();
+        if (!(entries instanceof List<?> list)) throw new IllegalArgumentException("config.routesphere.identification.rules is not a list of {root, kind, match}: " + entries);
+        List<IdentificationRule> rules = new ArrayList<>(list.size());
+        for (Object entry : list) rules.add(rootRuleOf(entry));
+        return List.copyOf(rules);
+    }
+
+    private static IdentificationRule rootRuleOf(Object entry) {
+        if (!(entry instanceof Map<?, ?> map)) throw new IllegalArgumentException("an identification rule is {root, kind, match}, not " + entry);
+        String root = word(map, "root");
+        return new IdentificationRule(word(map, "kind"), word(map, "match"), root != null ? root : word(map, "tenant"));
+    }
+
     private static IdentificationRule ruleOf(Object entry) {
         if (!(entry instanceof Map<?, ?> map)) throw new IllegalArgumentException("an identification rule is {kind, match, tenant}, not " + entry);
         return new IdentificationRule(word(map, "kind"), word(map, "match"), word(map, "tenant"));

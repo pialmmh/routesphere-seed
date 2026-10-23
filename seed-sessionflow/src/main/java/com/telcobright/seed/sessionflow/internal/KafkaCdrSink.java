@@ -91,7 +91,7 @@ public final class KafkaCdrSink implements CdrSink {
         }
     }
 
-    private static Properties producerSettings(String bootstrapServers, String clientId) {
+    static Properties producerSettings(String bootstrapServers, String clientId) {
         Properties p = new Properties();
         p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         p.put(ProducerConfig.CLIENT_ID_CONFIG, clientId + "-cdr");

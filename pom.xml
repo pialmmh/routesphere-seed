@@ -21,6 +21,8 @@
         <module>seed-context</module>
         <module>seed-campaign</module>
         <module>seed-routing</module>
+        <!-- R9 (P1-E item 7): the naming conventions every application resolves the same way (tiers, topics, Redis keys) -->
+        <module>seed-naming</module>
         <module>seed-sessionflow</module>
         <!-- the acceptance side of RoutesphereFlow (P1 §H): the samples' signaling machines and scenarios; test code only -->
         <module>seed-sessionflow-samples</module>

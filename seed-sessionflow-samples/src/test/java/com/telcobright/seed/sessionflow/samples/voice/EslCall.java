@@ -60,6 +60,9 @@ public final class EslCall {
         public static EslTimings production() { return new EslTimings(5_000, 8_000, 60_000, 4 * 3600_000L, 5_000); }
     }
 
+    /** The park the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
+    static final ChannelPark SAMPLE = new ChannelPark("sample", "10.10.188.9:8021", "8801700000000", "8801700000001", "10.10.199.20", "sample", 0);
+
     private EslCall() {}
 
     public static MachineSpec<EslCallContext> spec(EslTimings t, Supplier<EslCallContext> contexts) {
@@ -70,6 +73,7 @@ public final class EslCall {
     public static MachineSpec<EslCallContext> spec(EslTimings t, Supplier<EslCallContext> contexts, Function<ChannelPark, SessionFacts> factsOf) {
         return MachineSpec.<EslCallContext>builder()
             .name(TYPE).contextFactory(contexts)
+            .upSample(new SessionStart(factsOf.apply(SAMPLE)))                            // the facts this machine starts a call with (R2)
             .stateMap(StateMap.builder()
                 .initialState(IDLE)
 

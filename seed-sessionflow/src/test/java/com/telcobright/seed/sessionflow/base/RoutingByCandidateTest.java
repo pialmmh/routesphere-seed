@@ -34,7 +34,7 @@ class RoutingByCandidateTest {
         List<Candidate> candidates = List.of(new Creative(1, null), new Creative(1, "creative-b"));
         lab = new Lab(Lab.settings(0), kit -> new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
             @Override protected List<Candidate> selectCandidates(LabContext ctx) { return candidates; }
-            @Override protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) { return entryOfPartner(ctx, ((Creative) candidate).partnerId()); }
+            @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) { return byPartnerId(ctx, ((Creative) candidate).partnerId()); }
             @Override protected RoutePlan routing(LabContext ctx) {
                 Creative c = (Creative) ctx.candidateBeingAdmitted();
                 return c.hop() == null ? RoutePlan.none() : RoutePlan.one(new LabHop(c.hop()));

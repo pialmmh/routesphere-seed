@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-10-23, the owner's correction R13):** the records road was removed in P1-E item 0 — every switch publishes its CDR to Kafka and billing-core writes; this report stays as history.
+
 # P1-R · stream R — the records road (report)
 
 Branch `p1-records` (worktree `routesphere-seed/worktrees/p1-records`), from `routesphere-flow` c32e374 (the brief). Nothing pushed;

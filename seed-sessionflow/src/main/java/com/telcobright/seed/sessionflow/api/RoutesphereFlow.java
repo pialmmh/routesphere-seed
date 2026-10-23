@@ -4,18 +4,12 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
-import com.telcobright.seed.sessionflow.dependencies.RecordStore;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
-import com.telcobright.seed.sessionflow.internal.CdrAssembler;
-import com.telcobright.seed.sessionflow.internal.CdrTableSql;
-import com.telcobright.seed.sessionflow.internal.SessionRecords;
-import com.telcobright.seed.sessionflow.internal.SummaryEntries;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
-import com.telcobright.statewalk.session.SessionFacts;
 import com.telcobright.statewalk.session.SessionHandler;
 import com.telcobright.statewalk.session.SessionTimings;
 import com.telcobright.statewalk.session.Verdict;
@@ -29,35 +23,55 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
  * The ONE base flow of every routesphere application — the ad, the ESL call, the WiFi session, the SMS (P1; design
- * {@code routesphere-flow.html} §2). statewalk 4.0 owns the states ({@code SessionSupervisor}: IDLE · INIT · ADMITTING · ROUTING ·
- * CONNECTING · ACTIVE · SUCCEEDED | FAILED, final); this class owns the routesphere lifecycle and implements every handler call the
- * library makes, FINAL; the application answers only its own questions, through the owner's methods (a)–(g) and the smaller hooks.
+ * {@code routesphere-flow.html} §2; the owner's requirements R1–R13 of 2026-10-23). statewalk 4.1 owns the states
+ * ({@code SessionSupervisor}: IDLE · INIT · ADMITTING · ROUTING · CONNECTING · ACTIVE · SUCCEEDED | FAILED, final); this class owns the
+ * routesphere lifecycle and implements every handler call the library makes, FINAL; the application answers only its own questions,
+ * through the owner's methods (a)–(g) and the smaller hooks.
  *
  * <pre>
- *   library call (state)          the base                                              the owner's methods
- *   onStart       IDLE → INIT     the root by the ingress, its snapshot, the task       (a) identifySiblingLevelTenants · buildTask
+ *   library call (state)          the base                                              the owner's methods (■ = abstract: every lane answers it)
+ *   every call                    the lane's ONE name: statewalk's table, the log        name■ · serviceGroup■ (the CDR's group)
+ *   onStart       IDLE → INIT     the root by the lane's door, its snapshot, the task   (a) identifyTenant■ · buildTask
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyEntryPartner · (b) iterateResellerTenants
- *                                 per tier check · authorize · root rules · reserve      (c) identifyPartner · (e) reserveBalance → rateAtLevel
- *                                 the route at the root, the last gate                   (d) routing · confirmAdmission
- *   nextHop       ROUTING         the plan's current hop                                 (d) routing (made once, at admission)
- *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor
+ *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyPartner■ · (b) iterateResellerTenants
+ *                                 per tier check · authorize · root rules · reserve      (c) partnerAbove · (e) reserveBalance → rateAtLevel■
+ *                                 the route at the root, the last gate                   (d) routing■ · confirmAdmission
+ *   nextHop       ROUTING         the plan's current hop                                 (d) routing■ (made once, at admission)
+ *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
  *   onActive      ACTIVE          the budget child starts on statewalk's SessionActive    onServiceStarted
  *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeCost → chargeAtSettle, billedUnits,
- *                                 rule; the rest back                                        delivered, settleOutcome, refundPolicy
+ *                                 rule; the rest back                                        delivered■, settleOutcome, refundPolicy■
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
  *                                 — then the registry resets every machine to its pool        buildSdr, onEnded
- *                                 the records road (P1-R): the CDR and the SDR written         cdrStatements · sdrStatements ·
- *                                 by the base, one transaction per batch, per root             summaryEntryOf
  * </pre>
+ *
+ * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
+ * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule and its failover by cause — an SMS or an ad
+ * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
+ * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
+ * (b), the finish (g) and every statewalk call are final.
+ *
+ * <p><b>Two ways to write a lane (R5).</b> A big lane subclasses this class and overrides; a small lane answers the same questions as
+ * lambdas with {@link RoutesphereApp#builder} (the seven forced answers required, the hooks the call's defaults). Either way the lane's
+ * helpers are the base's one-line lookups ({@link Lookups}: {@code byListener} · {@code byEslSocket} · {@code byVlan} · {@code byTopic} ·
+ * {@code byIngress} for the root, {@code byPartnerId} · {@code byPartnerName} for the payer), and the lane runs through its own supervisor
+ * class ({@link RoutesphereSupervisor}: {@code RoutesphereEngine.of(new AdSupervisor(flow))}) with a signaling machine that shows its
+ * {@code SessionStart} sample (refused at start otherwise).
+ *
+ * <p><b>One package per application (R6).</b> {@code com.telcobright.<app>}: {@code <App>Facts} (the RoutesphereFacts of its door),
+ * {@code <App>Flow} (this class's answers), {@code <App>Supervisor} (the named class), {@code <App>Signaling} (its MachineSpec),
+ * {@code <App>Frames} (the wire's decoder), {@code <App>Context} (the session's own facts).
+ *
+ * <p><b>The kit (R8).</b> {@code RoutesphereKit.fromBootstrap(source, app)}: the application's yml holds ONE bootstrap url; the roots, their
+ * trees, doors, ledgers (the switch ledger by default, R12), CDR roads ({@code cdr_<root>}, R13) and topics (R9) come from prime-context, and
+ * a root created later is served live (R10).
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
  * {@link RoutesphereKit}. A step keeps nothing in a field; what it learns goes onto the session's context.
@@ -108,7 +122,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     @Override
     public final void onStart(C ctx, SessionStart start) {
         ctx.createdAtMs = kit.clock().millis();
-        ctx.root = safely(ctx, "identifySiblingLevelTenants", () -> identifySiblingLevelTenants(ctx.facts), null);
+        ctx.root = rootOf(ctx);
         if (ctx.root == null) { refuseAtStart(ctx, NO_TENANT); return; }
         if (!takeTheRootsSnapshot(ctx)) { refuseAtStart(ctx, SessionCause.TENANT_UNAVAILABLE); return; }
         String refusal = safely(ctx, "buildTask", () -> step(ctx, "BUILD_TASK", () -> buildTask(ctx)), SessionCause.INTERNAL_ERROR);
@@ -199,30 +213,56 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * (a) The ROOT tenant of this session, by this protocol's ingress identity ({@code listen ip:port}, {@code esl host:port},
-     * {@code vlan gateway:svlan}, {@code topic name}): the identification rules from prime-context's bootstrap. Null = nobody's — the
-     * session fails {@code NO_TENANT}; never a default root. Override only for an ingress the rules cannot say.
+     * (a) ■ Every lane names the ROOT operator that owns this door — "root level tenant identification logic will vary for call, sms, wifi"
+     * (R1): the call by its ESL socket ({@link #byEslSocket}), the ad and the SMS by the HTTP listener ({@link #byListener}), the WiFi by its
+     * VLAN ({@link #byVlan}), the SMS's Kafka door by its topic ({@link #byTopic}) — each helper asks prime-context's identification rules.
+     * Null = nobody's: the session is refused {@code NO_TENANT}, never given a default root.
      */
-    protected String identifySiblingLevelTenants(SessionFacts facts) {
-        Ingress ingress = facts instanceof RoutesphereFacts rf ? rf.ingress() : null;
-        return ingress == null ? null : kit.resolver().tenantOf(ingress).orElse(null);
-    }
+    protected abstract String identifyTenant(RoutesphereFacts facts);
+
+    /** (a) helper · The root of an HTTP listener (the local address the request arrived on); null = no rule names it. */
+    protected final String byListener(String ip, int port) { return kit.lookups().byListener(ip, port); }
+
+    /** (a) helper · The same, the address written {@code <ip>:<port>}. */
+    protected final String byListener(String ipAndPort) { return kit.lookups().byListener(ipAndPort); }
+
+    /** (a) helper · The root of the FreeSWITCH connection a CHANNEL_PARK came from; null = no rule names it. */
+    protected final String byEslSocket(String host, int port) { return kit.lookups().byEslSocket(host, port); }
+
+    /** (a) helper · The same, the socket written {@code <host>:<port>}. */
+    protected final String byEslSocket(String hostAndPort) { return kit.lookups().byEslSocket(hostAndPort); }
+
+    /** (a) helper · The root of a WiFi gateway and its S-VLAN; null = no rule names it. */
+    protected final String byVlan(String gateway, int svlan) { return kit.lookups().byVlan(gateway, svlan); }
+
+    /** (a) helper · The root of the Kafka topic a message was consumed from; null = no rule names it. */
+    protected final String byTopic(String name) { return kit.lookups().byTopic(name); }
+
+    /** (a) helper · The root of an ingress as the facts carry it ({@code facts.ingress()}); null = no door, or no rule names it. */
+    protected final String byIngress(Ingress ingress) { return kit.lookups().byIngress(ingress); }
 
     /** (b) Leaf → reseller → … → root, one tier at a time, inside the session's own tree: the base rule, never overridden. */
     protected final List<Tier> iterateResellerTenants(Tier leaf) { return leaf.ancestorChain(); }
 
     /**
-     * (c) Who pays for this candidate, found in which tier of the session's OWN tree (the lowest in-partner first): a call from the
-     * wire, an ad from the chosen campaign's advertiser. Null = nobody ({@code PARTNER_NOT_FOUND}, or a free candidate runs with no
-     * tier). {@link #entryOfPartner} finds a partner by id in the session's tree.
+     * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —
+     * the caller's partner (by its ip or number prefix); the ad — the chosen campaign's advertiser (the candidate names it); the WiFi — the
+     * subscriber; the SMS — the bind's account. The helpers find a partner inside the session's tree: {@link #byPartnerId},
+     * {@link #byPartnerName}. Null = nobody: {@code PARTNER_NOT_FOUND} (a free candidate runs with no tier).
      */
-    protected abstract Tier identifyEntryPartner(C ctx, Candidate candidate);
+    protected abstract Tier identifyPartner(C ctx, Candidate candidate);
+
+    /** (c) helper · The leaf of a partner whose id is known, INSIDE THE SESSION'S OWN TREE; null = no id, or this tree holds no such partner. */
+    protected final Tier byPartnerId(C ctx, Integer partnerId) { return kit.lookups().byPartnerId(ctx, partnerId); }
+
+    /** (c) helper · The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share it. */
+    protected final Tier byPartnerName(C ctx, String partnerName) { return kit.lookups().byPartnerName(ctx, partnerName); }
 
     /**
      * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}
      * → partner {@code <id>} of this tier, else the partner named as the tenant below ({@link #resellerPartnerOf}).
      */
-    protected Partner identifyPartner(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
+    protected Partner partnerAbove(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
 
     /**
      * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
@@ -257,23 +297,22 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected boolean handleRerouting(C ctx, SignalingFailed failed) { return rerouteByTable(ctx, failed.cause()); }
 
     /**
-     * (g) The finish, from both finals, once: the teardown, the channel slot, the SDR made, the CDR per tier (the records road: with the SDR's
-     * rows in its batch's ONE transaction; else one message, leaf first, on {@code cdr_<root>}), the task, the SDR to its sink, the
-     * application's own close. No step's failure stops the next.
+     * (g) The finish, from both finals, once: the teardown, the channel slot, the CDR per tier (one message, leaf first, on
+     * {@code cdr_<root>} — the switch publishes, billing-core writes, R13), the task, the SDR, the application's own close. No step's
+     * failure stops the next.
      */
     protected final void finishSession(C ctx, Outcome outcome) {
         guarded(ctx, "TEARDOWN", () -> tearDown(ctx, outcome));
         guarded(ctx, "RELEASE_SLOT", () -> kit.slots().release(ctx.sessionId()));
-        Object sdr = safely(ctx, "BUILD_SDR", () -> buildSdr(ctx, outcome), null);
-        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome, sdr));
+        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome));
         guarded(ctx, "CLOSE_TASK", () -> SessionTaskClose.of(this).close(ctx, outcome));
-        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, sdr));
+        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, outcome));
         guarded(ctx, "ON_ENDED", () -> onEnded(ctx, outcome));
         kit.counters().ended.incrementAndGet();
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // The smaller hooks — the call's defaults, in the order a session meets them
+    // The smaller hooks, in the order a session meets them — the call's defaults; ■ = every lane answers it
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /** INIT · Turn the request into the session's task on the context (the numbers, the source, the kind). The refusal, or null. */
@@ -325,8 +364,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         return ctx.lastRefusal != null ? ctx.lastRefusal : SessionCause.NO_CANDIDATE;
     }
 
-    /** CONNECTING · The v1 policy by cause (C12). The default ends the session; the voice lane answers the call's v1 table. */
-    protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+    /**
+     * CONNECTING ■ · Every lane decides its failover by cause, after a signaling failure: {@link RerouteAction#RETRY_SAME} = the same hop,
+     * {@link RerouteAction#REROUTE} = the plan's next hop (under its cap), {@link RerouteAction#FAIL_TERMINAL} = the end. The call answers
+     * the call switch's v1 table (C12: {@code USER_BUSY} → REROUTE, {@code SWITCH_CONGESTION} → RETRY_SAME, …); a lane with one hop and no
+     * retry (the ad after its hand-over, the WiFi gate) answers FAIL_TERMINAL for every cause. Null = FAIL_TERMINAL.
+     */
+    protected abstract RerouteAction rerouteActionFor(String cause);
 
     /** CONNECTING · The signaling reported a phase (ringing, early media, the ad shown). The base stamped the first one (the PDD). */
     protected void onSignalingProgress(C ctx, SignalingProgress progress) { }
@@ -361,10 +405,10 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected Long nextAccount(C ctx, LevelAdmission tier) { return null; }
 
     /**
-     * The final state · Was the service delivered (the tier then pays rate × billed units)? Default: the session was answered. An SMS
-     * answers its delivery report; an ad, the view shown.
+     * The final state ■ · Every lane decides what "delivered" means: delivered, each tier pays rate × billed units; not delivered, the refund
+     * rule decides. The call: it was answered ({@code ctx.answered()}); the SMS: its delivery report said delivered; the ad: the view was shown.
      */
-    protected boolean delivered(C ctx, Outcome outcome) { return ctx.answered(); }
+    protected abstract boolean delivered(C ctx, Outcome outcome);
 
     /**
      * The final state · How many of the rate's units the session is billed for — the same for every tier, each at its own rate (the
@@ -388,8 +432,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The final state · What the session came to, for the refund rule: answered = consumed, else failed (the ad: offered, not shown). */
     protected SettleOutcome settleOutcome(C ctx) { return ctx.answered() ? SettleOutcome.CONSUMED : SettleOutcome.FAILED; }
 
-    /** The final state · The lane's refund rule as its config stands now; the default is the call's (a failed session pays nothing). */
-    protected RefundPolicy refundPolicy(C ctx) { return RefundPolicy.callsRule(); }
+    /**
+     * The final state ■ · Every lane names its refund rule, as its config stands now: what a session NOT delivered pays, by
+     * {@link #settleOutcome} (failed · offered and not consumed). The call: {@code RefundPolicy.callsRule()} (a failed session pays nothing);
+     * the ad: the unshown rule by config; the SMS: the non-delivery rule by config. Null = the call's rule.
+     */
+    protected abstract RefundPolicy refundPolicy(C ctx);
 
     /**
      * The settlement, first · The billed duration in seconds, fixed once; the CDR carries the same number. Default: what the signaling
@@ -432,22 +480,11 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected Object buildSdr(C ctx, Outcome outcome) { return null; }
 
     /**
-     * The records road, per tier record (P1-R §A) · The record's statements in its batch's ONE transaction. The default writes billing-core's
-     * {@code cdr} row in the tier's own schema ({@code CdrTableSql}: the probe of billing-core's key, then the INSERT). A lane overrides to add
-     * rows of its own (the voice: {@code acc_chargeable}) or to write a table of its own. {@code ctx} is null for a record a stopped process
-     * left in the air (the next start writes it from the journal).
+     * The start · The application's own Kafka topics of one served root (R9: {@code Topics.app(app, IN | OUT, name, root)} =
+     * {@code <app>_<in|out>_<name>_<root>}), made at the start beside the root's CDR road and doorbell, and again when a root is added live.
+     * Default: none. Asked only on a kit made from the bootstrap (a kit built by hand has no road to a cluster).
      */
-    protected List<RecordStatement> cdrStatements(C ctx, CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
-
-    /** The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none. */
-    protected List<RecordStatement> sdrStatements(C ctx, Outcome outcome, Object sdr) { return List.of(); }
-
-    /**
-     * The records road, per tier record · What the record puts into its tier's summary input (the batch's {@code summary_affected} row of that
-     * tier); null = nothing. The default: billing-core's entry — {@code {Cdr, Chargeables}}, the pre-rated customer leg of a stated group
-     * ({@code SummaryEntries}). {@code ctx} is null for a record left in the air.
-     */
-    protected Object summaryEntryOf(C ctx, CdrEvent record) { return SummaryEntries.of(record, storeOf(record).switchId()); }
+    protected List<String> topicsOf(String root) { return List.of(); }
 
     /** The finish, last · The application's own closing. */
     protected void onEnded(C ctx, Outcome outcome) { }
@@ -455,48 +492,6 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-
-    /**
-     * The records road (P1-R §B) — the reusable method: the session's records (its CDR per tier, its SDR) handed to the writer of its root,
-     * which writes them and their summary input in ONE transaction per batch and marks the session's line in the journal done after the
-     * commit. The finish uses it; a lane may for records of its own.
-     */
-    protected final void writeRecords(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
-        kit.records().write(recordsOf(ctx.sessionId(), ctx, outcome, tiers, sdr));
-    }
-
-    /**
-     * The records road for records that have no live session: what a stopped process left in the air (the start writes it), or a replay of
-     * the park's file CDR journal ({@code CdrSinks.replay(file, flow::writeRecordsOf)}). The hooks see a null context; the once rule makes a
-     * record written before a no-op.
-     */
-    public final void writeRecordsOf(String sessionId, List<CdrEvent> tiers) {
-        if (tiers == null || tiers.isEmpty()) return;
-        kit.records().write(recordsOf(sessionId, null, null, tiers, null));
-    }
-
-    /** The session's records as its writer takes them: each tier record's statements and summary entry (the hooks), then its SDR's rows. */
-    private SessionRecords recordsOf(String sessionId, C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
-        List<SessionRecords.TierRecord> records = new ArrayList<>(tiers.size());
-        for (CdrEvent record : tiers) records.add(new SessionRecords.TierRecord(record, cdrStatements(ctx, record), summaryEntryOf(ctx, record)));
-        List<RecordStatement> sdrRows = sdr == null ? List.of() : sdrStatements(ctx, outcome, sdr);
-        return new SessionRecords(sessionId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
-    }
-
-    /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
-    protected final RecordStore storeOf(CdrEvent record) {
-        String root = CdrAssembler.rootOf(record);
-        if (kit.recordStores() == null) throw new IllegalStateException("[" + name() + "] the kit has no records road: the CDR goes to its CDR sink");
-        return kit.recordStores().of(root).orElseThrow(() -> new IllegalStateException("[" + name() + "] the records road has no store for the root '"
-            + root + "' of " + record.channelCallUuid));
-    }
-
-    /** The entry of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = this tree holds no such partner. */
-    protected final Tier entryOfPartner(C ctx, int partnerId) {
-        if (ctx.tree == null) return null;
-        EntryPartner entry = ctx.tree.entryOf(partnerId);
-        return entry == null ? null : Tier.entry(entry);
-    }
 
     /** What is left of this session's admission budget, in milliseconds (a dry run: {@code Long.MAX_VALUE}). */
     protected final long admissionTimeLeftMs(C ctx) {
@@ -660,9 +655,8 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * Before the first session of a start: the record of every session a stopped process left in the air is published (handed over: charged
-     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00) — on the records road through
-     * the same writer (a record committed before the death is written before: no second row, no second summary entry), its line done after
-     * the commit. One WARN with the sums.
+     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00) on the root's road
+     * ({@code cdr_<root>}). One WARN with the sums.
      */
     public final void publishWhatWasLeftInTheAir() {
         SessionCdr.LeftInTheAir left = SessionCdr.of(this).publishLeftovers();
@@ -681,6 +675,18 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     final RoutePlan planOf(C ctx) {
         if (ctx.routePlan == null) ctx.routePlan = step(ctx, "ROUTING", () -> routing(ctx));
         return ctx.routePlan;
+    }
+
+    /** (a) The lane's answer for the session's facts — facts that are not {@code RoutesphereFacts} name no door (said in the history). */
+    private String rootOf(C ctx) {
+        if (ctx.facts instanceof RoutesphereFacts facts) return safely(ctx, "identifyTenant", () -> identifyTenant(facts), null);
+        noteFactsWithoutAnIngress(ctx);
+        return null;
+    }
+
+    private void noteFactsWithoutAnIngress(C ctx) {
+        String kind = ctx.facts == null ? "no facts" : ctx.facts.getClass().getName();
+        ctx.history.note(name(), "the session's facts are " + kind + ", not RoutesphereFacts: they name no ingress, so no root — refused " + NO_TENANT);
     }
 
     private boolean takeTheRootsSnapshot(C ctx) {
@@ -712,7 +718,8 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         onTeardown(ctx, outcome);
     }
 
-    private void writeTheSdr(C ctx, Object sdr) {
+    private void writeTheSdr(C ctx, Outcome outcome) {
+        Object sdr = buildSdr(ctx, outcome);
         if (sdr != null) kit.sdr().write(ctx.sessionId(), sdr);
     }
 

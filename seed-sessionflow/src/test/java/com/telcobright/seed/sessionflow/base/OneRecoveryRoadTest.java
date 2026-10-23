@@ -37,7 +37,7 @@ class OneRecoveryRoadTest {
             .ledger(new InMemoryLedger()).cdr(new RecordingCdrSink()).zone(ZoneId.of("Asia/Dhaka")).settings(Lab.settings(0));
         if (journal) kit.journal(SessionJournals.file(dir.resolve("in-the-air.log")));
         LabFlow flow = new LabFlow(kit.build(), Map.of(), Lab.hops("carrier-a"), Set.of());
-        return RoutesphereEngine.of(flow, LabContext::new).signaling(LabCall.spec()).channel(new TestChannel<String, StatemachineEvent>("lab"), Lab::decode);
+        return RoutesphereEngine.of(new LabSupervisor(flow)).signaling(LabCall.spec()).channel(new TestChannel<String, StatemachineEvent>("lab"), Lab::decode);
     }
 
     @Test

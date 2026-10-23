@@ -24,7 +24,7 @@ class RoutesphereKitTest {
     void theTreesTheLedgerTheCdrSinkAndTheZone_haveNoDefault() {
         assertThatThrownBy(() -> complete().tenants(null).build()).hasMessageContaining("tenants");
         assertThatThrownBy(() -> complete().ledger(null).build()).hasMessageContaining("ledger");
-        assertThatThrownBy(() -> complete().cdr(null).build()).hasMessageContaining("cdr");
+        assertThatThrownBy(() -> complete().cdr(null).build()).hasMessageContaining("needs cdr (the CDR sink)").hasMessageNotContaining("records");
         assertThatThrownBy(() -> complete().zone(null).build()).hasMessageContaining("zone");
     }
 

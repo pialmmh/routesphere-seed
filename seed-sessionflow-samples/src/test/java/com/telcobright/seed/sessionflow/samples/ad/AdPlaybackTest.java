@@ -58,18 +58,19 @@ class AdPlaybackTest {
         assertEquals("kamalapur", facts.site());
 
         b.frame("v-1", AdFrame.shown());
-        assertEquals("CONNECTING/SHOWING", b.states("v-1"));
-        b.frame("v-1", AdFrame.progress(5));
-        b.frame("v-1", AdFrame.progress(10));
-        assertEquals("CONNECTING/SHOWING", b.states("v-1"), "a beacon is a stay");
-        assertEquals(2, b.script.count("onProgress:BEACON"));
-
-        b.frame("v-1", AdFrame.viewed(15));
-        assertEquals("ACTIVE/VIEWED", b.states("v-1"), "the view's answer: CONNECTING → ACTIVE, the credit window open");
+        assertEquals("ACTIVE/SHOWING", b.states("v-1"), "the view's answer is /shown (the owner's ruling): CONNECTING → ACTIVE");
         BedContext sup = b.script.last();
         assertEquals("c-77", sup.answer.remoteParty());
         assertEquals("video", sup.answer.codec());
-        assertEquals(15, AdPlayback.watchedSecondsOf(sup.answer));
+        assertEquals(0, AdPlayback.watchedSecondsOf(sup.answer), "nothing watched yet at the answer");
+        b.frame("v-1", AdFrame.progress(5));
+        b.frame("v-1", AdFrame.progress(10));
+        assertEquals("ACTIVE/SHOWING", b.states("v-1"), "a beacon is a stay, a progress in ACTIVE");
+        assertEquals(2, b.script.count("onProgress:BEACON"));
+
+        b.frame("v-1", AdFrame.viewed(15));
+        assertEquals("ACTIVE/VIEWED", b.states("v-1"), "/viewed is a progress: the credit window open");
+        assertEquals(1, b.script.count("onProgress:VIEWED"));
 
         b.frame("v-1", AdFrame.credited());
         assertEquals("-/-", b.states("v-1"), "ACTIVE → SUCCEEDED; both machines final and gone");
@@ -116,14 +117,18 @@ class AdPlaybackTest {
     }
 
     @Test
-    void an_abandoned_view_fails_without_a_second_creative() throws Exception {
+    void a_view_abandoned_after_it_was_shown_ends_settled_without_a_second_creative() throws Exception {
         Bed<AdOut, AdFrame> b = bed("ad-4", LONG, new Script().plan(CREATIVE, CREATIVE).on(AdPlayback.ABANDONED, Script.OnFailure.REROUTE));
         b.frame("v-a", start());
         b.frame("v-a", AdFrame.shown());
         b.frame("v-a", AdFrame.abandoned("back-button"));
         assertEquals("-/-", b.states("v-a"));
         assertFalse(b.script.calls.stream().anyMatch(c -> c.startsWith("retry:")), "the machine ended: no re-route is asked (CN-2) " + b.script.calls);
-        assertEquals(List.of("onFailed:ABANDONED:0", "release", "record:FAILED:ABANDONED"), b.script.from("onFailed:"));
+        List<String> tail = b.script.from("onEnd:");
+        assertEquals("onEnd:ABANDONED:SUBSCRIBER", tail.get(0), "shown = answered: the phone's abandon is the service's end");
+        assertTrue(tail.get(1).startsWith("settle:SUCCEEDED:"), tail.toString());
+        assertEquals("record:SUCCEEDED:ABANDONED", tail.get(2));
+        assertFalse(b.script.calls.contains("release"), "answered: settled, never released");
         assertEquals(List.of("200 AdSessionView c-77", "200 shown", "200 abandoned"), b.wire("v-a"));
         assertEquals(1, b.script.last().attempts);
     }
@@ -140,7 +145,8 @@ class AdPlaybackTest {
         b.frame("v-st", start());                                                 // shown, then the beacons stop
         b.frame("v-st", AdFrame.shown());
         b.awaitGone("v-st", 3_000);
-        assertEquals("record:FAILED:STALLED", last(b));
+        assertTrue(b.script.calls.contains("onEnd:STALLED:TIMER"), b.script.calls.toString());
+        assertEquals("record:SUCCEEDED:STALLED", last(b), "shown = answered: a stalled view is settled");
 
         b.frame("v-cw", start());                                                 // viewed, never credited
         b.frame("v-cw", AdFrame.shown());

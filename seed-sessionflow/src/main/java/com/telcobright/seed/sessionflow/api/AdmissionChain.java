@@ -81,7 +81,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
     // ── one candidate: the call switch's runAdmission ───────────────────────
 
     private String walkCandidate(C ctx, Candidate candidate) {
-        Tier leaf = flow.step(ctx, "IDENTIFY_ENTRY_PARTNER", () -> flow.identifyEntryPartner(ctx, candidate));
+        Tier leaf = flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, candidate));
         String refusal = leaf == null ? admitWithoutPartner(ctx, candidate) : admitThroughTheTiers(ctx, leaf);
         if (refusal == null) refusal = routeAtTheRoot(ctx);
         if (refusal == null) refusal = confirm(ctx, candidate);
@@ -99,7 +99,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
         if (leavesTheSessionsOwnTree(ctx, leaf, root)) return SessionCause.PARTNER_NOT_FOUND;
         keepTheEntry(ctx, leaf);
         for (Tier tier : chain) {
-            Partner partner = tier.isLeaf() ? leaf.partner() : partnerAbove(ctx, tier);
+            Partner partner = tier.isLeaf() ? leaf.partner() : partnerOfTheTierAbove(ctx, tier);
             String refusal = admitAtLevel(ctx, tier, partner);
             if (refusal != null) return refusal;
         }
@@ -127,8 +127,8 @@ final class AdmissionChain<C extends RoutesphereContext> {
         return true;
     }
 
-    private Partner partnerAbove(C ctx, Tier tier) {
-        return flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(tier));
+    private Partner partnerOfTheTierAbove(C ctx, Tier tier) {
+        return flow.step(ctx, "PARTNER_ABOVE", () -> flow.partnerAbove(tier));
     }
 
     /**

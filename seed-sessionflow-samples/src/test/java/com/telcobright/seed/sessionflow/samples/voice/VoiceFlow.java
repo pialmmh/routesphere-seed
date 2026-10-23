@@ -6,9 +6,11 @@ import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Verdict;
@@ -76,6 +78,9 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
 
     @Override public String name() { return "CallSupervisor"; }
 
+    /** (a) C1: the root by the FreeSWITCH connection the park came from. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byEslSocket(((EslFacts) facts).esl()); }
+
     /** Billing detects a voice call's service group itself. */
     @Override protected int serviceGroup(VoiceContext call) { return 0; }
 
@@ -93,9 +98,9 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
 
     /** C1: the partner by the source address, found in the call's OWN root's tree; none → PARTNER_NOT_FOUND. */
     @Override
-    protected Tier identifyEntryPartner(VoiceContext call, Candidate candidate) {
+    protected Tier identifyPartner(VoiceContext call, Candidate candidate) {
         Integer partnerId = partnerBySource.get(call.root + "|" + facts(call).sourceIp());
-        return partnerId == null ? null : entryOfPartner(call, partnerId);
+        return partnerId == null ? null : byPartnerId(call, partnerId);
     }
 
     /** C4 · the entry tier, before the partner's slot: a call to the DID range must reach a DID this root knows. */
@@ -156,6 +161,12 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
             default -> RerouteAction.FAIL_TERMINAL;
         };
     }
+
+    /** C17: the call is delivered when it was answered; an unanswered call takes the call's refund rule (it pays nothing). */
+    @Override protected boolean delivered(VoiceContext call, Outcome outcome) { return call.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(VoiceContext call) { return RefundPolicy.callsRule(); }
+
 
     /** C13: the answer — the recording starts here (the root's switch; always on in the sample). */
     @Override protected void onServiceStarted(VoiceContext call) { call.recordingStarted = true; }

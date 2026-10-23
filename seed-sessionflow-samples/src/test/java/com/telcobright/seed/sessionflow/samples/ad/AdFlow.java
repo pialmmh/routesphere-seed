@@ -4,8 +4,9 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
-import com.telcobright.seed.sessionflow.api.RecordStatement;
+import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.SettleOutcome;
 import com.telcobright.seed.sessionflow.api.Tier;
@@ -60,6 +61,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     @Override public String name() { return "AdSupervisor"; }
 
+    /** (a) The root by the HTTP listener the request came in on. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byListener(((AdFacts) facts).listen()); }
+
     /** An ad view is group 30, taken as given. */
     @Override protected int serviceGroup(AdContext view) { return 30; }
 
@@ -92,9 +96,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     /** The inversion: the payer is the candidate's advertiser, found in its tier of THIS view's tree; the house ad has none. */
     @Override
-    protected Tier identifyEntryPartner(AdContext view, Candidate candidate) {
+    protected Tier identifyPartner(AdContext view, Candidate candidate) {
         AdCandidate k = (AdCandidate) candidate;
-        return k.house() || k.payerPartnerId() == null ? null : entryOfPartner(view, k.payerPartnerId());
+        return k.house() || k.payerPartnerId() == null ? null : byPartnerId(view, k.payerPartnerId());
     }
 
     /** The whole view at this tier's per-view rate. */
@@ -118,14 +122,23 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
         return k == null ? RoutePlan.none() : RoutePlan.one(k.creative());
     }
 
-    /** AdPlayback's phases: the hand-over (OFFERED), then the screen (SHOWING). */
+    /** The creative is the one hop: never a second creative after the hand-over, whatever the cause. */
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /** AdPlayback's progress: the hand-over (OFFERED), the beacons, the whole view (VIEWED) — each with the seconds watched so far. */
     @Override
     protected void onSignalingProgress(AdContext view, SignalingProgress progress) {
         if (AdPlayback.OFFERED.equals(progress.phase())) view.handedOver = true;
-        if (AdPlayback.SHOWING.equals(progress.phase())) view.shown = true;
+        if (AdPlayback.VIEWED.equals(progress.phase())) view.viewed = true;
+        int watched = AdPlayback.watchedSecondsOf(progress);
+        if (watched >= 0) view.watchedSeconds = watched;
     }
 
-    @Override protected void onAnswered(AdContext view, Established answer) { view.watchedSeconds = AdPlayback.watchedSecondsOf(answer); }
+    /** The answer is /shown (the owner's ruling): the creative on the screen — the view is delivered. */
+    @Override protected void onAnswered(AdContext view, Established answer) { view.shown = true; }
+
+    /** A view's task completes when it was watched to its end (/viewed), not when it was only shown. */
+    @Override protected boolean taskCompleted(AdContext view, Outcome outcome) { return outcome == Outcome.SUCCEEDED && view.viewed; }
 
     @Override protected boolean delivered(AdContext view, Outcome outcome) { return view.shown; }
 
@@ -136,14 +149,6 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     @Override protected RefundPolicy refundPolicy(AdContext view) { return RefundPolicy.of(Rule.REFUND, unshownCharged ? Rule.CHARGE : Rule.REFUND); }
 
-    /** On the records road (P1-R §C5): the view's SDR is a row of its root's {@code ad_sdr}, in the same transaction as its CDR; once per view. */
-    @Override
-    protected List<RecordStatement> sdrStatements(AdContext view, Outcome outcome, Object sdr) {
-        AdSdr s = (AdSdr) sdr;
-        return List.of(RecordStatement.of("insert into " + s.root() + ".ad_sdr (session_id, campaign_id, creative_id, handed_over, shown, watched_seconds,"
-            + " outcome, end_cause) values (?, ?, ?, ?, ?, ?, ?, ?) on conflict do nothing", s.sessionId(), s.campaignId(), s.creativeId(), s.handedOver(),
-            s.shown(), s.watchedSeconds(), s.outcome(), s.endCause()));
-    }
 
     @Override
     protected Object buildSdr(AdContext view, Outcome outcome) {

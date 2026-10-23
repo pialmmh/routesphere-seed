@@ -18,12 +18,4 @@ public final class FlowCounters {
     public final AtomicLong owed = new AtomicLong();
     /** Calls not handed over because their line in the journal of the calls in the air could not be written (R1-6). */
     public final AtomicLong journalRefused = new AtomicLong();
-    /** The records road (P1-R): batches committed; tier records written now (summed); tier records found written before (not summed). */
-    public final AtomicLong recordBatches = new AtomicLong();
-    public final AtomicLong recordsWritten = new AtomicLong();
-    public final AtomicLong recordsWrittenBefore = new AtomicLong();
-    /** The records road's failure road: tier records in the batches that parked a writer; times a writer parked; times it un-parked. */
-    public final AtomicLong recordsParked = new AtomicLong();
-    public final AtomicLong recordParks = new AtomicLong();
-    public final AtomicLong recordUnparks = new AtomicLong();
 }

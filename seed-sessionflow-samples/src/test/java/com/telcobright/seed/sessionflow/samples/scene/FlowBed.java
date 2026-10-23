@@ -3,6 +3,7 @@ package com.telcobright.seed.sessionflow.samples.scene;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.api.RoutesphereEngine;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
+import com.telcobright.seed.sessionflow.api.RoutesphereSupervisor;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.statewalk.channel.Delivery;
 import com.telcobright.statewalk.channel.TestChannel;
@@ -14,6 +15,7 @@ import com.telcobright.statewalk.registry.StatemachineRegistry;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -22,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * One sample on the base, end to end: the application's {@link RoutesphereFlow} run by the base's {@link RoutesphereEngine} (statewalk's
+ * One sample on the base, end to end: the application's {@link RoutesphereFlow} — through its own supervisor class — run by the base's {@link RoutesphereEngine} (statewalk's
  * SessionSupervisor + the lane's signaling machine + the budget child when the flow renews), the lane's fake channel with its decoder,
  * optionally a store. Keeps every supervisor context the kit made, so a test reads a session after its machines went back to the pools.
  */
@@ -35,18 +37,20 @@ public final class FlowBed<C extends RoutesphereContext, O, I> implements AutoCl
     private final String signalingType;
     private final int supervisorsAtStart, signalingAtStart, budgetsAtStart;
 
-    public FlowBed(RoutesphereFlow<C> flow, Supplier<C> contexts, MachineSpec<?> signaling, TestChannel<O, I> channel,
-                   BiFunction<String, I, Delivery> decoder) {
-        this(flow, contexts, signaling, channel, decoder, null);
+    /** @param supervisorOf the lane's own supervisor class over the contexts given ({@code c -> new AdSupervisor(flow, c)}) */
+    public FlowBed(Function<Supplier<C>, ? extends RoutesphereSupervisor<C>> supervisorOf, Supplier<C> contexts, MachineSpec<?> signaling,
+                   TestChannel<O, I> channel, BiFunction<String, I, Delivery> decoder) {
+        this(supervisorOf, contexts, signaling, channel, decoder, null);
     }
 
     /** With a store: {@code PersistenceMode.RESUME} — built, the node restores every unfinished session before its channel opens. */
-    public FlowBed(RoutesphereFlow<C> flow, Supplier<C> contexts, MachineSpec<?> signaling, TestChannel<O, I> channel,
-                   BiFunction<String, I, Delivery> decoder, PersistenceProvider store) {
-        this.flow = flow;
+    public FlowBed(Function<Supplier<C>, ? extends RoutesphereSupervisor<C>> supervisorOf, Supplier<C> contexts, MachineSpec<?> signaling,
+                   TestChannel<O, I> channel, BiFunction<String, I, Delivery> decoder, PersistenceProvider store) {
+        RoutesphereSupervisor<C> supervisor = supervisorOf.apply(() -> keep(contexts.get()));
+        this.flow = supervisor.flow();
         this.channel = channel;
         this.signalingType = signaling.name();
-        RoutesphereEngine.Builder<C> b = RoutesphereEngine.of(flow, () -> keep(contexts.get())).signaling(signaling).channel(channel, decoder);
+        RoutesphereEngine.Builder<C> b = RoutesphereEngine.of(supervisor).signaling(signaling).channel(channel, decoder);
         if (store != null) b.persistence(PersistenceMode.RESUME, () -> store);
         this.engine = b.start();
         if (store != null) awaitTheRestore();

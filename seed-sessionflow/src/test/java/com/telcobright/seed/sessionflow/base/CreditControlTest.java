@@ -258,7 +258,7 @@ class CreditControlTest {
         RoutesphereKit kit = RoutesphereKit.builder().tenants(com.telcobright.seed.sessionflow.spi.TenantLookup.of(lab.btcl)).ledger(lab.ledger)
             .cdr((id, t) -> { }).zone(ZoneId.of("Asia/Dhaka")).settings(Lab.settings(30)).build();
         LabFlow flow = new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of());
-        assertThatThrownBy(() -> RoutesphereEngine.of(flow, LabContext::new).signaling(LabCall.spec()).channel(lab.wire, Lab::decode)
+        assertThatThrownBy(() -> RoutesphereEngine.of(new LabSupervisor(flow)).signaling(LabCall.spec()).channel(lab.wire, Lab::decode)
                 .persistence(PersistenceMode.SAVE, InMemoryPersistenceProvider::new).start())
             .isInstanceOf(IllegalStateException.class).hasMessageContaining("every 30 s").hasMessageContaining("§L.2");
     }

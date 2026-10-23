@@ -249,7 +249,7 @@ class RestoreLostUpTest {
     }
 
     private FlowBed<VoiceContext, EslOut, EslFrame> node(VoiceFlow flow, PersistenceProvider store) {
-        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(flow, VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new),
+        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new),
             new EslChannel(), EslFrames::decode, store);
         open.add(b);
         return b;

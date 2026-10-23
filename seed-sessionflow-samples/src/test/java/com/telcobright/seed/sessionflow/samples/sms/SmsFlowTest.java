@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.samples.sms;
 
 import com.telcobright.seed.campaign.api.TaskState;
+import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.samples.bed.CrashingStore;
 import com.telcobright.seed.sessionflow.samples.scene.FlowBed;
@@ -39,8 +40,8 @@ class SmsFlowTest {
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed(boolean refund, SmsTimings t) { return bed(refund, t, World.settings(), null); }
 
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed(boolean refund, SmsTimings t, RoutesphereSettings s, PersistenceProvider store) {
-        SmsFlow flow = new SmsFlow(w.kit(s), USERS, World.RATES, SMSCS, refund);
-        FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(flow, SmsContext::new, SmsSubmit.spec(t, SmsSubmitContext::new), new SmsChannel(),
+        RoutesphereFlow<SmsContext> flow = SmsFlow.of(w.kit(s), USERS, World.RATES, SMSCS, refund);
+        FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(c -> new SmsSupervisor(flow, c), SmsContext::new, SmsSubmit.spec(t, SmsSubmitContext::new), new SmsChannel(),
             SmsFrames::decode, store);
         open.add(b);
         return b;

@@ -49,7 +49,7 @@ class OneTablePerLaneTest {
             .ledger(ledger).cdr(new RecordingCdrSink()).zone(ZoneId.of("Asia/Dhaka")).settings(Lab.settings(0)).build();
         LabFlow flow = new LabFlow(kit, supervisorName, Map.of(), Lab.hops("carrier-a"), Set.of());
         TestChannel<String, StatemachineEvent> wire = new TestChannel<>(supervisorName);
-        engines.add(RoutesphereEngine.of(flow, LabContext::new).signaling(LabCall.spec()).channel(wire, Lab::decode)
+        engines.add(RoutesphereEngine.of(new LabSupervisor(flow)).signaling(LabCall.spec()).channel(wire, Lab::decode)
             .persistence(PersistenceMode.SAVE, () -> new JdbcPersistenceProvider(pool)).start());
         return wire;
     }

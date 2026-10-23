@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * §C · (a) identifySiblingLevelTenants — the root first, per protocol: the ingress → the ROOT by the bootstrap's rules, and from then on
+ * §C · (a) identifyTenant — the root first, per protocol: the ingress → the ROOT by the bootstrap's rules, and from then on
  * every lookup is scoped to that root's tree. Two roots whose partner ids overlap; a request per root; no lookup crosses roots; no match
  * refused NO_TENANT; a rule naming an unknown root refused at load.
  */
@@ -106,7 +106,7 @@ class RootFirstTest {
     @Test
     void anOverrideThatFindsThePayerInAnotherRootsTree_isRefusedPartnerNotFound_theBelt() {
         lab = new Lab(Lab.settings(0), kit -> new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
-            @Override protected Tier identifyEntryPartner(LabContext ctx, Candidate candidate) {
+            @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) {
                 var tele2 = kit.tenants().snapshot("tele2").orElseThrow();            // a lookup across roots: the bug the belt stops
                 return Tier.entry(tele2.entryOf(1));
             }

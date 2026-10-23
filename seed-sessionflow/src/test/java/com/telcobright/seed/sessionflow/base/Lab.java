@@ -77,7 +77,7 @@ public final class Lab implements AutoCloseable {
             .zone(ZoneId.of("Asia/Dhaka")).settings(settings)
             .build();
         this.flow = flows.apply(kit);
-        this.engine = RoutesphereEngine.of(flow, this::newContext).signaling(LabCall.spec()).channel(wire, Lab::decode).start();
+        this.engine = RoutesphereEngine.of(new LabSupervisor(flow, this::newContext)).signaling(LabCall.spec()).channel(wire, Lab::decode).start();
     }
 
     /** The lab's settings: a pool of 8, INIT 2 s, ADMITTING 2 s, CONNECTING 5 s, ACTIVE 60 s, the cap 120 s, the given renewal period. */
@@ -149,7 +149,7 @@ public final class Lab implements AutoCloseable {
         partners.forEach((tenant, ids) -> { for (int id : ids) ledger.fund(tenant, id, "100.00"); });
     }
 
-    public static Tenant btclTree() {
+    static Tenant btclTree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("btcl").partner(1, "btcl-client", PartnerType.CUSTOMER).partner(44, "res_44", PartnerType.RESELLER);
         b.tenant("res_44", "btcl").partner(5, "res44-client", PartnerType.CUSTOMER).partner(7, "res_44_7", PartnerType.RESELLER);
@@ -157,7 +157,7 @@ public final class Lab implements AutoCloseable {
         return b.build();
     }
 
-    public static Tenant tele2Tree() {
+    static Tenant tele2Tree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("tele2").partner(1, "tele2-client", PartnerType.CUSTOMER).partner(9, "res_9", PartnerType.RESELLER);
         b.tenant("res_9", "tele2").partner(3, "res9-client", PartnerType.CUSTOMER);

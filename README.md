@@ -13,18 +13,21 @@ small and stays small. First consumer: **wifi-sphere**.
   default, or a named ROUTING POLICY — a DB entity with one JSON document — picked in config. See
   `seed-routing/README.md`.
 
-- `seed-sessionflow` — `RoutesphereFlow`, the ONE base flow of every switch (P1): the handler of statewalk 4.0's final
-  `SessionSupervisor` — the root tenant by the session's ingress, the reseller tiers leaf to root, routing, credit control
-  through one ledger port, rerouting by cause, the finish (one CDR message per session, a record per tier, on `cdr_<root>`).
-  An application answers only its own questions. See `seed-sessionflow/README.md`.
+- `seed-naming` — the names every application resolves the same way (R9): a reseller tier's database (prime-context's RootNaming
+  rule), the platform topics `<name>_<root>`, an application's own `<app>_<in|out>_<name>_<root>`, Redis keys `<root>:<app>:<name>`.
+- `seed-sessionflow` — `RoutesphereFlow`, the ONE base flow — the FRAMEWORK every routesphere application extends (P1, P1-E): the
+  handler of statewalk 4.1's final `SessionSupervisor` — the root by the lane's door (`identifyTenant`), the payer (`identifyPartner`),
+  the reseller tiers leaf to root, routing, the prepaid piece through one ledger port, rerouting by cause, the finish (one CDR message per
+  session, a record per tier, on `cdr_<root>`); a lane is a subclass or a `RoutesphereApp` builder with its own supervisor class; the kit
+  from ONE bootstrap url (`RoutesphereKit.fromBootstrap`), roots added live. See `seed-sessionflow/README.md`.
 - `seed-sessionflow-samples` — the acceptance side of the base, test code only (nothing ships): the four signaling machines as statewalk
   4.0 `MachineSpec`s with their fake channels and decoders (AdPlayback, EslCall, WifiGateway, SmsSubmit) and the four `RoutesphereFlow`
   samples (AdFlow, VoiceFlow, WifiFlow, SmsFlow) with the scenarios every sample runs — two roots, 1–3 tiers, credit, the finish, a crash.
   The model for P2–P5. Report: `docs/agents/P1-T-report.md`.
 - `seed-switch-ledger` — the SWITCH LEDGER on the base: the base's `LedgerPort` over the switch's own MemLedger (package accounts, one
   reserve row per tier per session, settled exactly at the end), the call switch's account order, the one credit primitive, the orphan
-  reaper, the call's C14 remainder (`WindowRenewal`). For a switch that follows the call (wifi-sphere); the base never depends on it. See
-  `seed-switch-ledger/README.md`.
+  reaper, the call's C14 remainder (`WindowRenewal`); the bootstrap's default `switch` ledger (`SwitchLedgerMaker`, found on the
+  classpath). The base never depends on it. See `seed-switch-ledger/README.md`.
 
 Read `docs/DESIGN.md` for the decisions (why plain libs, not Quarkus
 extensions), the rules (dependency direction, promote-don't-copy), and the

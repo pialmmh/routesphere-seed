@@ -5,6 +5,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.Ingress;
+import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
@@ -12,10 +13,12 @@ import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.switchledger.api.AccountOrder;
 import com.telcobright.seed.switchledger.api.LiveBalance;
 import com.telcobright.seed.switchledger.api.WindowRenewal;
+import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
 import com.telcobright.statewalk.session.Verdict;
 import com.telcobright.statewalk.session.events.Established;
@@ -65,6 +68,9 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
 
     @Override public String name() { return "WifiLikeSupervisor"; }
 
+    /** (a) The root by the gateway's door ({@code vlan gw-1:310}). */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
+
     @Override protected int serviceGroup(Session session) { return 0; }
 
     @Override
@@ -77,9 +83,9 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     }
 
     @Override
-    protected Tier identifyEntryPartner(Session session, Candidate candidate) {
+    protected Tier identifyPartner(Session session, Candidate candidate) {
         Integer partnerId = partnerByMac.get(session.mac);
-        return partnerId == null ? null : entryOfPartner(session, partnerId);
+        return partnerId == null ? null : byPartnerId(session, partnerId);
     }
 
     /** The tier's rate on its partner's first unit bucket; no rate = a free tier; a rate with no bucket = unrated (no package, no wifi). */
@@ -94,6 +100,15 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     }
 
     @Override protected RoutePlan routing(Session session) { return RoutePlan.one(new Gate("gw-1")); }
+
+    /** The gate is the one hop: no re-route, whatever the cause. */
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /** The call's rules: delivered = answered; not delivered pays nothing. */
+    @Override protected boolean delivered(Session session, Outcome outcome) { return session.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(Session session) { return RefundPolicy.callsRule(); }
+
 
     /** The same window again, on the tier's own account. */
     @Override

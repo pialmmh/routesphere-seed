@@ -55,7 +55,7 @@ class VoiceFlowTest {
 
     private FlowBed<VoiceContext, EslOut, EslFrame> bed(RoutesphereSettings s, EslTimings t, PersistenceProvider store) {
         VoiceFlow flow = new VoiceFlow(w.kit(s), PARTNERS, World.RATES, ROUTES);
-        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(flow, VoiceContext::new, EslCall.spec(t, EslCallContext::new), new EslChannel(),
+        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(t, EslCallContext::new), new EslChannel(),
             EslFrames::decode, store);
         open.add(b);
         return b;
@@ -319,7 +319,7 @@ class VoiceFlowTest {
     void the_entry_tier_refuses_an_unknown_did_before_anything_and_a_sip_account_over_its_cap_before_any_reserve() throws Exception {
         VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), PARTNERS, World.RATES, ROUTES, java.util.Set.of("btcl|09678000001"),
             Map.of("btcl|2002", 1));
-        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(flow, VoiceContext::new, EslCall.spec(ESL, EslCallContext::new), new EslChannel(),
+        FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(ESL, EslCallContext::new), new EslChannel(),
             EslFrames::decode);
         open.add(b);
 

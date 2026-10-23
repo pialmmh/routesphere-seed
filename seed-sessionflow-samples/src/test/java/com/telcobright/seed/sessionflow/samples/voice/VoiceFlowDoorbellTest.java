@@ -43,7 +43,7 @@ class VoiceFlowDoorbellTest {
         partners.put("btcl|10.0.0.5", 705);
         w.ledger.fund("res_44", 705, "100.00");
         VoiceFlow flow = new VoiceFlow(w.kit(World.settings(), trees), partners, rates, VoiceFlowTest.ROUTES);
-        b = new FlowBed<>(flow, VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new), new EslChannel(), EslFrames::decode);
+        b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new), new EslChannel(), EslFrames::decode);
         long btclV1 = trees.snapshot("btcl").orElseThrow().version();
         long cclV1 = trees.snapshot("ccl").orElseThrow().version();
 
