@@ -34,7 +34,7 @@ class StatewalkPinTest {
             assertThat(in).as("statewalk's pom.properties on the classpath").isNotNull();
             Properties p = new Properties();
             p.load(in);
-            assertThat(p.getProperty("version")).isEqualTo("4.1.0-SNAPSHOT");
+            assertThat(p.getProperty("version")).isEqualTo("4.1.0");
         }
     }
 }
