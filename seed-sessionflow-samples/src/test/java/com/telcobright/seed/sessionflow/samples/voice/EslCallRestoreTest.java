@@ -75,9 +75,10 @@ class EslCallRestoreTest {
      * The row the store kept is the session's last landed picture: the supervisor ACTIVE, its signaling machine either still
      * DISCONNECTING (its TERMINATED and the supervisor's SUCCEEDED went out as one write, the one that never landed) or already
      * TERMINATED (written on its own just before). Either way the next node ends the session a second time: by the restored machine's
-     * timer (SUCCEEDED, the same talk time), or — the machine being final, the supervisor is seated alone — by ACTIVE's own deadline
-     * (FAILED, MAX_DURATION_REACHED, the downtime billed as talk time: §L.3). The base's money calls must make that second end a
-     * no-op (§L.1); the scenarios of the flows prove it on the ledger and the CDR sink.
+     * timer (SUCCEEDED, the same talk time), or — the machine being final — by the ServiceEnd it had published, which the restore
+     * delivers again (statewalk 4.1, the outbox: SUCCEEDED, the same talk time; on 4.0.0 the supervisor was seated alone and ACTIVE's
+     * own deadline ended it, FAILED, MAX_DURATION_REACHED). The base's money calls must make that second end a no-op (§L.1); the
+     * scenarios of the flows prove it on the ledger and the CDR sink.
      */
     @Test
     void a_node_that_dies_between_the_settle_and_the_final_row_leaves_an_older_row_and_the_next_node_ends_the_session_again() throws Exception {
@@ -104,7 +105,7 @@ class EslCallRestoreTest {
             assertEquals("record:SUCCEEDED:NORMAL_CLEARING", secondEnd, "the restored machine's timer ended it with the end it had built");
         } else {
             assertEquals(EslCall.TERMINATED, machineInTheRow);
-            assertEquals("record:FAILED:MAX_DURATION_REACHED", secondEnd, "the supervisor alone: only ACTIVE's own deadline ends it");
+            assertEquals("record:SUCCEEDED:NORMAL_CLEARING", secondEnd, "4.1: the restore delivers the machine's ServiceEnd again");
         }
         assertEquals(List.of("FAILED", "SUCCEEDED").contains(store.load(A, NAME).orElseThrow().currentState()), true, "node B's final row landed");
     }

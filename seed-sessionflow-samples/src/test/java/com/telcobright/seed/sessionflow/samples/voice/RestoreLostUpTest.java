@@ -17,7 +17,6 @@ import com.telcobright.statewalk.persistence.SessionBundle;
 import com.telcobright.statewalk.session.SessionTimings;
 
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -34,15 +33,15 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * R-1 · the money cases behind finding §10.2 (P1 T10, the architect's follow-up): statewalk restores a session from its last LANDED row,
  * so an {@code up} that crossed a crash — the signaling machine's last word, published to a supervisor whose next element never landed —
- * is lost. Each test asserts what the session SHOULD come to and is {@code @Disabled}: today it is red, and its red output is the evidence
- * for the owner's ruling (P1-T-report §12). Nothing in statewalk or the base is changed.
+ * is lost. Each test asserts what the session SHOULD come to. On statewalk 4.0.0 all four were red — the evidence for the owner's ruling
+ * (P1-T-report §12); his ruling, the outbox, is statewalk 4.1 (SW-41: a child's kept up is delivered again by the restore), and they are
+ * green on it. Nothing in the base is changed.
  *
  * <p>The node's death is ONE switch ({@link Crash}) shared by its store, its ledger and its CDR road: after it, nothing the dead node does
  * reaches the world. Money is made visible: the leaf pays 60.00 a minute (one a second), the reseller 30.00, billed by the second.
  */
 class RestoreLostUpTest {
 
-    static final String R1 = "R-1: statewalk restore — an up lost in a crash; waits for the owner's ruling";
     static final String ID = "c-r1";
     static final Map<String, BigDecimal> RATES = Map.of("res_44#701", new BigDecimal("60.00"), "btcl#44", new BigDecimal("30.00"));
 
@@ -60,7 +59,6 @@ class RestoreLostUpTest {
      * next node restores the supervisor ALONE in ACTIVE (its machine is final): nobody sends the end again.
      */
     @Test
-    @Disabled(R1)
     void a_call_hung_up_whose_settle_the_crash_cut_is_billed_to_the_hangup_not_to_actives_maximum() throws Exception {
         long activeMaxSec = 6;
         RoutesphereSettings s = World.settings(activeMaxSec);
@@ -112,7 +110,6 @@ class RestoreLostUpTest {
      * talking, but the session does not know it was answered.
      */
     @Test
-    @Disabled(R1)
     void an_answer_lost_in_a_crash_the_restored_call_stays_answered_is_not_cut_and_is_charged_for_its_talk() throws Exception {
         long connectingSec = 3;
         RoutesphereSettings s = new RoutesphereSettings(8, 2, 80, new SessionTimings(2, 2, connectingSec, 20), 0, 0, 0, false, 500);
@@ -132,12 +129,16 @@ class RestoreLostUpTest {
 
         FlowBed<VoiceContext, EslOut, EslFrame> b = node(flow(w.kit(s)), store);
         String restoredAs = b.states(ID);
-        b.awaitGone(ID, (connectingSec + 5) * 1000);                                // the caller is still talking: nobody hung up
+        await("the answer delivered again: ACTIVE on node B", () -> b.states(ID).equals("ACTIVE/ANSWERED"));   // 4.1: the outbox
+        Thread.sleep(500);                                                           // the caller talks on, then hangs up on node B
+        b.frame(ID, EslFrame.hangup(ID, "NORMAL_CLEARING"));
+        b.channel.inject(ID, EslFrame.hangupComplete(ID, "NORMAL_CLEARING")).toCompletableFuture().get(5, SECONDS);
+        b.awaitGone(ID, (connectingSec + 5) * 1000);
         long endedAt = System.currentTimeMillis();
 
         List<String> wireOfB = b.wire(ID);
         CdrEvent leaf = w.cdrs.of(ID).get(0).tiers().get(0);
-        String numbers = String.format("R-1(b) answered, then talking for %.1f s until the switch ended it · the row at the crash: %s · restored as %s"
+        String numbers = String.format("R-1(b) answered, then talking for %.1f s until the caller hung up on node B · the row at the crash: %s · restored as %s"
                 + " · node B's wire: %s · the CDR's cause %s, answer time %s, billed %s s · the ledger: %s · the leaf paid %s",
             (endedAt - answeredAt) / 1000.0, rowAtTheCrash, restoredAs, wireOfB, leaf.hangupCause, leaf.answerTime, leaf.durationSec, moneyOf(w.ledger),
             new BigDecimal("100.00").subtract(w.balance("res_44", 701)));
@@ -154,7 +155,6 @@ class RestoreLostUpTest {
      * session as never answered.
      */
     @Test
-    @Disabled(R1)
     void a_hangup_after_a_lost_answer_reaches_the_restored_supervisor_and_the_call_is_charged_for_its_talk() throws Exception {
         long connectingSec = 3;
         RoutesphereSettings s = new RoutesphereSettings(8, 2, 80, new SessionTimings(2, 2, connectingSec, 20), 0, 0, 0, false, 500);
@@ -202,7 +202,6 @@ class RestoreLostUpTest {
      * seats the supervisor (ACTIVE) and the budget child (still live in the row) — and the child renews a window for a call that ended.
      */
     @Test
-    @Disabled(R1)
     void a_restored_budget_child_renews_no_window_for_a_call_that_already_ended() throws Exception {
         long activeMaxSec = 10;
         RoutesphereSettings s = World.settings(activeMaxSec).withReservePeriodSec(60).withReserveInitialDelaySec(2);

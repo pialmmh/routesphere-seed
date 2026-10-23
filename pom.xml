@@ -33,7 +33,9 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- P1 (2026-10-22): the ONE statewalk of the seed — 4.0.0 (tag v4.0.0): the final SessionSupervisor + SessionHandler,
-             signaling machines with a mandatory up, one row per session. statewalk-v2 and state-walk v1 stay out of the seed. -->
-        <statewalk.version>4.0.0</statewalk.version>
+             signaling machines with a mandatory up, one row per session. statewalk-v2 and state-walk v1 stay out of the seed.
+             SW-41 (2026-10-23): 4.1 — the outbox (an up is never lost in a crash, R-1), ServiceEnd.detail, ACTIVE takes
+             SignalingProgress, LONGTEXT on MariaDB, the PostgreSQL DDL lock. 4.1.0-SNAPSHOT until the owner releases 4.1.0. -->
+        <statewalk.version>4.1.0-SNAPSHOT</statewalk.version>
     </properties>
 </project>
