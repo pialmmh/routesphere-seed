@@ -170,10 +170,13 @@ final class SessionCdr<C extends RoutesphereContext> {
         return calls == 0 && neverHandedOver == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units, neverHandedOver, returned, returnedMoney, owed, closed);
     }
 
-    /** A leftover's records on the lane's road: the records road's writer (its line done after the commit), else the CDR sink, then done. */
+    /**
+     * A leftover's records on the lane's road: the records road's writer (its line done after the commit), else the CDR sink on its ROOT's
+     * road ({@code cdr_<root>}, the root from the records' hierarchy — as a live session's), then done.
+     */
     private void publishALeftover(String callId, List<CdrEvent> tiers) {
         if (flow.kit().records() != null) { flow.writeRecordsOf(callId, tiers); return; }
-        flow.kit().cdr().publish(callId, tiers);
+        flow.kit().cdr().publish(CdrAssembler.rootOf(tiers.get(0)), callId, tiers);
         flow.kit().counters().cdrPublished.incrementAndGet();
         flow.kit().journal().done(callId);
     }
