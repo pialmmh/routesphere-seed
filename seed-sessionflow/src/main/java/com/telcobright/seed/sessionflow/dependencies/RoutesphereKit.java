@@ -47,6 +47,7 @@ public final class RoutesphereKit {
     private final Lookups lookups = new Lookups(this::resolver);
     private final BootstrapRoad bootstrap;
     private volatile Function<String, RoutesphereContext> sessions = id -> null;
+    private volatile boolean engineAttached;
 
     private RoutesphereKit(Builder b) {
         this.tenants = required(b.tenants, "tenants (the trees per root)");
@@ -72,8 +73,32 @@ public final class RoutesphereKit {
      */
     public static RoutesphereKit fromBootstrap(BootstrapSource source, String app) { return fromBootstrap(source, app, KitMakers.onTheClasspath()); }
 
-    /** The same, with the makers named (a test's fakes, a host's pooled database). */
+    /**
+     * The same, with the makers named (a test's fakes, a host's pooled database). The lane's own sinks (its SDR writer, its task store)
+     * are given to the kit before it is used: {@code fromBootstrap(source, app, makers).toBuilder().sdr(...).tasks(...).build()}.
+     */
     public static RoutesphereKit fromBootstrap(BootstrapSource source, String app, KitMakers makers) { return BootstrapRoad.open(source, app, makers).kit(); }
+
+    /**
+     * P1-F · A builder holding every part of this kit — how a kit made from the bootstrap takes the lane's OWN sinks before it is used:
+     * <pre>
+     *   RoutesphereKit kit = RoutesphereKit.fromBootstrap(source, "ad-sphere", makers).toBuilder()
+     *       .sdr(adSdrWriter).tasks(taskStore)                  // the lane's own; a CDR road of its own beside the root's: .cdr(CdrSinks.all(...))
+     *       .build();
+     * </pre>
+     * Everything the road made is kept: the trees, the doors, the ledger, the CDR road, the journal, the clock, the zone, the settings and
+     * the road itself — so the engine on the new kit starts the road and its close closes what the road opened. The new kit's own books
+     * (the channel slots, the counters, the CDR sequence) start fresh. Refused once an engine runs on this kit: the copy would share the
+     * road's start and close with it.
+     */
+    public Builder toBuilder() {
+        if (engineAttached) {
+            throw new IllegalStateException("an engine runs on this kit already: a copy would share its bootstrap road's start and close and"
+                + " split its books — give the kit the lane's sinks (toBuilder()) before the flow and the engine are made");
+        }
+        return new Builder().tenants(tenants).resolver(resolver).ledger(ledger).cdr(cdr).sdr(sdr).tasks(tasks).journal(journal)
+            .clock(clock).zone(zone).settings(settings).bootstrap(bootstrap);
+    }
 
     /** The tenant trees per root (§D): one immutable snapshot per root, a session keeps the one it started with. */
     public TenantLookup tenants() { return tenants; }
@@ -124,8 +149,11 @@ public final class RoutesphereKit {
     /** A live session's context by its id — how a helper child restored from the store finds its session again (the engine attaches it). */
     public Optional<RoutesphereContext> sessionOf(String sessionId) { return Optional.ofNullable(sessions.apply(sessionId)); }
 
-    /** The engine attaches its registry's lookup once it is built. */
-    public void attachSessions(Function<String, RoutesphereContext> lookup) { this.sessions = required(lookup, "the sessions' lookup"); }
+    /** The engine attaches its registry's lookup once it is built (from then on the kit is in use: {@link #toBuilder} refuses). */
+    public void attachSessions(Function<String, RoutesphereContext> lookup) {
+        this.sessions = required(lookup, "the sessions' lookup");
+        this.engineAttached = true;
+    }
 
     /** Every rule must name a root this process serves: a rule naming an unknown root refuses the start (§C). */
     private static TenantResolver checkedResolver(List<IdentificationRule> rules, TenantLookup tenants) {

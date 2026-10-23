@@ -24,7 +24,7 @@ the application                            its forced answers ■ + the hooks it
 | `api.RoutesphereContext` | Everything one session knows (persisted: ids and amounts only). Your context extends it |
 | `api.RoutesphereFacts` / `api.Ingress` | The facts your signaling machine stamps — with the INGRESS the root is found by (`listen` · `esl` · `vlan` · `topic`) |
 | `api.RoutesphereEngine<C>` | statewalk's registry: your supervisor class + your signaling machine + the budget child + your channel |
-| `dependencies.RoutesphereKit` | What the host hands in — by hand, or `RoutesphereKit.fromBootstrap(source, app)` from ONE bootstrap url (R8) |
+| `dependencies.RoutesphereKit` | What the host hands in — by hand, or `RoutesphereKit.fromBootstrap(source, app)` from ONE bootstrap url (R8); `toBuilder()` gives that kit the lane's own sinks before it is used |
 | `api.Deployment` / `api.RootResources` | What prime-context's bootstrap said: the served roots and each root's own resources |
 
 ## 2 · Write an application — one package (R6)
@@ -153,7 +153,20 @@ looked at: `seed-bootstrap-config/README.md`).
 the identification rules, each root's `switch-db`, `kafka`, `redis`, `ledger`, `journal`), and makes per served root its tree (seed-tenant's
 `PrimeContextTrees`), its doors, its ledger (`switch` = seed-switch-ledger's MemLedger port, the default; `orchestrix` for the transition),
 its CDR road (`cdr_<root>` on its own Kafka) and its journal (its own directory). The makers are found on the classpath; a missing one is
-refused in words. The start says, one line per root, every resource it got. The sample envelope and the `tenant_created` message are
+refused in words. The start says, one line per root, every resource it got.
+
+The lane's OWN sinks — its SDR writer, its task store (the ad's `ad_sdr`, its `campaign_task`), a CDR road of its own beside the root's —
+go on that kit before it is used (P1-F):
+
+```java
+RoutesphereKit kit = RoutesphereKit.fromBootstrap(source, "ad-sphere", makers).toBuilder()
+    .sdr(adSdrWriter).tasks((ctx, row) -> campaigns.closed(row))
+    .build();                                     // then the flow, then the engine
+```
+
+`toBuilder()` keeps everything the road made — the trees, the doors, the ledger, the CDR road, the journal, the clock, the zone, the
+settings and the road itself, so the engine on the new kit starts the road and its close closes what the road opened; the new kit's own
+books (slots, counters, the CDR sequence) start fresh. Refused, in words, once an engine runs on the kit. The sample envelope and the `tenant_created` message are
 `src/test/resources/bootstrap/` — pinned byte for byte with prime-context.
 
 The application's OWN keys (everything in `config` beside `routesphere`: `adsphere.*`, `sdr.*`, `quarkus.http.*`, …) reach its

@@ -16,3 +16,11 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   environment PRIME_CONTEXT_BOOTSTRAP_URL / PRIME_CONTEXT_TOKEN_ENV — never in the jar, nor in the build's own config/, .env or shell) and
   in the sessionflow README's bootstrap section; one javadoc bullet on BootstrapConfigSourceFactory; the ordinal table gains the box's file
   (265) and the jar's yml at 255. seed-bootstrap-config 8/0/0/0 (direct). Next: item 2.
+- 2026-10-24 05:25 · **item 2 done** — `RoutesphereKit.toBuilder()`: a builder holding every part of the kit, so a kit made from the
+  bootstrap takes the lane's own sinks before it is used (`fromBootstrap(source, app, makers).toBuilder().sdr(..).tasks(..).build()`);
+  the trees, doors, ledger, CDR road, journal, clock, zone, settings and the road itself kept (the engine on the new kit starts the road
+  and its close closes it); refused in words once an engine runs on the kit (`attachSessions` marks it). Red first (compile: no
+  toBuilder); LaneSinksOnTheBootstrapTest 4/4 (every part the same object, a session's SDR in the lane's sink with its CDR on cdr_btcl
+  and the engine's close closing the road's producer and listener, a kit by hand carried whole, a kit in use refused); 10 mutants, 10 red;
+  seed-sessionflow 197/0/0/0 direct (193 + 4). Decision: ONE door (toBuilder) rather than fromBootstrap overloads with two sinks — it also
+  takes P2's local CDR journal beside the root's road (P2's kitOnTheBootstrap in one chain). Next: item 3.
