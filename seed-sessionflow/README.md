@@ -271,6 +271,10 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, morning — P1-F, the six gaps the ad-sphere port found, fixed additively: the bootstrap url at RUN time only (no build
+  guard: no documented signal), `RoutesphereKit.toBuilder()` (the lane's own sinks on a kit from the bootstrap), `CdrSinks.all` keeps
+  the root, `machinesBuilt` = the supervisors' pool's own count and `busy` counted at the door (`DoorChannel`, `engine.launch`; never
+  `deliver`), `PoolStats.sessions` beside the cells, `FakeKafka` on kafka-clients 3.7.1 and 4.0.0. State: `docs/agents/P1-F-state.md`.
 - 2026-10-24 — P1-E, the framework round (the owner's R1–R13 of 2026-10-23): `identifyTenant` / `identifyPartner` forced with the base's
   helpers (`Lookups`), the facts' `SessionStart` sample refused at start, one supervisor class per lane (`RoutesphereSupervisor`, the one
   engine door), the builder (`RoutesphereApp`; the SMS sample made with it), the kit from ONE bootstrap url (`fromBootstrap`, the makers on the
