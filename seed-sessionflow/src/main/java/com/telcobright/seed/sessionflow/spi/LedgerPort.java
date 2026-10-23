@@ -54,6 +54,15 @@ public interface LedgerPort {
     void release(LevelAdmission level, String why);
 
     /**
+     * A reseller tier was created live under this ledger's root (R10: {@code tenant_created}, kind reseller — prime-context sends it only after
+     * the tier's tables are committed): a ledger that keeps books per tier loads the new tier's here — with no money move of its own running
+     * meanwhile (never under a session's reserve), the same tier twice one load — BEFORE the root's tree shows the tier to a session. A
+     * failure is the ledger's own to say; the tier's money is then refused until it loads. Default: nothing (a ledger that keeps no books per
+     * tier — orchestrix's roads, the testkit's).
+     */
+    default void tierAdded(String tierDb) { }
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */

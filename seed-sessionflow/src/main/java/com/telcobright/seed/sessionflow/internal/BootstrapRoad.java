@@ -141,16 +141,20 @@ public final class BootstrapRoad implements AutoCloseable {
         log.warn("[{}] tenant_created names the root {}, but the bootstrap does not serve it to {} yet (roots {}): not served", next.app(), event.root(), next.app(), next.roots());
     }
 
+    /** A new tier of a served root: its root's ledger loads the tier first, then the tree shows it to the next session (item 13). */
     private void reloadTheRootOf(TenantCreated event) {
         if (!deployment.roots().contains(event.root())) return;
+        ledger.tierAdded(rootDbOf(event.root()), event.tierDb());
         trees.reload(event.root());
-        log.info("[{}] the tier {} under {} is in the tree from now on (its root reloaded)", deployment.app(), event.tierDb(), event.root());
+        log.info("[{}] the tier {} under {} is in the ledger and the tree from now on (its root reloaded)", deployment.app(), event.tierDb(), event.root());
     }
 
+    /** The engine's close: the listener, the admins, every root's CDR road, journal and ledger, the producers, the trees. */
     @Override
     public void close() {
         if (listener != null) listener.close();
         admins.values().forEach(Admin::close);
+        ledger.close();
         cdr.close();
         journal.close();
         producers.values().forEach(Producer::close);

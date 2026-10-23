@@ -4,6 +4,8 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -17,7 +19,9 @@ import java.util.function.Function;
  * ledger of the root its tier belongs to — never another root's (a partner id is unique inside one tree only). A tier whose root has no
  * ledger is a {@code LedgerFault} (BILLING_SYSTEM_ERROR, never a balance cause).
  */
-public final class PerRootLedger implements LedgerPort {
+public final class PerRootLedger implements LedgerPort, AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(PerRootLedger.class);
 
     private final Map<String, LedgerPort> byRoot = new ConcurrentHashMap<>();
     private final Function<Tenant, String> rootOf;
@@ -47,6 +51,25 @@ public final class PerRootLedger implements LedgerPort {
         LedgerPort ledger = root == null ? null : byRoot.get(root);
         if (ledger == null) throw new LedgerFault("no ledger serves the root '" + root + "' of tier " + level.getLevelIndex() + " (roots " + byRoot.keySet() + ")");
         return ledger;
+    }
+
+    /** A tier created live under {@code root}: that root's ledger alone loads it (item 13); a root without a ledger here is nothing. */
+    public void tierAdded(String root, String tierDb) {
+        LedgerPort ledger = root == null ? null : byRoot.get(root);
+        if (ledger != null && tierDb != null) ledger.tierAdded(tierDb);
+    }
+
+    /** The engine's close: every root's ledger that holds something open (a switch ledger's MemLedger) is closed; a failure is said, the rest go on. */
+    @Override
+    public void close() {
+        byRoot.forEach((root, ledger) -> {
+            if (!(ledger instanceof AutoCloseable closing)) return;
+            try {
+                closing.close();
+            } catch (Exception e) {
+                log.warn("the ledger of root {} did not close: {}", root, e.toString());
+            }
+        });
     }
 
     /** The root of a tier's tenant by its own tree: the last of its ancestor chain; a tenant with no chain is its own root. */

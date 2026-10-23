@@ -2,7 +2,7 @@
 
 Branch `p1-rules` (worktree `routesphere-seed/worktrees/p1-rules`), from f41eace (stream D's four commits + the brief). Nothing pushed;
 nothing written into `~/.m2`; no database server, broker or prime-context reached (in-process fakes, Kafka's mocks, H2 in memory only).
-**Status: items 0–11 done (53bd001: worktree and clean copy 501/0/0/3); CONTRACT DONE at c992262; item 12 (the app's whole config from the bootstrap, added by the architect) next.**
+**Status: done — items 0–13 (12–13 added by the architect overnight); CONTRACT DONE at c992262; the head a0cf3a8 — the worktree from clean and a git-archive clean copy, both 518/0/0/3.**
 
 | | tests / failures / errors / skipped |
 |---|---|
@@ -11,6 +11,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | item 1, a git-archive clean copy of 4a8b22a (offline, under the lock) | **438 / 0 / 0 / 3** |
 | **CONTRACT DONE** — item 5's c992262 on a git-archive clean copy | **452 / 0 / 0 / 3** |
 | items 0–11 — 53bd001, the worktree from `clean` and a git-archive clean copy (offline, under the lock) | **501 / 0 / 0 / 3** both |
+| **items 0–13 — a0cf3a8, the worktree from `clean` and a git-archive clean copy (offline, under the lock)** | **518 / 0 / 0 / 3** both |
 
 ## 0 · The commits
 
@@ -28,6 +29,9 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | 6f821f6 | **item 9** — the prepaid piece written down, its pins |
 | b36db3d | **item 10** — the ad sample answers at `/shown` |
 | 53bd001 | **item 11** — the docs |
+| a884686 | the report and the state for items 0–11 (the state's times corrected) |
+| 242186f | **item 12** — the application's whole config from the bootstrap (`seed-bootstrap-config`) |
+| a0cf3a8 | **item 13** — a new reseller tier on its root's switch ledger; the road closes the ledgers it made |
 
 ## Item 0 · the records road leaves (R13)
 
@@ -316,12 +320,83 @@ method forced ■ / final / default with the call's answer, one line each; §4.1
 (R10); §5.1 the prepaid piece (R12, item 9); §7 the packages; §9 the history. `RoutesphereFlow`'s class javadoc follows (two ways to write a
 lane, one package, the kit) — the drift guard still finds exactly the nine ■. The root README names `seed-naming` and the framework.
 
+## Item 12 · the application's WHOLE config from the bootstrap (R8; added by the architect after the report)
+
+- **The module `seed-bootstrap-config`** (depends on seed-sessionflow for the bootstrap's one road; SmallRye Config **provided** —
+  `smallrye-config-core` 3.13.4, Quarkus 3.26.1's, ad-sphere's platform; `smallrye-common-*` pinned to 2.13.8 in the module's
+  dependencyManagement, because SmallRye 3.13.4 asks 2.13.7, which this box's repository does not hold — Quarkus 3.26.1 runs 2.13.8).
+  Nothing new in seed-sessionflow.
+- **`dependencies/BootstrapConfigSourceFactory`** — a SmallRye `ConfigSourceFactory` registered by `META-INF/services` (a Quarkus app gets it
+  by adding the dependency): reads `prime-context.bootstrap-url` and `prime-context.token-env` from the lower sources, fetches the envelope
+  through **item 6's road** (`BootstrapSources.http`: the token read by its variable's name, `If-None-Match`), serves the envelope's `config`
+  as ONE source (`internal/EnvelopeConfigSource`) at **ordinal 275** — above the jar's files (250), below the environment (300) and `-D`
+  (400). `internal/FlatConfig`: a nested map `a.b.c`, a list `a.b[0]`, a map in a list `a.b[0].c`, a key holding a dot quoted
+  (`quarkus.log.category."com.telcobright".level`, as SmallRye's YAML source writes it), a null no property.
+- **Behaviour:** no bootstrap url = no source (the application's own files; the kit's own door still refuses a missing url when it is used);
+  a url without its token's variable name / an empty token variable / prime-context unreachable or refusing = **the start refused, exactly as
+  the kit's door** (the same `BootstrapUnavailable` and words — the README says it). **Never a secret:** only `config` is served, the
+  envelope's `secrets` never; a `password-ref` stays a reference.
+- **Recommendation (not code):** a cached last-good copy of the envelope (written after every good read, read when prime-context does not
+  answer, with its etag and age said loudly) would let a box restart while prime-context is down — the owner's call: today a start without
+  prime-context is refused, which is the fail-closed reading of R8.
+- **The new sample** `seed-sessionflow/src/test/resources/bootstrap/deployment-with-app-keys.json` (beside the pinned §C files, which are
+  unchanged): the §C envelope with an application's own keys (`quarkus.http.*`, `adsphere.*` with a list and nested maps, `sdr.*`, `cdr.*`,
+  `reports.*` with a `password-ref`, `routing.*`) and a `secrets` map that must never be served. The module copies that directory as its test
+  resources (one place for the samples).
+- **Tests:** `BootstrapConfigSourceTest` (7 — SmallRye built by hand over a map-backed bootstrap: the app's keys above the jar, a list and a
+  dotted key, the environment and `-D` still win (and the source's ordinal 275), never a secret, no url = no source, the refusals in words,
+  the ServiceLoader registration) and `FlatConfigTest` (1). **Red first:** by compile. **Mutants (8, red):** the source below the jar (240);
+  above the environment (310); the secrets served; a list as one comma word; a dotted key not quoted; an unreachable bootstrap swallowed; no
+  url refused instead of no source; the factory not registered.
+- **For P2:** the app adds the dependency and its yml shrinks to the two lines; its own keys move into prime-context's app document (the
+  envelope's `config`, beside `routesphere`); a key an operator must override on a box is an environment variable (300) or `-D` (400).
+  Quarkus reads BUILD-time properties before any runtime source — those stay in the jar.
+
+## Item 13 · a new reseller tier on the switch ledger (the architect's answer to Q1) — with the road's ledger close
+
+- **The hook:** `spi/LedgerPort.tierAdded(String tierDb)` — a default that does nothing (orchestrix's roads, the testkit's ledger and every
+  fake unchanged); javadoc: load the tier's books with no money move running meanwhile, once, BEFORE the tree shows the tier.
+  `internal/PerRootLedger.tierAdded(root, tierDb)` tells THAT root's ledger only.
+- **The road** (`BootstrapRoad.reloadTheRootOf`, `tenant_created` kind reseller of a served root): the root's ledger loads the tier
+  FIRST, then the tree is reloaded — so no session is admitted on a tier its ledger cannot serve. The same event twice is one (the road's
+  seen set, and the port's own once rule).
+- **The switch ledger** (`internal/OwnedMemLedgerPort`, the port `SwitchLedgerMaker` answers): every verb (reserve, settle, release, the
+  live balance) holds a read/write gate SHARED, the tier's load holds it ALONE — never under a session's reserve; a tier it was built over,
+  or loaded already, is nothing (checked before the gate to spare the lock, and again under it for two words at once); a load that fails is
+  one ERROR and is not remembered (a later word or the next start loads it). **The load** (`internal/AddTierLive`) is mem-ledger's
+  `addDatabase(schema)` (fba1346, 2026-10-11, ARCH-0077-B2 item 3 — one tier, nothing else opened, a registered tier a no-op). **Why not
+  `reloadDatabases()` / `autoDiscoverDatabases(prefix)`:** in the pinned mem-ledger `reloadDatabases()` only works on a MemLedger BUILT with
+  auto-discovery, whose discovery is MySQL's `SHOW DATABASES LIKE '<prefix>%'` — it fails on the bed's PostgreSQL (tiers are schemas) and
+  loads every new database under the prefix, not the one tier named. **The pinned jar** (mem-ledger 1.0.0-SNAPSHOT as built 2026-10-07 in
+  this box's repository) predates `addDatabase`: `AddTierLive` finds it at run time (on MemLedger's interface, else the object's class) and,
+  absent, says in words that the tier loads at the next start and its money is refused until then — fail-closed. **To do (not mine, no
+  install here):** rebuild/publish mem-ledger from fba1346 or later, move the pin, then the reflection becomes a plain call.
+- **The close (found after the final run):** `PerRootLedger` closes every root's ledger that is `AutoCloseable`; `BootstrapRoad.close()`
+  closes them; the switch ledger's port shuts its MemLedger down. **A closed engine leaves no MemLedger thread** —
+  `SwitchLedgerOnTheBootstrapKitTest` (an engine on a kit made from the bootstrap, the REAL `SwitchLedgerMaker` over H2, a minimal signaling
+  machine, `LedgerFlow`): one `MemLedger-WAL-Consumer` thread while it runs, none after `engine.close()`. `SwitchLedgerMakerTest` closes the
+  port it makes (the stack trace of the final logs gone).
+- **Tests:** `TierAddedLiveTest` (5: a MemLedger that has `addDatabase` loads the one tier; the pinned one cannot and says why; the port
+  loads once and no money read runs while it loads — a latch holds the load, a balance read waits; two words at once load once; a failed
+  load is said and tried again), `SwitchLedgerOnTheBootstrapKitTest` (1), `SwitchLedgerMakerTest` (+1: closing the port shuts the MemLedger
+  down), `RoadCloseTest` (1: the engine's close closes the ledgers, the listener's consumer, the producers), `TenantCreatedLiveTest` (+1: a new
+  tier reaches that root's ledger only, before the tree, once). `BootstrapWorld.makers(LedgerMaker)` (a test helper) added.
+- **Red first:** by compile (no `tierAdded`, no closable port) — `RoadCloseTest` and the switch maker's close test also red by behaviour on
+  the code before the close. **Mutants (11; 10 red, 1 equivalent):** the road never tells the ledger; the tree before the ledger; every
+  root's ledger told; a money move not held off by the load; the guard under the gate removed (survived the sequential test → the two-words
+  test added → red); both checks removed; a failed load remembered; the closed engine leaving its MemLedger running; the road leaving its
+  ledgers open (C1); closing the port not shutting the MemLedger (C2). Equivalent: the check before the gate removed — it only spares the
+  lock, the guard under the gate keeps the rule.
+- **What P2 must prove on PostgreSQL** is written in `seed-switch-ledger/README.md` (six steps: the ledger over the tree's schemas, a
+  mem-ledger with `addDatabase`, prime-context commits then sends, the one schema loaded with the other tiers' reserves untouched, a session
+  of the new tier, the same event twice and the close).
+
 ## Found after the final run (the final logs read)
 
 The final worktree and copy logs carry one stack trace the baseline's did not: a MemLedger's WAL consumer of
 `SwitchLedgerMakerTest` failing on "Database is already closed" after its test ended — the test never shut the MemLedger the maker
 opened, and, the real gap behind it, **the bootstrap road's `close()` did not close the ledgers it made** (a MemLedger's threads would run
-on after the engine's close). The tests were green. Fixed in the commit after the report (see "After the report" below).
+on after the engine's close). The tests were green. Fixed in item 13's commit (see item 13).
 
 ## The findings for the prime-context round (the envelope, §C)
 
@@ -375,14 +450,21 @@ on after the engine's close). The tests were green. Fixed in the commit after th
 | **CONTRACT DONE**, clean copy of c992262 | **452 / 0 / 0 / 3** |
 | **53bd001** (items 0–11), the whole reactor in the worktree from `clean` (offline, under the lock, 01:45–01:47) | **501 / 0 / 0 / 3** |
 | **53bd001**, a git-archive clean copy (offline, under the lock, no install, 01:47–01:49; the copy removed) | **501 / 0 / 0 / 3** |
+| **a0cf3a8** (items 0–13), the whole reactor in the worktree from `clean` (offline, under the lock, 03:24–03:26) | **518 / 0 / 0 / 3** |
+| **a0cf3a8**, a git-archive clean copy (offline, under the lock, no install, 03:26–03:28; the copy removed) | **518 / 0 / 0 / 3** |
 
 Between the Maven runs the items were proven by direct runs (javac + the JUnit launcher, the module's classpath; no Maven, no lock): the
-last of them sessionflow 190, samples 73, switch-ledger 54, tenant 19, naming 10 — 0 failures. One timing flake was seen once in a direct run
+last of them (after item 13) sessionflow 193, samples 73, switch-ledger 61, tenant 19, naming 10, bootstrap-config 8 — 0 failures. One timing flake was seen once in a direct run
 under load (`VoiceFlowTest.a_talking_call_renews_one_minute_per_period…`, the budget child's cut: `ACTIVE/ANSWERED` where
-`ACTIVE/DISCONNECTING` was awaited); three reruns green; not seen under Maven. Mutants: 51 hand mutants (items 1–10), every one red (two survived first —
-N2, N5 — and were made red by two stronger assertions; one, M4-1, first ran on stale classes and was rerun red).
+`ACTIVE/DISCONNECTING` was awaited); three reruns green; not seen under Maven. Mutants: 70 hand mutants — 51 for items 1–10, 8 for item 12, 11 for item 13 — 69 red and 1 equivalent (item 13's check before the gate,
+which only spares the lock); three survived first (N2, N5, item 13's guard under the gate) and were made red by three stronger tests; one
+(M4-1) first ran on stale classes and was rerun red. The final logs no longer carry the MemLedger stack trace of 53bd001's.
 
 ## Open questions for the owner / the architect
+
+The architect's answers (overnight defaults, 2026-10-24): Q1 → item 13 (done above); Q2 accepted (on the bootstrap kit the ad's journal is
+the per-root one; P2 reads the bed's old file once at its first start, then retires it); Q3 → ad-sphere keeps its own task rule exactly as at
+296b2cf (the sample's rule may stay); Q4 done (prime-context's copies byte-identical). The questions as they were asked:
 
 1. **A new reseller tier's schema on the switch ledger** (finding 9): wire `tenant_created` (reseller) to the root's MemLedger
    (`reloadDatabases()`), or rebuild that root's ledger between sessions — whose round, and does prime-context send the event only after the

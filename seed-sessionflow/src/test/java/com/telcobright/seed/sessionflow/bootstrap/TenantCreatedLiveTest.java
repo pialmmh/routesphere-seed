@@ -46,9 +46,11 @@ class TenantCreatedLiveTest {
     void stop() { if (engine != null) engine.close(); }
 
     /** The application up on btcl alone (prime-context has not provisioned link3 for it yet). */
-    private void upOnBtclAlone() {
+    private void upOnBtclAlone() { upOnBtclAlone(w.makers()); }
+
+    private void upOnBtclAlone(com.telcobright.seed.sessionflow.dependencies.KitMakers makers) {
         w.source.serve(BootstrapWorld.servingOnly(sample, "btcl"));
-        kit = RoutesphereKit.fromBootstrap(w.source, "ad-sphere", w.makers());
+        kit = RoutesphereKit.fromBootstrap(w.source, "ad-sphere", makers);
         engine = RoutesphereEngine.of(new LabSupervisor(new LabFlow(kit, Map.of(), List.of(), Set.of()))).signaling(LabCall.spec())
             .channel(new TestChannel<String, StatemachineEvent>("lab"), (id, frame) -> Delivery.to(LabCall.TYPE, frame)).start();
     }
@@ -115,6 +117,32 @@ class TenantCreatedLiveTest {
         road().onTenantCreated(tier);
         assertThat(w.trees.calls).containsExactly("serve btcl", "reload btcl");
         assertThat(kit.tenants().snapshot("btcl").orElseThrow().version()).isEqualTo(1);
+    }
+
+    /** A root's ledger that writes down, in the trees' own list, the tiers it was asked to load (item 13). */
+    final class TierLoadingLedger implements com.telcobright.seed.sessionflow.spi.LedgerPort {
+        final com.telcobright.seed.sessionflow.testkit.InMemoryLedger books = new com.telcobright.seed.sessionflow.testkit.InMemoryLedger();
+        final String root;
+        TierLoadingLedger(String root) { this.root = root; }
+        @Override public java.util.Optional<Reservation> reserve(com.telcobright.rtc.domainmodel.LevelAdmission l, java.math.BigDecimal a, String r) { return books.reserve(l, a, r); }
+        @Override public com.telcobright.seed.sessionflow.api.TierSettlement settle(com.telcobright.rtc.domainmodel.LevelAdmission l, java.math.BigDecimal c) { return books.settle(l, c); }
+        @Override public void release(com.telcobright.rtc.domainmodel.LevelAdmission l, String why) { books.release(l, why); }
+        @Override public void tierAdded(String tierDb) { w.trees.calls.add("ledger " + root + " " + tierDb); }
+    }
+
+    @Test
+    void aNewResellerTier_reachesThatRootsLedgerOnly_beforeItsTree_once() {
+        upOnBtclAlone(w.makers(new com.telcobright.seed.sessionflow.spi.LedgerMaker() {
+            @Override public String kind() { return com.telcobright.seed.sessionflow.api.RootResources.Ledger.SWITCH; }
+            @Override public com.telcobright.seed.sessionflow.spi.LedgerPort make(com.telcobright.seed.sessionflow.api.RootResources root, Context context) { return new TierLoadingLedger(root.root()); }
+        }));
+        w.source.serve(sample);
+        road().onTenantCreated(root("link3", "ad-sphere"));                                // link3 served live: its own ledger
+        TenantCreated tier = new TenantCreated("btcl", "btcl_res_9", "btcl", 9, "reseller", List.of("ad-sphere"), "2026-10-23T16:31:00Z");
+        road().onTenantCreated(tier);
+        road().onTenantCreated(tier);
+        assertThat(w.trees.calls).as("the tier's ledger loaded BEFORE the tree shows the tier to a session; link3's ledger never asked; once")
+            .containsExactly("serve btcl", "serve link3", "ledger btcl btcl_res_9", "reload btcl");
     }
 
     @Test

@@ -72,3 +72,28 @@ item 6 (the kit from ONE bootstrap url).
 - 2026-10-24 02:22 · resumed after the session limit (the owner switched accounts). The final runs had ended before the limit (their logs
   in the scratchpad: `final-worktree.log`, `final-copy.log`, both EXIT 0). Times corrected (above). Running: the report committed, then a
   clean copy of that head (its diff to 53bd001 is docs only).
+- 2026-10-24 02:50 · **item 12 done** (the architect's, added at 02:2x) — module **`seed-bootstrap-config`**: a SmallRye `ConfigSourceFactory`
+  (ServiceLoader) that reads `prime-context.bootstrap-url` / `prime-context.token-env` from the lower sources, fetches the envelope through
+  item 6's road (`BootstrapSources.http`), serves `config` flattened (`a.b.c`, `a.b[0]`, a dotted key quoted) at ordinal 275; never a
+  secret; no url = no source; unreachable / refused = the start refused as the kit's door does. SmallRye 3.13.4 provided (Quarkus 3.26.1's),
+  smallrye-common pinned 2.13.8 (2.13.7 is not on this box). New sample `bootstrap/deployment-with-app-keys.json` beside the pinned §C files
+  (unchanged). Red first (compile), 8 mutants red; module 8/0 (direct run). Decision: the reactor + clean copy run once after item 13
+  (covering 12 and 13), the lock being shared by five agents tonight. Next: item 13 (a new reseller tier on the switch ledger) + the
+  road's ledger close (found after the final run).
+- 2026-10-24 02:58 · **item 13 done** (the architect's answer to Q1) — `LedgerPort.tierAdded(tierDb)` (a default that does nothing:
+  orchestrix and the fakes unchanged); the road, on `tenant_created` kind reseller, tells THAT root's ledger first, then reloads the tree;
+  seed-switch-ledger's `OwnedMemLedgerPort` loads ONE tier schema once, with no money move of the root meanwhile (a read/write gate: verbs
+  shared, the load alone), through `AddTierLive` = mem-ledger's `addDatabase(schema)` (fba1346), found at run time because the pinned jar
+  (built 2026-10-07) predates it — said in words when absent. Decision: not `reloadDatabases()` — MySQL's `SHOW DATABASES` only, every new
+  database under the prefix. With it the road's `close()` closes the ledgers it made (found after the final run): a closed engine leaves
+  no MemLedger thread (end to end on H2). Red first (compile), 11 mutants (10 red, 1 equivalent: the check before the gate only spares the
+  lock); sessionflow 193, samples 73, switch-ledger 61, tenant 19, naming 10, bootstrap-config 8 (direct runs). Next: the whole reactor
+  and a clean copy of the head under the lock, then the report.
+- 2026-10-24 03:24–03:28 · the final runs of **a0cf3a8** (items 0–13; the run script's own `date` lines): the whole reactor in the worktree
+  from clean **518/0/0/3** (127 s), a git-archive clean copy (offline, under the lock, no install) **518/0/0/3** (124 s); the copy removed;
+  the MemLedger stack trace of 53bd001's logs gone.
+- 2026-10-24 03:30 · **DONE** — items 0–13 committed (CONTRACT DONE c992262; the head a0cf3a8; this docs commit after it); the report
+  `docs/agents/P1-E-report.md` final. The worktree's target directories and this agent's scratch files removed. Nothing running. Next for
+  the architect: merge; P2 ports ad-sphere on it (the report's "For P2" lines); the open points of the report (the envelope's findings for
+  the prime-context round, mem-ledger's `addDatabase` pin).
+

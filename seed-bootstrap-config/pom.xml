@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-bootstrap-config</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-bootstrap-config</name>
+    <description>
+        The application's WHOLE config from prime-context's bootstrap (the owner's R8: the app's own yml holds ONE thing, the bootstrap
+        url): a SmallRye ConfigSourceFactory, found by ServiceLoader, that reads prime-context.bootstrap-url and prime-context.token-env
+        from the lower sources, fetches the envelope through the same road as RoutesphereKit.fromBootstrap (the token by its variable's
+        name, If-None-Match), and serves its config flattened at ordinal 275 — above the jar's application.properties / yml (250), below
+        the environment (300) and the system properties (400). A Quarkus application gets it by adding this dependency. SmallRye is
+        provided (the application's own).
+    </description>
+
+    <properties>
+        <!-- the SmallRye Config of Quarkus 3.26.1 (ad-sphere's platform): provided by the application -->
+        <smallrye-config.version>3.13.4</smallrye-config.version>
+    </properties>
+
+    <!-- SmallRye Config 3.13.4 asks smallrye-common 2.13.7, which this box's repository does not hold; Quarkus 3.26.1 (the application's
+         platform) runs it on 2.13.8 — the same here, so the module resolves offline and tests on what the application runs -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency><groupId>io.smallrye.common</groupId><artifactId>smallrye-common-annotation</artifactId><version>2.13.8</version></dependency>
+            <dependency><groupId>io.smallrye.common</groupId><artifactId>smallrye-common-expression</artifactId><version>2.13.8</version></dependency>
+            <dependency><groupId>io.smallrye.common</groupId><artifactId>smallrye-common-constraint</artifactId><version>2.13.8</version></dependency>
+            <dependency><groupId>io.smallrye.common</groupId><artifactId>smallrye-common-classloader</artifactId><version>2.13.8</version></dependency>
+            <dependency><groupId>io.smallrye.common</groupId><artifactId>smallrye-common-function</artifactId><version>2.13.8</version></dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- the bootstrap's one road (BootstrapSource, BootstrapSources.http) — the same as the kit's -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.smallrye.config</groupId>
+            <artifactId>smallrye-config-core</artifactId>
+            <version>${smallrye-config.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <testResources>
+            <testResource>
+                <directory>${project.basedir}/src/test/resources</directory>
+            </testResource>
+            <!-- the bootstrap samples live ONCE, beside the pinned §C files of seed-sessionflow -->
+            <testResource>
+                <directory>${project.basedir}/../seed-sessionflow/src/test/resources/bootstrap</directory>
+                <targetPath>bootstrap</targetPath>
+            </testResource>
+        </testResources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -15,6 +15,8 @@ small and stays small. First consumer: **wifi-sphere**.
 
 - `seed-naming` — the names every application resolves the same way (R9): a reseller tier's database (prime-context's RootNaming
   rule), the platform topics `<name>_<root>`, an application's own `<app>_<in|out>_<name>_<root>`, Redis keys `<root>:<app>:<name>`.
+- `seed-bootstrap-config` — the application's WHOLE config from prime-context's bootstrap (R8): a SmallRye `ConfigSourceFactory` at
+  ordinal 275 over the same road as the kit; the application's yml is two lines (the url and the token's variable name).
 - `seed-sessionflow` — `RoutesphereFlow`, the ONE base flow — the FRAMEWORK every routesphere application extends (P1, P1-E): the
   handler of statewalk 4.1's final `SessionSupervisor` — the root by the lane's door (`identifyTenant`), the payer (`identifyPartner`),
   the reseller tiers leaf to root, routing, the prepaid piece through one ledger port, rerouting by cause, the finish (one CDR message per

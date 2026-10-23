@@ -70,15 +70,20 @@ final class BootstrapWorld {
     }
 
     KitMakers makers() {
+        return makers(new LedgerMaker() {
+            @Override public String kind() { return RootResources.Ledger.SWITCH; }
+            @Override public LedgerPort make(RootResources root, Context context) {
+                ledgerAsks.add(root);
+                return ledgers.computeIfAbsent(root.root(), r -> new InMemoryLedger());
+            }
+        });
+    }
+
+    /** The same makers with a switch ledger of the test's own. */
+    KitMakers makers(LedgerMaker switchLedger) {
         return KitMakers.builder()
             .trees((deployment, src) -> trees = new FakeLiveTrees(prime, deployment.roots()))
-            .ledger(new LedgerMaker() {
-                @Override public String kind() { return RootResources.Ledger.SWITCH; }
-                @Override public LedgerPort make(RootResources root, Context context) {
-                    ledgerAsks.add(root);
-                    return ledgers.computeIfAbsent(root.root(), r -> new InMemoryLedger());
-                }
-            })
+            .ledger(switchLedger)
             .kafka(kafka)
             .journals(dir -> { journalDirs.add(dir); return SessionJournals.none(); })
             .environment(name -> null)

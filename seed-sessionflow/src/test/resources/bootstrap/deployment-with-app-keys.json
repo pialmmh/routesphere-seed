@@ -1,0 +1,40 @@
+{
+  "tenant": {"id": 1, "code": "platform", "name": "Telcobright platform"},
+  "app":    {"id": 7, "code": "ad-sphere", "name": "ad-sphere"},
+  "env": "bed",
+  "config": {
+    "quarkus": {
+      "http": {"host": "10.10.188.2", "port": 7132},
+      "log": {"category": {"com.telcobright": {"level": "INFO"}}}
+    },
+    "adsphere": {
+      "operator-partner-id": 1,
+      "default-ad-seconds": 15,
+      "officer": {"enabled": true},
+      "billing": {"unshown": "charge"},
+      "zones": ["kamalapur", "hazrat-shahjalal-airport", "dmch"],
+      "media": {"source": "file", "file": {"dir": "/var/lib/ad-sphere/media", "public-base-url": "http://10.10.188.2:7132"}},
+      "campaign-store": {"journal-dir": "/var/lib/ad-sphere/campaign-journal", "repair-at-start": true}
+    },
+    "sdr": {"dir": "/var/lib/ad-sphere/sdr", "table": "wifi_report.ad_sdr"},
+    "cdr": {"dir": "/var/lib/ad-sphere/cdr"},
+    "reports": {"url": "jdbc:postgresql://10.10.188.2:5434/routesphere", "username": "ad_sphere", "password-ref": "env:AD_REPORTS_DB_PASSWORD"},
+    "routing": {"ad": {"type": "dialplan"}},
+    "routesphere": {
+      "roots": ["btcl", "link3"],
+      "pool": 2000, "threads": 8,
+      "identification": {"rules": [
+        {"root": "btcl",  "kind": "listen", "match": "10.10.188.2:7070"},
+        {"root": "link3", "kind": "listen", "match": "10.10.188.2:7071"}
+      ]},
+      "root": {
+        "btcl":  {"switch-db": {"url": "jdbc:postgresql://10.10.188.2:5434/routesphere", "schema": "btcl", "username": "ad_sphere", "password-ref": "env:AD_SWITCH_DB_PASSWORD"},
+                  "kafka": {"bootstrap": "10.10.188.2:9092"}, "ledger": {"kind": "switch"}, "journal": {"dir": "/var/lib/ad-sphere/btcl"}},
+        "link3": {"switch-db": {"url": "jdbc:postgresql://10.10.188.2:5434/routesphere", "schema": "link3", "username": "ad_sphere", "password-ref": "env:AD_SWITCH_DB_PASSWORD"},
+                  "kafka": {"bootstrap": "10.10.188.2:9092"}, "ledger": {"kind": "switch"}, "journal": {"dir": "/var/lib/ad-sphere/link3"}}
+      }
+    }
+  },
+  "secrets": {"AD_SWITCH_DB_PASSWORD": "never-a-config-value", "AD_REPORTS_DB_PASSWORD": "never-a-config-value"},
+  "etag": "\"app-keys-1\""
+}
