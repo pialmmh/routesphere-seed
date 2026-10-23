@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
+import com.telcobright.seed.sessionflow.api.Lookups;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.ChannelSlots;
@@ -40,6 +41,7 @@ public final class RoutesphereKit {
     private final ChannelSlots slots = new ChannelSlots();
     private final FlowCounters counters = new FlowCounters();
     private final CdrAssembler cdrAssembler;
+    private final Lookups lookups = new Lookups(this::resolver);
     private volatile Function<String, RoutesphereContext> sessions = id -> null;
 
     private RoutesphereKit(Builder b) {
@@ -63,6 +65,9 @@ public final class RoutesphereKit {
 
     /** The identification rules (§C): an ingress → the ROOT tenant's code; no match = nobody's, never a default. */
     public TenantResolver resolver() { return resolver; }
+
+    /** The base's one-line lookups — a root by its door, a partner inside the session's own tree (R2). */
+    public Lookups lookups() { return lookups; }
 
     /** The ONE money road (§E): reserve, settle, release — idempotent per (session, tier). */
     public LedgerPort ledger() { return ledger; }

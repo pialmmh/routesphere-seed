@@ -6,6 +6,7 @@ import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.SettleOutcome;
 import com.telcobright.seed.sessionflow.api.Tier;
@@ -59,6 +60,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     }
 
     @Override public String name() { return "AdSupervisor"; }
+
+    /** (a) The root by the HTTP listener the request came in on. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byListener(((AdFacts) facts).listen()); }
 
     /** An ad view is group 30, taken as given. */
     @Override protected int serviceGroup(AdContext view) { return 30; }

@@ -10,7 +10,6 @@ import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
-import com.telcobright.statewalk.session.SessionFacts;
 import com.telcobright.statewalk.session.SessionHandler;
 import com.telcobright.statewalk.session.SessionTimings;
 import com.telcobright.statewalk.session.Verdict;
@@ -37,7 +36,7 @@ import java.util.function.Supplier;
  * <pre>
  *   library call (state)          the base                                              the owner's methods (■ = abstract: every lane answers it)
  *   every call                    the lane's ONE name: statewalk's table, the log        name■ · serviceGroup■ (the CDR's group)
- *   onStart       IDLE → INIT     the root by the ingress, its snapshot, the task       (a) identifySiblingLevelTenants · buildTask
+ *   onStart       IDLE → INIT     the root by the lane's door, its snapshot, the task   (a) identifyTenant■ · buildTask
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
  *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyEntryPartner■ · (b) iterateResellerTenants
  *                                 per tier check · authorize · root rules · reserve      (c) identifyPartner · (e) reserveBalance → rateAtLevel■
@@ -107,7 +106,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     @Override
     public final void onStart(C ctx, SessionStart start) {
         ctx.createdAtMs = kit.clock().millis();
-        ctx.root = safely(ctx, "identifySiblingLevelTenants", () -> identifySiblingLevelTenants(ctx.facts), null);
+        ctx.root = rootOf(ctx);
         if (ctx.root == null) { refuseAtStart(ctx, NO_TENANT); return; }
         if (!takeTheRootsSnapshot(ctx)) { refuseAtStart(ctx, SessionCause.TENANT_UNAVAILABLE); return; }
         String refusal = safely(ctx, "buildTask", () -> step(ctx, "BUILD_TASK", () -> buildTask(ctx)), SessionCause.INTERNAL_ERROR);
@@ -198,14 +197,33 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * (a) The ROOT tenant of this session, by this protocol's ingress identity ({@code listen ip:port}, {@code esl host:port},
-     * {@code vlan gateway:svlan}, {@code topic name}): the identification rules from prime-context's bootstrap. Null = nobody's — the
-     * session fails {@code NO_TENANT}; never a default root. Override only for an ingress the rules cannot say.
+     * (a) ■ Every lane names the ROOT operator that owns this door — "root level tenant identification logic will vary for call, sms, wifi"
+     * (R1): the call by its ESL socket ({@link #byEslSocket}), the ad and the SMS by the HTTP listener ({@link #byListener}), the WiFi by its
+     * VLAN ({@link #byVlan}), the SMS's Kafka door by its topic ({@link #byTopic}) — each helper asks prime-context's identification rules.
+     * Null = nobody's: the session is refused {@code NO_TENANT}, never given a default root.
      */
-    protected String identifySiblingLevelTenants(SessionFacts facts) {
-        Ingress ingress = facts instanceof RoutesphereFacts rf ? rf.ingress() : null;
-        return ingress == null ? null : kit.resolver().tenantOf(ingress).orElse(null);
-    }
+    protected abstract String identifyTenant(RoutesphereFacts facts);
+
+    /** (a) helper · The root of an HTTP listener (the local address the request arrived on); null = no rule names it. */
+    protected final String byListener(String ip, int port) { return kit.lookups().byListener(ip, port); }
+
+    /** (a) helper · The same, the address written {@code <ip>:<port>}. */
+    protected final String byListener(String ipAndPort) { return kit.lookups().byListener(ipAndPort); }
+
+    /** (a) helper · The root of the FreeSWITCH connection a CHANNEL_PARK came from; null = no rule names it. */
+    protected final String byEslSocket(String host, int port) { return kit.lookups().byEslSocket(host, port); }
+
+    /** (a) helper · The same, the socket written {@code <host>:<port>}. */
+    protected final String byEslSocket(String hostAndPort) { return kit.lookups().byEslSocket(hostAndPort); }
+
+    /** (a) helper · The root of a WiFi gateway and its S-VLAN; null = no rule names it. */
+    protected final String byVlan(String gateway, int svlan) { return kit.lookups().byVlan(gateway, svlan); }
+
+    /** (a) helper · The root of the Kafka topic a message was consumed from; null = no rule names it. */
+    protected final String byTopic(String name) { return kit.lookups().byTopic(name); }
+
+    /** (a) helper · The root of an ingress as the facts carry it ({@code facts.ingress()}); null = no door, or no rule names it. */
+    protected final String byIngress(Ingress ingress) { return kit.lookups().byIngress(ingress); }
 
     /** (b) Leaf → reseller → … → root, one tier at a time, inside the session's own tree: the base rule, never overridden. */
     protected final List<Tier> iterateResellerTenants(Tier leaf) { return leaf.ancestorChain(); }
@@ -634,6 +652,18 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     final RoutePlan planOf(C ctx) {
         if (ctx.routePlan == null) ctx.routePlan = step(ctx, "ROUTING", () -> routing(ctx));
         return ctx.routePlan;
+    }
+
+    /** (a) The lane's answer for the session's facts — facts that are not {@code RoutesphereFacts} name no door (said in the history). */
+    private String rootOf(C ctx) {
+        if (ctx.facts instanceof RoutesphereFacts facts) return safely(ctx, "identifyTenant", () -> identifyTenant(facts), null);
+        noteFactsWithoutAnIngress(ctx);
+        return null;
+    }
+
+    private void noteFactsWithoutAnIngress(C ctx) {
+        String kind = ctx.facts == null ? "no facts" : ctx.facts.getClass().getName();
+        ctx.history.note(name(), "the session's facts are " + kind + ", not RoutesphereFacts: they name no ingress, so no root — refused " + NO_TENANT);
     }
 
     private boolean takeTheRootsSnapshot(C ctx) {

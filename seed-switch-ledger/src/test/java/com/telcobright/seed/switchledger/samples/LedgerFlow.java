@@ -68,6 +68,9 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
 
     @Override public String name() { return "WifiLikeSupervisor"; }
 
+    /** (a) The root by the gateway's door ({@code vlan gw-1:310}). */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
+
     @Override protected int serviceGroup(Session session) { return 0; }
 
     @Override

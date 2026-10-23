@@ -5,6 +5,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
@@ -40,6 +41,13 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
     }
 
     @Override public String name() { return "WifiSupervisor"; }
+
+    /** (a) The root by the gateway and its S-VLAN. */
+    @Override
+    protected String identifyTenant(RoutesphereFacts facts) {
+        WifiFacts f = (WifiFacts) facts;
+        return byVlan(f.gateway(), f.svlan());
+    }
 
     @Override protected int serviceGroup(WifiContext session) { return 0; }
 

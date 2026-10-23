@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
@@ -47,6 +48,9 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
     }
 
     @Override public String name() { return name; }
+
+    /** (a) The root by the door the dial came in at. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
 
     @Override protected int serviceGroup(LabContext ctx) { return 0; }
 

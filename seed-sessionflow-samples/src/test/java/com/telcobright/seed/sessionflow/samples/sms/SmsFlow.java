@@ -4,8 +4,10 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.Ingress;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.SettleOutcome;
 import com.telcobright.seed.sessionflow.api.Tier;
@@ -50,6 +52,13 @@ public final class SmsFlow extends RoutesphereFlow<SmsContext> {
     }
 
     @Override public String name() { return "SmsSupervisor"; }
+
+    /** (a) The root by the door: the Kafka topic the message came from, else the HTTP listener. */
+    @Override
+    protected String identifyTenant(RoutesphereFacts facts) {
+        SmsFacts f = (SmsFacts) facts;
+        return Ingress.TOPIC.equals(f.ingressKind()) ? byTopic(f.ingressMatch()) : byListener(f.ingressMatch());
+    }
 
     @Override protected int serviceGroup(SmsContext sms) { return 0; }
 

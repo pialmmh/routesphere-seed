@@ -6,6 +6,7 @@ import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
+import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
@@ -76,6 +77,9 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
     }
 
     @Override public String name() { return "CallSupervisor"; }
+
+    /** (a) C1: the root by the FreeSWITCH connection the park came from. */
+    @Override protected String identifyTenant(RoutesphereFacts facts) { return byEslSocket(((EslFacts) facts).esl()); }
 
     /** Billing detects a voice call's service group itself. */
     @Override protected int serviceGroup(VoiceContext call) { return 0; }

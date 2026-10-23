@@ -28,6 +28,7 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     // ■ the rules every lane states itself (abstract: the compiler asks each lane — none is inherited from the call)
     @Override public String name() { return "AdSupervisor"; }                     // the registered name = the lane's own table (§L.4)
     @Override protected int serviceGroup(AdContext c) { return 30; }
+    @Override protected String identifyTenant(RoutesphereFacts f) { return byListener(((AdFacts) f).listen()); }   // (a) the HTTP listener
     @Override protected Tier identifyEntryPartner(AdContext c, Candidate k) { return entryOfPartner(c, ((AdCandidate) k).advertiserId()); }   // (c)
     @Override protected TierRate rateAtLevel(AdContext c, Tier t, Partner p) { ... }                       // (e) the tier's rate; null = UNRATED
     @Override protected RoutePlan routing(AdContext c) { return RoutePlan.one(((AdCandidate) c.candidateBeingAdmitted()).creative()); }  // (d)
@@ -49,14 +50,14 @@ RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdFlow(kit), AdCo
 
 ## 3 · The owner's methods
 
-■ = abstract: every lane answers it. There are eight: `name`, `serviceGroup`, `identifyEntryPartner`, `routing`, `rateAtLevel`, `delivered`,
+■ = abstract: every lane answers it. There are nine: `name`, `serviceGroup`, `identifyTenant`, `identifyEntryPartner`, `routing`, `rateAtLevel`, `delivered`,
 `refundPolicy`, `rerouteActionFor` (the owner's word of 2026-10-23: a lane that forgot one would be billed like a call).
 The money stays shared with its defaults (`reserveBalance`, `finalizeCost`, `settleOutcome`, `identifyPartner`); (b), (g) and every
 statewalk call are final. `RoutesphereFlowDriftTest` guards the set.
 
 | | method | default | when the base asks |
 |---|---|---|---|
-| (a) | `identifySiblingLevelTenants(facts)` | the kit's rules on `facts.ingress()`; none → `NO_TENANT`, never a default root | `onStart` (IDLE → INIT) |
+| (a) | `identifyTenant(facts)` ■ | the lane's door: `byListener` · `byEslSocket` · `byVlan` · `byTopic` · `byIngress` (the kit's rules); null → `NO_TENANT`, never a default root | `onStart` (IDLE → INIT) |
 | (b) | `iterateResellerTenants(leaf)` | FINAL: leaf → reseller → … → root, in the root's own tree | `admit` |
 | (c) | `identifyEntryPartner(ctx, candidate)` ■ | who pays, in which tier | `admit`, per candidate |
 | (c) | `identifyPartner(tier)` | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant | `admit`, above the leaf |
