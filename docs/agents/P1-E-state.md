@@ -58,3 +58,7 @@ item 6 (the kit from ONE bootstrap url).
   the beacons and /viewed are progress in ACTIVE, every end after /shown is a `ServiceEnd` (settled, never released); `AdFlow`:
   delivered = shown (set by the answer), the seconds watched from the progress, a task completes only when viewed. Expectations
   changed (before → after, the report lists them); red first (4 of 15), 4 mutants red; samples 73 green.
+- 2026-10-24 03:20 · **item 11 done** — `seed-sessionflow/README.md` rewritten (the contract table: forced ■ / final / default, one line
+  each; the one-package recipe; the subclass and the builder; naming; the bootstrap and live tenants; the prepaid piece), the class javadoc
+  of `RoutesphereFlow` follows (two ways to write a lane, one package, the kit), the root README (seed-naming, the framework). Docs only;
+  the drift guard green. Next: the whole reactor in the worktree, then the clean copy of the head.

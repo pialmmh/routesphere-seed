@@ -29,9 +29,10 @@ import java.util.function.Supplier;
 
 /**
  * The ONE base flow of every routesphere application — the ad, the ESL call, the WiFi session, the SMS (P1; design
- * {@code routesphere-flow.html} §2). statewalk 4.0 owns the states ({@code SessionSupervisor}: IDLE · INIT · ADMITTING · ROUTING ·
- * CONNECTING · ACTIVE · SUCCEEDED | FAILED, final); this class owns the routesphere lifecycle and implements every handler call the
- * library makes, FINAL; the application answers only its own questions, through the owner's methods (a)–(g) and the smaller hooks.
+ * {@code routesphere-flow.html} §2; the owner's requirements R1–R13 of 2026-10-23). statewalk 4.1 owns the states
+ * ({@code SessionSupervisor}: IDLE · INIT · ADMITTING · ROUTING · CONNECTING · ACTIVE · SUCCEEDED | FAILED, final); this class owns the
+ * routesphere lifecycle and implements every handler call the library makes, FINAL; the application answers only its own questions,
+ * through the owner's methods (a)–(g) and the smaller hooks.
  *
  * <pre>
  *   library call (state)          the base                                              the owner's methods (■ = abstract: every lane answers it)
@@ -56,6 +57,21 @@ import java.util.function.Supplier;
  * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
  * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
  * (b), the finish (g) and every statewalk call are final.
+ *
+ * <p><b>Two ways to write a lane (R5).</b> A big lane subclasses this class and overrides; a small lane answers the same questions as
+ * lambdas with {@link RoutesphereApp#builder} (the seven forced answers required, the hooks the call's defaults). Either way the lane's
+ * helpers are the base's one-line lookups ({@link Lookups}: {@code byListener} · {@code byEslSocket} · {@code byVlan} · {@code byTopic} ·
+ * {@code byIngress} for the root, {@code byPartnerId} · {@code byPartnerName} for the payer), and the lane runs through its own supervisor
+ * class ({@link RoutesphereSupervisor}: {@code RoutesphereEngine.of(new AdSupervisor(flow))}) with a signaling machine that shows its
+ * {@code SessionStart} sample (refused at start otherwise).
+ *
+ * <p><b>One package per application (R6).</b> {@code com.telcobright.<app>}: {@code <App>Facts} (the RoutesphereFacts of its door),
+ * {@code <App>Flow} (this class's answers), {@code <App>Supervisor} (the named class), {@code <App>Signaling} (its MachineSpec),
+ * {@code <App>Frames} (the wire's decoder), {@code <App>Context} (the session's own facts).
+ *
+ * <p><b>The kit (R8).</b> {@code RoutesphereKit.fromBootstrap(source, app)}: the application's yml holds ONE bootstrap url; the roots, their
+ * trees, doors, ledgers (the switch ledger by default, R12), CDR roads ({@code cdr_<root>}, R13) and topics (R9) come from prime-context, and
+ * a root created later is served live (R10).
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
  * {@link RoutesphereKit}. A step keeps nothing in a field; what it learns goes onto the session's context.
