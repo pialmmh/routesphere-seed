@@ -29,10 +29,10 @@ The rule (the architect's, P1-F): the two lines live ONLY in a run-time location
    secret does.
 
 **Never inside the jar** — the build reads every file in it: not in `src/main/resources/application.yml` or `.properties`, not in a
-profile file packed into the jar. And never where the BUILD's own run-time sources look: the build is a JVM too, and reads its
-environment, a `.env` and a `config/application.properties` of ITS working directory (SmallRye 3.13.4's default sources, which Quarkus's
-build reader adds) — so no `config/` folder and no `.env` in the project's directory, and no `PRIME_CONTEXT_*` variable exported in the
-shell that builds.
+profile file packed into the jar. And never where the BUILD's own run-time sources look: the build — and every `@QuarkusTest` it runs —
+is a JVM too, and reads its environment, a `.env` and a `config/application.properties` of ITS working directory (SmallRye 3.13.4's
+default sources, which Quarkus's build reader adds) — so no `config/` folder and no `.env` in the project's directory, and no
+`PRIME_CONTEXT_*` variable exported in the shell that builds.
 
 ### No build-time guard: there is no reliable, documented signal
 
