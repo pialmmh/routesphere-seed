@@ -66,6 +66,40 @@ SessionFlowKit kit = SessionFlowKit.builder().ledger(ledger.port()) … .build()
 schedule(() -> tree.schemas().forEach(ledger.reaper()::reap), everySlotReconcile);   // the host's cadence
 ```
 
+## On a kit made from the bootstrap (P1-E items 6 and 13)
+
+`dependencies.SwitchLedgerMaker` is the `switch` kind of `RoutesphereKit.fromBootstrap` (found on the classpath): per served root a
+MemLedger over its `switch-db` (url, user, password by reference) with every tier schema of the root's tree, its WAL and queue in the root's
+own directory (`<journal.dir>/ledger`), STANDALONE. The port it answers (`internal.OwnedMemLedgerPort`) OWNS that MemLedger:
+
+- **closed with the engine** — the bootstrap road closes the ledgers it made; a closed engine leaves no MemLedger thread
+  (`SwitchLedgerOnTheBootstrapKitTest`);
+- **a reseller tier created live** (R10: `tenant_created`, kind reseller — prime-context sends it only after the tier's tables are committed)
+  reaches THAT root's port only (`LedgerPort.tierAdded(tierDb)`, a default that does nothing elsewhere), BEFORE the root's tree is reloaded —
+  so no session sees the tier before its ledger can serve it. The port loads ONE tier schema, ONCE, with no money move of the root running
+  meanwhile: every verb holds the port's gate shared, the load holds it alone (never under a session's reserve).
+
+**The load is `MemLedger.addDatabase(schema)`** (mem-ledger fba1346, 2026-10-11, ARCH-0077-B2 item 3): the tier's registered entities loaded,
+nothing else opened or reloaded, a tier already registered a no-op. The seed's pin — mem-ledger 1.0.0-SNAPSHOT as built on 2026-10-07 in the
+build box's repository — predates it, so `internal.AddTierLive` finds it on the MemLedger at run time; a MemLedger without it is said in one
+ERROR in words, the tier's money is refused (`LedgerFault`: the ledger has no such schema) until a later word or the next start loads it.
+Not `reloadDatabases()`: in the pinned mem-ledger it works only on a MemLedger built with `autoDiscoverDatabases(prefix)`, whose discovery
+is MySQL's `SHOW DATABASES LIKE '<prefix>%'` — a PostgreSQL switch database keeps its tiers as SCHEMAS, where it fails — and it loads every
+new database under the prefix, not the one tier the event names. When the pin moves to a mem-ledger build that has `addDatabase`, the
+reflection becomes a plain call.
+
+**What P2 must prove on its PostgreSQL lab** (this box has no database server: here the proof is MemLedger on H2 for the gate, the once rule
+and the close, a stand-in for `addDatabase`):
+
+1. the switch ledger of a root built over its tree's tier schemas (the root and `<root>_res_<id>`, nested) on PostgreSQL, the WAL in its
+   directory;
+2. a mem-ledger build that HAS `addDatabase` on that classpath (the pin moved, or the ad's own) — or the ERROR above, said once;
+3. prime-context provisions a reseller tier (its `packageaccount` / `packageaccountreserve` tables committed), then sends `tenant_created`;
+4. the application's road: the root's ledger loads exactly the new schema (`addDatabase`), the other tiers' cached accounts and open
+   reserves untouched (a session of an old tier admitted and settled across the load), then the tree is reloaded;
+5. a session of the new tier is admitted, reserved and settled on its own schema;
+6. the same event twice = one load; a closed engine leaves no MemLedger thread.
+
 ## The two entities rule
 
 The module registers exactly two entities — `PackageAccount` and `PackageAccountReserve` — in the MemLedger it is handed. `SwitchLedgers.over`

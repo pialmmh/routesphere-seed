@@ -154,7 +154,10 @@ so the application's yml is the two lines above and nothing else. See `seed-boot
 
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree
-reloaded. The same event twice is once; another application's is nothing.
+reloaded — and, first, THAT root's ledger loads the tier (`LedgerPort.tierAdded(tierDb)`: the switch ledger loads the one schema between
+the root's money moves, see `seed-switch-ledger/README.md`, with what P2 must prove on PostgreSQL), so no session sees a tier its ledger
+cannot serve. The same event twice is once; another application's is nothing. The engine's close closes everything the road opened: the
+listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR road and journal, the producers, the trees.
 
 ## 5 · Money
 

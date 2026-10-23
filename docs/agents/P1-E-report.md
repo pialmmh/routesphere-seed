@@ -2,7 +2,7 @@
 
 Branch `p1-rules` (worktree `routesphere-seed/worktrees/p1-rules`), from f41eace (stream D's four commits + the brief). Nothing pushed;
 nothing written into `~/.m2`; no database server, broker or prime-context reached (in-process fakes, Kafka's mocks, H2 in memory only).
-**Status: items 0–11 done (53bd001: worktree and clean copy 501/0/0/3); CONTRACT DONE at c992262; item 12 done; item 13 (a new reseller tier on the switch ledger, the architect's) next.**
+**Status: items 0–13 done (items 12–13 added by the architect overnight); CONTRACT DONE at c992262; the final reactor and clean copy of the head below.**
 
 | | tests / failures / errors / skipped |
 |---|---|
@@ -348,12 +348,51 @@ lane, one package, the kit) — the drift guard still finds exactly the nine ■
   envelope's `config`, beside `routesphere`); a key an operator must override on a box is an environment variable (300) or `-D` (400).
   Quarkus reads BUILD-time properties before any runtime source — those stay in the jar.
 
+## Item 13 · a new reseller tier on the switch ledger (the architect's answer to Q1) — with the road's ledger close
+
+- **The hook:** `spi/LedgerPort.tierAdded(String tierDb)` — a default that does nothing (orchestrix's roads, the testkit's ledger and every
+  fake unchanged); javadoc: load the tier's books with no money move running meanwhile, once, BEFORE the tree shows the tier.
+  `internal/PerRootLedger.tierAdded(root, tierDb)` tells THAT root's ledger only.
+- **The road** (`BootstrapRoad.reloadTheRootOf`, `tenant_created` kind reseller of a served root): the root's ledger loads the tier
+  FIRST, then the tree is reloaded — so no session is admitted on a tier its ledger cannot serve. The same event twice is one (the road's
+  seen set, and the port's own once rule).
+- **The switch ledger** (`internal/OwnedMemLedgerPort`, the port `SwitchLedgerMaker` answers): every verb (reserve, settle, release, the
+  live balance) holds a read/write gate SHARED, the tier's load holds it ALONE — never under a session's reserve; a tier it was built over,
+  or loaded already, is nothing (checked before the gate to spare the lock, and again under it for two words at once); a load that fails is
+  one ERROR and is not remembered (a later word or the next start loads it). **The load** (`internal/AddTierLive`) is mem-ledger's
+  `addDatabase(schema)` (fba1346, 2026-10-11, ARCH-0077-B2 item 3 — one tier, nothing else opened, a registered tier a no-op). **Why not
+  `reloadDatabases()` / `autoDiscoverDatabases(prefix)`:** in the pinned mem-ledger `reloadDatabases()` only works on a MemLedger BUILT with
+  auto-discovery, whose discovery is MySQL's `SHOW DATABASES LIKE '<prefix>%'` — it fails on the bed's PostgreSQL (tiers are schemas) and
+  loads every new database under the prefix, not the one tier named. **The pinned jar** (mem-ledger 1.0.0-SNAPSHOT as built 2026-10-07 in
+  this box's repository) predates `addDatabase`: `AddTierLive` finds it at run time (on MemLedger's interface, else the object's class) and,
+  absent, says in words that the tier loads at the next start and its money is refused until then — fail-closed. **To do (not mine, no
+  install here):** rebuild/publish mem-ledger from fba1346 or later, move the pin, then the reflection becomes a plain call.
+- **The close (found after the final run):** `PerRootLedger` closes every root's ledger that is `AutoCloseable`; `BootstrapRoad.close()`
+  closes them; the switch ledger's port shuts its MemLedger down. **A closed engine leaves no MemLedger thread** —
+  `SwitchLedgerOnTheBootstrapKitTest` (an engine on a kit made from the bootstrap, the REAL `SwitchLedgerMaker` over H2, a minimal signaling
+  machine, `LedgerFlow`): one `MemLedger-WAL-Consumer` thread while it runs, none after `engine.close()`. `SwitchLedgerMakerTest` closes the
+  port it makes (the stack trace of the final logs gone).
+- **Tests:** `TierAddedLiveTest` (5: a MemLedger that has `addDatabase` loads the one tier; the pinned one cannot and says why; the port
+  loads once and no money read runs while it loads — a latch holds the load, a balance read waits; two words at once load once; a failed
+  load is said and tried again), `SwitchLedgerOnTheBootstrapKitTest` (1), `SwitchLedgerMakerTest` (+1: closing the port shuts the MemLedger
+  down), `RoadCloseTest` (1: the engine's close closes the ledgers, the listener's consumer, the producers), `TenantCreatedLiveTest` (+1: a new
+  tier reaches that root's ledger only, before the tree, once). `BootstrapWorld.makers(LedgerMaker)` (a test helper) added.
+- **Red first:** by compile (no `tierAdded`, no closable port) — `RoadCloseTest` and the switch maker's close test also red by behaviour on
+  the code before the close. **Mutants (11; 10 red, 1 equivalent):** the road never tells the ledger; the tree before the ledger; every
+  root's ledger told; a money move not held off by the load; the guard under the gate removed (survived the sequential test → the two-words
+  test added → red); both checks removed; a failed load remembered; the closed engine leaving its MemLedger running; the road leaving its
+  ledgers open (C1); closing the port not shutting the MemLedger (C2). Equivalent: the check before the gate removed — it only spares the
+  lock, the guard under the gate keeps the rule.
+- **What P2 must prove on PostgreSQL** is written in `seed-switch-ledger/README.md` (six steps: the ledger over the tree's schemas, a
+  mem-ledger with `addDatabase`, prime-context commits then sends, the one schema loaded with the other tiers' reserves untouched, a session
+  of the new tier, the same event twice and the close).
+
 ## Found after the final run (the final logs read)
 
 The final worktree and copy logs carry one stack trace the baseline's did not: a MemLedger's WAL consumer of
 `SwitchLedgerMakerTest` failing on "Database is already closed" after its test ended — the test never shut the MemLedger the maker
 opened, and, the real gap behind it, **the bootstrap road's `close()` did not close the ledgers it made** (a MemLedger's threads would run
-on after the engine's close). The tests were green. Fixed in the commit after the report (see "After the report" below).
+on after the engine's close). The tests were green. Fixed in item 13's commit (see item 13).
 
 ## The findings for the prime-context round (the envelope, §C)
 
@@ -415,6 +454,10 @@ under load (`VoiceFlowTest.a_talking_call_renews_one_minute_per_period…`, the 
 N2, N5 — and were made red by two stronger assertions; one, M4-1, first ran on stale classes and was rerun red).
 
 ## Open questions for the owner / the architect
+
+The architect's answers (overnight defaults, 2026-10-24): Q1 → item 13 (done above); Q2 accepted (on the bootstrap kit the ad's journal is
+the per-root one; P2 reads the bed's old file once at its first start, then retires it); Q3 → ad-sphere keeps its own task rule exactly as at
+296b2cf (the sample's rule may stay); Q4 done (prime-context's copies byte-identical). The questions as they were asked:
 
 1. **A new reseller tier's schema on the switch ledger** (finding 9): wire `tenant_created` (reseller) to the root's MemLedger
    (`reloadDatabases()`), or rebuild that root's ledger between sessions — whose round, and does prime-context send the event only after the

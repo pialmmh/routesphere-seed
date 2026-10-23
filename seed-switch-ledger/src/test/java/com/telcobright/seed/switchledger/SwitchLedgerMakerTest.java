@@ -51,10 +51,26 @@ class SwitchLedgerMakerTest {
     }
 
     @Test
-    void theRootsLedger_isAMemLedgerPort_overEveryTierSchemaOfItsTree_itsStateInTheRootsDirectory() {
+    void theRootsLedger_isAMemLedgerPort_overEveryTierSchemaOfItsTree_itsStateInTheRootsDirectory() throws Exception {
         LedgerPort port = new SwitchLedgerMaker().make(btcl(new RootResources.SwitchDb(lab.url(), "btcl", "sa", null)), context(trees));
-        assertThat(port.getClass().getSimpleName()).isEqualTo("MemLedgerPort");
-        assertThat(Files.isDirectory(dir.resolve("ledger"))).as("the WAL and the queue in the root's own directory").isTrue();
+        try (AutoCloseable owned = (AutoCloseable) port) {
+            assertThat(Files.isDirectory(dir.resolve("ledger"))).as("the WAL and the queue in the root's own directory").isTrue();
+        }
+    }
+
+    @Test
+    void closingTheRootsLedger_shutsItsMemLedgerDown() throws Exception {
+        long before = walConsumers();
+        LedgerPort port = new SwitchLedgerMaker().make(btcl(new RootResources.SwitchDb(lab.url(), "btcl", "sa", null)), context(trees));
+        assertThat(walConsumers()).as("the MemLedger the maker opened runs its WAL consumer").isEqualTo(before + 1);
+        ((AutoCloseable) port).close();
+        long until = System.currentTimeMillis() + 5_000;
+        while (walConsumers() > before && System.currentTimeMillis() < until) Thread.sleep(10);
+        assertThat(walConsumers()).as("closed with the port: no thread left behind").isEqualTo(before);
+    }
+
+    private static long walConsumers() {
+        return Thread.getAllStackTraces().keySet().stream().filter(t -> t.isAlive() && "MemLedger-WAL-Consumer".equals(t.getName())).count();
     }
 
     @Test

@@ -10,7 +10,10 @@ import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.switchledger.internal.Books;
+import com.telcobright.seed.switchledger.internal.AddTierLive;
 import com.telcobright.seed.switchledger.internal.DriverDataSource;
+import com.telcobright.seed.switchledger.internal.MemLedgerPort;
+import com.telcobright.seed.switchledger.internal.OwnedMemLedgerPort;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -19,7 +22,9 @@ import java.util.Set;
  * The {@code switch} ledger of a root — the default (R12: "our prepaid part is strictly based on package-account and mem-ledger cache"):
  * a MemLedger over the root's switch database ({@code switch-db}: its url, user, password by reference), holding the two entities of every
  * tier schema of the root's tree, its WAL and queue in the root's own directory ({@code <dir>/ledger}), STANDALONE; the base's ledger port
- * over it ({@link SwitchLedgers#memLedger}). Found on the classpath by its kind ({@code META-INF/services}).
+ * over it ({@link SwitchLedgers#memLedger}), which owns the MemLedger: closing the port (the engine's close) shuts it down; a reseller
+ * tier created live (R10) is loaded into it ONE schema at a time, between the root's money moves ({@code AddTierLive}). Found on the
+ * classpath by its kind ({@code META-INF/services}).
  *
  * <p>The pool of the database's connections is the host's choice: the default opens one per use ({@code DriverManager}); a host passes its
  * own pooled {@code DataSource} maker.
@@ -41,16 +46,18 @@ public final class SwitchLedgerMaker implements LedgerMaker {
     @Override
     public LedgerPort make(RootResources root, Context context) {
         RootResources.SwitchDb db = requireTheDatabase(root);
+        Set<String> tiers = tierSchemasOf(root, context);
         MemLedger memLedger = MemLedger.builder()
             .dataSource(dataSources.of(db, db.password(context.environment(), context.deployment().secrets())))
-            .databases(tierSchemasOf(root, context).toArray(String[]::new))
+            .databases(tiers.toArray(String[]::new))
             .registerEntity(Books.ACCOUNT, PackageAccount.class)
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
             .walPath(root.dir().resolve("ledger").resolve("wal").toString())
             .queuePath(root.dir().resolve("ledger").resolve("queue").toString())
             .replicationMode(ReplicationConfig.Mode.STANDALONE)
             .build();
-        return SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
+        MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
+        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load);
     }
 
     private static RootResources.SwitchDb requireTheDatabase(RootResources root) {

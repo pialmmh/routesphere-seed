@@ -80,3 +80,12 @@ item 6 (the kit from ONE bootstrap url).
   (unchanged). Red first (compile), 8 mutants red; module 8/0 (direct run). Decision: the reactor + clean copy run once after item 13
   (covering 12 and 13), the lock being shared by five agents tonight. Next: item 13 (a new reseller tier on the switch ledger) + the
   road's ledger close (found after the final run).
+- 2026-10-24 02:58 · **item 13 done** (the architect's answer to Q1) — `LedgerPort.tierAdded(tierDb)` (a default that does nothing:
+  orchestrix and the fakes unchanged); the road, on `tenant_created` kind reseller, tells THAT root's ledger first, then reloads the tree;
+  seed-switch-ledger's `OwnedMemLedgerPort` loads ONE tier schema once, with no money move of the root meanwhile (a read/write gate: verbs
+  shared, the load alone), through `AddTierLive` = mem-ledger's `addDatabase(schema)` (fba1346), found at run time because the pinned jar
+  (built 2026-10-07) predates it — said in words when absent. Decision: not `reloadDatabases()` — MySQL's `SHOW DATABASES` only, every new
+  database under the prefix. With it the road's `close()` closes the ledgers it made (found after the final run): a closed engine leaves
+  no MemLedger thread (end to end on H2). Red first (compile), 11 mutants (10 red, 1 equivalent: the check before the gate only spares the
+  lock); sessionflow 193, samples 73, switch-ledger 61, tenant 19, naming 10, bootstrap-config 8 (direct runs). Next: the whole reactor
+  and a clean copy of the head under the lock, then the report.
