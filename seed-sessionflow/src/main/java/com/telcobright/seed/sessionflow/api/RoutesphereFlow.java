@@ -463,6 +463,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The finish · The application's session record (the SDR), or null for none. */
     protected Object buildSdr(C ctx, Outcome outcome) { return null; }
 
+    /**
+     * The start · The application's own Kafka topics of one served root (R9: {@code Topics.app(app, IN | OUT, name, root)} =
+     * {@code <app>_<in|out>_<name>_<root>}), made at the start beside the root's CDR road and doorbell, and again when a root is added live.
+     * Default: none. Asked only on a kit made from the bootstrap (a kit built by hand has no road to a cluster).
+     */
+    protected List<String> topicsOf(String root) { return List.of(); }
+
     /** The finish, last · The application's own closing. */
     protected void onEnded(C ctx, Outcome outcome) { }
 

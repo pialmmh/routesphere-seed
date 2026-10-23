@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.api;
 
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.seed.sessionflow.internal.BootstrapRoad;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.statewalk.channel.Channel;
 import com.telcobright.statewalk.channel.Delivery;
@@ -51,6 +52,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
         this.flow = b.flow;
         flow.kit().attachSessions(this::sessionOf);
         flow.publishWhatWasLeftInTheAir();                 // R1-6: before the first session, what a stopped process left in the air
+        flow.kit().bootstrapRoad().ifPresent(road -> road.start(flow::topicsOf));    // R9: every served root's topics (a kit from the bootstrap)
         this.registry = buildRegistry(b);
         this.housekeeping = startSlotReconciler();
         RoutesphereSettings s = flow.kit().settings();
@@ -186,6 +188,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
     public void close() {
         if (housekeeping != null) housekeeping.shutdownNow();
         registry.shutdown();
+        flow.kit().bootstrapRoad().ifPresent(BootstrapRoad::close);
         log.info("[{}] routesphere flow stopped: {}", flow.name(), stats());
     }
 

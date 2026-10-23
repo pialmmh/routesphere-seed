@@ -82,6 +82,15 @@ class KitFromBootstrapTest {
         assertThat(w.ledgers.get("btcl").journal()).as("btcl's ledger never asked").isEmpty();
     }
 
+    @Test
+    void theTiersAreNamedByR9_theSeedRootsLegacyNamesByTheBootstrapsWord() {
+        assertThat(kit().deployment().orElseThrow().tenantNames().tierDb("btcl", "btcl", 2)).as("the sample names no seed root").isEqualTo("btcl_res_2");
+        w.source.serve(edited(rs -> rs.put("naming", Map.of("seed-root", "btcl"))));
+        Deployment bed = kit().deployment().orElseThrow();
+        assertThat(bed.tenantNames().tierDb("btcl", "btcl", 2)).isEqualTo("res_2");
+        assertThat(bed.tenantNames().tierDb("link3", "link3", 5)).isEqualTo("link3_res_5");
+    }
+
     // ── refusals ──
 
     @Test

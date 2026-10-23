@@ -51,6 +51,12 @@
             <artifactId>seed-campaign</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- R9: the platform topics (cdr_<root>, config_event_loader_<root>, tenant_created) and an application's own -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-naming</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>

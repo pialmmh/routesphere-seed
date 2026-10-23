@@ -99,6 +99,7 @@ public final class RoutesphereApp {
         CdrFill<C> fillCdr;
         BiFunction<C, Outcome, Object> buildSdr;
         BiConsumer<C, Outcome> onEnded;
+        Function<String, List<String>> topicsOf;
         private boolean sealed;
 
         private Builder(String name) {
@@ -155,6 +156,9 @@ public final class RoutesphereApp {
         public Builder<C> buildSdr(BiFunction<C, Outcome, Object> v) { open(); this.buildSdr = v; return this; }
         /** The finish, last · the lane's own closing. */
         public Builder<C> onEnded(BiConsumer<C, Outcome> v) { open(); this.onEnded = v; return this; }
+
+        /** The start · the lane's own Kafka topics of one root ({@code <app>_<in|out>_<name>_<root>}); default: none. */
+        public Builder<C> topicsOf(Function<String, List<String>> v) { open(); this.topicsOf = v; return this; }
 
         /**
          * The application's flow on this kit — refused in words when a forced answer is missing (a lane that forgot one would be billed like

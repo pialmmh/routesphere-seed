@@ -64,6 +64,12 @@
                 <artifactId>seed-sessionflow</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- R9: the names of a root's tiers, topics and Redis keys (prime-context's RootNaming rule, copied) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-naming</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <!-- the tenant trees every product walks: the map of sibling tenants, the prime-context tree loader, the doorbell -->
             <dependency>
                 <groupId>com.telcobright</groupId>

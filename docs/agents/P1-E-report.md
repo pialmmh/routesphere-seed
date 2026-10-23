@@ -208,6 +208,33 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   every tier's money on one root's ledger; the etag never sent back; the ledger kind with no default; a root prime-context cannot load passes;
   the switch ledger without its database passes.
 
+## Item 7 · naming and auto-creation (R9)
+
+- **The module `seed-naming`** (plain Java, no dependency; in the reactor before `seed-sessionflow`, in the bom): `api/TenantNames`
+  (`withSeedRoot(seedRoot)` / `strict()`: `tierDb(root, parentDb, partnerId)` = `<root>_res_<id>`, nested `<parent>_<id>`; the seed root's
+  legacy `res_<id>` (LOOSE); `parentOf(root, tierDb)` by the root's prefix, never by counting underscores; `isTierOf`; `rootOf(db, roots)` —
+  prime-context's `RootNaming` copied with its citation; the seed root's NAME comes from the bootstrap, `Deployment.tenantNames()` reads
+  `config.routesphere.naming.seed-root`), `api/Topics` (`platform(name, root)` = `<name>_<root>`; `app(app, Direction, name, root)` =
+  `<app>_<in|out>_<name>_<root>`; `checked(topic)`: Kafka's legal characters, ≤ 249, no `.` — Kafka's metrics read `.` as `_`, so twins would
+  collide; `TENANT_CREATED` = `tenant_created`), `api/RedisKeys.of(root, app, name)` = `<root>:<app>:<name>` (a part with `:` or a space
+  refused), `api/Direction` (`in`, `out`). Why a module and not seed-tenant's package: the engine (seed-sessionflow) makes the topics, and
+  seed-tenant depends on seed-sessionflow.
+- **`dependencies/TopicProvisioner.ensure(admin, topics, partitions, replication, where)`** through Kafka's `Admin.createTopics`: every name
+  checked first (refused before the cluster is asked), each named once; `TopicExistsException` = it was there (fine); any other failure (no
+  right, no answer within 10 s) = refused, said ONCE in one WARN naming every refused topic, and the start goes on (the brokers may make a
+  topic at its first message). Answers `Ensured(created, existed, refused)`.
+- **At the start** (`RoutesphereEngine`, before the registry is built) on a kit made from the bootstrap: for every served root
+  `cdr_<root>` (the switch publishes), `config_event_loader_<root>` (the doorbell it listens to) and the lane's own — a new hook
+  **`topicsOf(root)`** (base default: none; the builder's optional `topicsOf(root -> …)`), on the root's own Kafka with its partitions and
+  replication. A kit built by hand makes none. The CDR road of a bootstrap kit now names its topic by `Topics.platform("cdr", root)`.
+  Not made: `cdr_summary_ping_<root>` (billing-core's), `tenant_created` (prime-context's) — the switch neither publishes them nor owns them.
+  Redis needs nothing made: the key is the namespace.
+- **Red first:** the naming tests (10) on stub classes — all 10 red, then green; `TopicProvisionerTest` (3), `TopicsAtStartTest` (2) by
+  compile. **Mutants (12, red):** the seed root's legacy prefix ignored; the parent by the first underscore (SURVIVED first → a three-level
+  assertion added → red); a word as a tier's id; a `.` in a topic; the length limit off by one (SURVIVED first → a 250-character assertion
+  added → red); a `:` in a Redis part; an app's topic without its direction; a topic already there taken for a refusal; a name asked twice;
+  the engine never starts the road; the lane's own topics ignored; a name not checked before the cluster is asked.
+
 ## Open questions for the owner / the architect
 
 (none yet)

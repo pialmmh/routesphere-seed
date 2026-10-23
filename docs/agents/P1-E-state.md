@@ -39,3 +39,9 @@ item 6 (the kit from ONE bootstrap url).
   its variable and If-None-Match/304; `testkit/MapBootstrapSource`); `testkit/FakeKafka`; the §C samples at
   `seed-sessionflow/src/test/resources/bootstrap/`. Red first (compile), 9 mutants red; sessionflow 177, samples 71, switch-ledger 54,
   tenant 19 green. Next: item 7 (naming + topic auto-creation).
+- 2026-10-24 02:05 · **item 7 done** — module **`seed-naming`** (`TenantNames` = prime-context's RootNaming rule, copied with citation, the
+  seed root by the bootstrap's word `naming.seed-root`; `Topics.platform` / `Topics.app` with Kafka's rules; `RedisKeys.of`; `Direction`);
+  `dependencies/TopicProvisioner.ensure` (Admin.createTopics, idempotent, a refusing cluster said once); the engine's start makes every
+  served root's `cdr_<root>`, `config_event_loader_<root>` and the lane's `topicsOf(root)` (a new hook, base + builder);
+  `Deployment.tenantNames()`. Red first (naming 10/10 on stubs, the rest by compile), 12 mutants red (2 survivors made red by two stronger
+  assertions); naming 10, sessionflow 183, samples 71, switch-ledger 54, tenant 19. Next: item 8 (tenant_created live).

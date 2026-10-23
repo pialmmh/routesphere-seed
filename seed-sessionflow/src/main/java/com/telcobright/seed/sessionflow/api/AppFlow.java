@@ -83,4 +83,6 @@ final class AppFlow<C extends RoutesphereContext> extends RoutesphereFlow<C> {
     @Override protected Object buildSdr(C ctx, Outcome outcome) { return app.buildSdr == null ? super.buildSdr(ctx, outcome) : app.buildSdr.apply(ctx, outcome); }
 
     @Override protected void onEnded(C ctx, Outcome outcome) { if (app.onEnded != null) app.onEnded.accept(ctx, outcome); }
+
+    @Override protected List<String> topicsOf(String root) { return app.topicsOf == null ? super.topicsOf(root) : app.topicsOf.apply(root); }
 }

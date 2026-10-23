@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.api;
 
+import com.telcobright.seed.naming.api.TenantNames;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.internal.DeploymentReader;
 
@@ -42,6 +43,9 @@ public record Deployment(String tenant, String app, String env, List<String> roo
 
     /** One served root's resources; empty when the root is not served. */
     public Optional<RootResources> root(String root) { return Optional.ofNullable(resources.get(root)); }
+
+    /** How this deployment's reseller tiers are named (R9): {@code <root>_res_<id>}, the seed root's legacy {@code res_<id>} by the bootstrap's word. */
+    public TenantNames tenantNames() { return TenantNames.withSeedRoot(seedRoot); }
 
     /** The rules of one root's doors. */
     public List<IdentificationRule> rulesOf(String root) { return rules.stream().filter(r -> r.tenant().equals(root)).toList(); }

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-naming</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-naming</name>
+    <description>
+        The naming conventions every routesphere application resolves the same way (the owner's R9, 2026-10-23): a reseller tier's database
+        (prime-context's RootNaming rule: &lt;root&gt;_res_&lt;id&gt;, nested _&lt;id&gt;; the legacy res_&lt;id&gt; for the seed root the bootstrap
+        names), the platform topics (&lt;name&gt;_&lt;root&gt;), an application's own topics (&lt;app&gt;_&lt;in|out&gt;_&lt;name&gt;_&lt;root&gt;) and Redis keys
+        (&lt;root&gt;:&lt;app&gt;:&lt;name&gt;). Plain Java, no dependency.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

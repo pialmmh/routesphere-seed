@@ -41,6 +41,19 @@ final class BootstrapWorld {
         return b.build();
     }
 
+    /** The sample with a pool of 8 and 2 threads: an engine a test starts on it builds its pools at once. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> small(Map<String, Object> envelope) {
+        Map<String, Object> copy = new java.util.HashMap<>(envelope);
+        Map<String, Object> config = new java.util.HashMap<>((Map<String, Object>) envelope.get("config"));
+        Map<String, Object> rs = new java.util.HashMap<>((Map<String, Object>) config.get("routesphere"));
+        rs.put("pool", 8);
+        rs.put("threads", 2);
+        config.put("routesphere", rs);
+        copy.put("config", config);
+        return copy;
+    }
+
     KitMakers makers() {
         return KitMakers.builder()
             .trees((deployment, src) -> trees = new FakeLiveTrees(prime, deployment.roots()))
