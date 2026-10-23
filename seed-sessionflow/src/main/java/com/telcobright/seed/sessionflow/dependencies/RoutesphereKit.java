@@ -1,11 +1,14 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
+import com.telcobright.seed.sessionflow.api.Deployment;
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
 import com.telcobright.seed.sessionflow.api.Lookups;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
+import com.telcobright.seed.sessionflow.internal.BootstrapRoad;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.ChannelSlots;
 import com.telcobright.seed.sessionflow.internal.FlowCounters;
+import com.telcobright.seed.sessionflow.spi.BootstrapSource;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.SdrSink;
@@ -42,6 +45,7 @@ public final class RoutesphereKit {
     private final FlowCounters counters = new FlowCounters();
     private final CdrAssembler cdrAssembler;
     private final Lookups lookups = new Lookups(this::resolver);
+    private final BootstrapRoad bootstrap;
     private volatile Function<String, RoutesphereContext> sessions = id -> null;
 
     private RoutesphereKit(Builder b) {
@@ -56,9 +60,20 @@ public final class RoutesphereKit {
         this.settings = b.settings;
         this.resolver = b.rules != null ? checkedResolver(b.rules, tenants) : b.resolver;
         this.cdrAssembler = new CdrAssembler(zone, clock.millis() * 1000);
+        this.bootstrap = b.bootstrap;
     }
 
     public static Builder builder() { return new Builder(); }
+
+    /**
+     * R8 · The kit of an application whose yml holds ONE bootstrap url: everything else — the served roots, their trees and doors, each
+     * root's ledger, CDR road and journal, the pool and the timers — read from prime-context's bootstrap and made with the makers on the
+     * classpath (seed-tenant's trees, seed-switch-ledger's {@code switch} ledger). Refused in words when the bootstrap says too little.
+     */
+    public static RoutesphereKit fromBootstrap(BootstrapSource source, String app) { return fromBootstrap(source, app, KitMakers.onTheClasspath()); }
+
+    /** The same, with the makers named (a test's fakes, a host's pooled database). */
+    public static RoutesphereKit fromBootstrap(BootstrapSource source, String app, KitMakers makers) { return BootstrapRoad.open(source, app, makers).kit(); }
 
     /** The tenant trees per root (§D): one immutable snapshot per root, a session keeps the one it started with. */
     public TenantLookup tenants() { return tenants; }
@@ -100,6 +115,12 @@ public final class RoutesphereKit {
     /** The CDR builder (its running sequence is the producer's own). */
     public CdrAssembler cdrAssembler() { return cdrAssembler; }
 
+    /** What prime-context's bootstrap said this application serves; empty for a kit built by hand. */
+    public Optional<Deployment> deployment() { return bootstrap == null ? Optional.empty() : Optional.of(bootstrap.deployment()); }
+
+    /** The kit's road to prime-context — the engine starts it and closes it; empty for a kit built by hand. */
+    public Optional<BootstrapRoad> bootstrapRoad() { return Optional.ofNullable(bootstrap); }
+
     /** A live session's context by its id — how a helper child restored from the store finds its session again (the engine attaches it). */
     public Optional<RoutesphereContext> sessionOf(String sessionId) { return Optional.ofNullable(sessions.apply(sessionId)); }
 
@@ -128,6 +149,7 @@ public final class RoutesphereKit {
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
         private RoutesphereSettings settings = RoutesphereSettings.defaults();
+        private BootstrapRoad bootstrap;
 
         private Builder() {}
 
@@ -144,6 +166,8 @@ public final class RoutesphereKit {
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }
         public Builder settings(RoutesphereSettings v) { this.settings = required(v, "settings"); return this; }
+        /** The road the kit was made on ({@link #fromBootstrap}); a kit built by hand has none. */
+        public Builder bootstrap(BootstrapRoad v) { this.bootstrap = v; return this; }
 
         /** Refuses to build without the trees, the ledger, the CDR sink or the zone: there is no fallback for them. */
         public RoutesphereKit build() { return new RoutesphereKit(this); }

@@ -31,3 +31,11 @@ One line per item, newest last. Times are Dhaka (+06).
 CONTRACT DONE — items 0–5 (the records road gone; identifyTenant / identifyPartner forced with helpers; the facts' sample at build; one
 supervisor class per lane; the builder). The architect may merge up to item 5's commit and start the ad-sphere port on it. Running next:
 item 6 (the kit from ONE bootstrap url).
+- 2026-10-24 01:15 · the contract head **c992262** on a git-archive clean copy (offline, under the lock): **452/0/0/3**.
+- 2026-10-24 01:40 · **item 6 done** — `RoutesphereKit.fromBootstrap(source, app[, makers])`: §C's envelope → `api/Deployment` (roots,
+  settings, zone, rules, each root's `RootResources`, the platform Kafka), refusals in words; per root its tree (`spi/TreesMaker` →
+  seed-tenant's `PrimeContextTrees`), ledger (`spi/LedgerMaker`: `switch` → seed-switch-ledger's `SwitchLedgerMaker`, `orchestrix` built in),
+  CDR road (`cdr_<root>` on its own Kafka), journal (its own directory); `spi/BootstrapSource` (`BootstrapSources.http` with the token by
+  its variable and If-None-Match/304; `testkit/MapBootstrapSource`); `testkit/FakeKafka`; the §C samples at
+  `seed-sessionflow/src/test/resources/bootstrap/`. Red first (compile), 9 mutants red; sessionflow 177, samples 71, switch-ledger 54,
+  tenant 19 green. Next: item 7 (naming + topic auto-creation).

@@ -9,6 +9,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | the reactor on f41eace, before any change (from `clean`) | **465 / 0 / 0 / 3** |
 | after item 0 (from `clean`) | **434 / 0 / 0 / 3** |
 | item 1, a git-archive clean copy of 4a8b22a (offline, under the lock) | **438 / 0 / 0 / 3** |
+| **CONTRACT DONE** — item 5's c992262 on a git-archive clean copy | **452 / 0 / 0 / 3** |
 
 ## 0 · The commits
 
@@ -158,6 +159,54 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
 - **Red first:** `RoutesphereAppTest` (5) — red by compile, then green. **Mutants (5, red):** a missing `rerouteActionFor` passes; the answers
   never sealed; a given `buildTask` ignored; the lambdas not handed the lookups; the SMS lane without its `settleOutcome` (2 money scenarios
   of `SmsFlowTest` red: the refund on non-delivery charged).
+
+## Item 6 · the kit from ONE bootstrap url (R8)
+
+- **The door:** `RoutesphereKit.fromBootstrap(BootstrapSource source, String app)` (= `…(source, app, KitMakers.onTheClasspath())`). The
+  application's yml holds `prime-context.bootstrap-url` and `prime-context.token-env` (the variable's NAME) — `BootstrapSources.fromYml(yml,
+  System::getenv)` reads both (nested or dotted keys) and nothing else. Both doors stay: the samples build their kits by hand.
+- **`spi/BootstrapSource`** — `envelope()`, `origin()` (prime-context's `scheme://host:port`: the tree road `get-specific-tenant-root` is
+  there), `where()` (never the token). `internal/HttpBootstrapSource`: GET with `Authorization: Bearer <token read by its variable at every
+  ask>`, `If-None-Match` with the last etag (the header, else the body's `etag`), a 304 answers the envelope held; an empty token variable is
+  refused naming it (S20); a non-2xx or no answer → `BootstrapUnavailable` in words. `testkit/MapBootstrapSource` for tests (a JSON resource,
+  swappable, asks counted).
+- **`api/Deployment`** (+ `api/RootResources` with `SwitchDb`, `KafkaRoad`, `Ledger`) read by `internal/DeploymentReader` from §C.1's
+  `config.routesphere`. **Refusals in words:** another app's url ("the bootstrap url serves the app 'ad-sphere', not 'wifi-sphere'"); no
+  `config.routesphere`; no roots; a served root without its block; a root without `kafka.bootstrap` (its CDR has no road) or `journal.dir`; a
+  rule for a root not served; a ledger kind no maker answers. **Defaults:** pool / threads / timers from the base's defaults; the ledger kind
+  `switch` (R12, item 9); the zone Asia/Dhaka; `globalTimeoutSec` = the sum of the state timers + 60 s; `reservePeriodSec` 0. A password by
+  reference (`env:<NAME>`) is read from the environment, else the envelope's `secrets`; a literal password is refused.
+- **What the kit gets per served root** (`internal/BootstrapRoad`, kept for item 8): its tree (`spi/TreesMaker` → `spi/LiveTrees`), its doors
+  (`internal/LiveRules`: the rules swapped whole when a root is added), its ledger (`spi/LedgerMaker` by kind → `internal/PerRootLedger`: every
+  tier's money on its OWN root's ledger, a tier of no served root a `LedgerFault`), its CDR road (`internal/PerRootCdrSink`: `cdr_<root>` on the
+  root's own Kafka, one producer per bootstrap address; a root with no road = one ERROR, never another root's topic), its journal of the
+  sessions in the air (`internal/PerRootJournal`: `<root dir>/sessions-in-the-air.jsonl`, a session's lines to its root's file — named by its
+  first reserve, else its records' root; the next start reads every root's leftovers). **The start names every resource it got** — one INFO,
+  one line per root: "link3: tree v0, doors [listen 10.10.188.2:7071 → link3], ledger switch on jdbc:postgresql://…/routesphere schema link3,
+  CDR cdr_link3 on 10.10.188.2:9092, redis redis://10.10.188.2:6379, dir /var/lib/ad-sphere/link3" (pinned by the test).
+- **The makers** (`dependencies/KitMakers`): `onTheClasspath()` finds the trees maker and the ledger makers by `java.util.ServiceLoader` —
+  **seed-tenant `PrimeContextTrees`** (`TenantTrees` over the tree road at the bootstrap's origin, the doorbell on the platform Kafka; every root
+  loaded before the kit is made, a root that cannot be is refused; `serve(root)` / `reload(root)` for item 8) and **seed-switch-ledger
+  `SwitchLedgerMaker`** (a MemLedger over the root's `switch-db` — url, user, password by reference — with the two tables of every tier schema of
+  the root's tree, its WAL and queue in `<root dir>/ledger`, STANDALONE; `SwitchLedgers.memLedger` over it; one connection per use by
+  `DriverManager` unless the host hands its own pooled `DataSource` maker); the `orchestrix` ledger is built in (`ledger: {kind: orchestrix,
+  url, token-env, tenant, profile}`, its owed journal in the root's directory); the real Kafka clients (`internal/RealKafkaClients`); a file
+  journal per root's directory. **Why ServiceLoader:** seed-tenant and seed-switch-ledger depend on seed-sessionflow, so the kit cannot name
+  them; the classpath carries them and a missing one is refused in words ("the ledger kind 'switch' has no maker on the classpath — add
+  seed-switch-ledger"). The application's code stays one line.
+- **`testkit/FakeKafka`** (for this round and P2): a `MockProducer` / `MockConsumer` per bootstrap and an admin (a JDK proxy of Kafka's
+  `Admin` doing `createTopics`: made once, then "exists"; a cluster scripted to refuse refuses) — no broker on the box.
+- **The §C samples** are `seed-sessionflow/src/test/resources/bootstrap/deployment.json` and `tenant-created.json` (sha256 e1ca4f43… and
+  63f396e2…). **One change from the brief's text:** §C.1 shows link3's block as `{"…": "…"}` placeholders; the pinned file fills link3 like
+  btcl (schema link3, the same Kafka and Redis, `/var/lib/ad-sphere/link3`) so the whole kit can be built from it. The prime-context agent
+  pins THESE bytes (through the architect).
+- **Tests:** `KitFromBootstrapTest` (11: the whole kit from the sample, the start's words, each root's CDR road, a tier's money on its own
+  root's ledger, the default ledger kind, six refusals), `HttpBootstrapSourceTest` (3: the token, the 304, the words; prime-context a JDK
+  `HttpServer` in the JVM on an ephemeral loopback port), seed-tenant `PrimeContextTreesTest` (5), seed-switch-ledger `SwitchLedgerMakerTest`
+  (4: a REAL MemLedger over H2 in memory, as `LedgerLab`'s). `LedgerLab` gained `url()` (a test helper). **Red first:** all by compile.
+  **Mutants (9, red):** no roots passes; a root without its block passes on; a rule for a root not served passes; another app's url passes;
+  every tier's money on one root's ledger; the etag never sent back; the ledger kind with no default; a root prime-context cannot load passes;
+  the switch ledger without its database passes.
 
 ## Open questions for the owner / the architect
 

@@ -113,6 +113,9 @@ public final class LedgerLab implements AutoCloseable {
 
     public MemLedger ledger() { return ledger; }
 
+    /** The lab's H2 url: a maker that opens its own MemLedger connects here (P1-E item 6). */
+    public String url() { return url; }
+
     // ── looking at the books ────────────────────────────────────────────────
 
     public BigDecimal cachedBalance(String schema, long accountId) {
