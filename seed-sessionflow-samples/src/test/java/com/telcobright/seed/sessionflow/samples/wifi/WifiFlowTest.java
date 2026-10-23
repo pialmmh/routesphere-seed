@@ -40,7 +40,7 @@ class WifiFlowTest {
 
     private FlowBed<WifiContext, WifiOut, WifiFrame> bed(RoutesphereSettings s, PersistenceProvider store) {
         WifiFlow flow = new WifiFlow(w.kit(s), SUBSCRIBERS, World.RATES, GATES);
-        FlowBed<WifiContext, WifiOut, WifiFrame> b = new FlowBed<>(flow, WifiContext::new, WifiGateway.spec(GATEWAY, WifiGatewayContext::new),
+        FlowBed<WifiContext, WifiOut, WifiFrame> b = new FlowBed<>(c -> new WifiSupervisor(flow, c), WifiContext::new, WifiGateway.spec(GATEWAY, WifiGatewayContext::new),
             new WifiChannel(), WifiFrames::decode, store);
         open.add(b);
         return b;

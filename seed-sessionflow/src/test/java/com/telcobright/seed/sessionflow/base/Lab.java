@@ -77,7 +77,7 @@ public final class Lab implements AutoCloseable {
             .zone(ZoneId.of("Asia/Dhaka")).settings(settings)
             .build();
         this.flow = flows.apply(kit);
-        this.engine = RoutesphereEngine.of(flow, this::newContext).signaling(LabCall.spec()).channel(wire, Lab::decode).start();
+        this.engine = RoutesphereEngine.of(new LabSupervisor(flow, this::newContext)).signaling(LabCall.spec()).channel(wire, Lab::decode).start();
     }
 
     /** The lab's settings: a pool of 8, INIT 2 s, ADMITTING 2 s, CONNECTING 5 s, ACTIVE 60 s, the cap 120 s, the given renewal period. */

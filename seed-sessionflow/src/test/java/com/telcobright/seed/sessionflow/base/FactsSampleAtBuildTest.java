@@ -41,7 +41,7 @@ class FactsSampleAtBuildTest {
     private static RoutesphereEngine.Builder<LabContext> engineWith(MachineSpec<?> signaling) {
         Lab lab = new Lab();
         lab.close();
-        return RoutesphereEngine.of(new LabFlow(lab.kit, Map.of(), Lab.hops("carrier-a"), Set.of()), LabContext::new)
+        return RoutesphereEngine.of(new LabSupervisor(new LabFlow(lab.kit, Map.of(), Lab.hops("carrier-a"), Set.of())))
             .signaling(signaling).channel(new TestChannel<String, StatemachineEvent>("lab"), Lab::decode);
     }
 

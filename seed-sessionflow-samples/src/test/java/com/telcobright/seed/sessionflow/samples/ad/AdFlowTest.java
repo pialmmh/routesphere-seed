@@ -52,7 +52,7 @@ class AdFlowTest {
 
     private FlowBed<AdContext, AdOut, AdFrame> bed(boolean unshownCharged, AdTimings t, RoutesphereSettings s, PersistenceProvider store) {
         AdFlow flow = new AdFlow(w.kit(s), RULES, CAMPAIGNS, World.RATES, unshownCharged, quota);
-        FlowBed<AdContext, AdOut, AdFrame> b = new FlowBed<>(flow, AdContext::new, AdPlayback.spec(t, AdPlaybackContext::new), new AdChannel(),
+        FlowBed<AdContext, AdOut, AdFrame> b = new FlowBed<>(c -> new AdSupervisor(flow, c), AdContext::new, AdPlayback.spec(t, AdPlaybackContext::new), new AdChannel(),
             AdFrames::decode, store);
         open.add(b);
         return b;

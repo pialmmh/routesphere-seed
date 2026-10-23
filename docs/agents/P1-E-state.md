@@ -17,3 +17,7 @@ One line per item, newest last. Times are Dhaka (+06).
   (in words, both cases); LabCall + the four sample specs show theirs; red first (FactsSampleAtBuildTest 3/3, SpecSamplesTest 1/1), 3
   mutants red; sessionflow 158, samples 70, switch-ledger 50 green (one timing flake of VoiceFlowTest's budget-child test in a direct run
   under load, 3 reruns green). Item 1's clean copy (4a8b22a): **438/0/0/3**. Next: item 4 (one supervisor class per lane).
+- 2026-10-24 00:45 · **item 4 done** — `api/RoutesphereSupervisor<C>` (thin: the flow, the contexts, name() = the flow's, spec()); the ONE
+  door `RoutesphereEngine.of(supervisor)` (`of(flow, contexts)` gone); `AdSupervisor`, `CallSupervisor`, `SmsSupervisor`, `WifiSupervisor`,
+  `LabSupervisor`; `FlowBed` takes the lane's class (`c -> new AdSupervisor(flow, c)`); red first (the classes missing), 2 mutants red;
+  sessionflow 158, samples 71, switch-ledger 50 green. Next: item 5 (the builder) → CONTRACT DONE.

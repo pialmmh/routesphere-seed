@@ -40,7 +40,7 @@ class SmsFlowTest {
 
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed(boolean refund, SmsTimings t, RoutesphereSettings s, PersistenceProvider store) {
         SmsFlow flow = new SmsFlow(w.kit(s), USERS, World.RATES, SMSCS, refund);
-        FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(flow, SmsContext::new, SmsSubmit.spec(t, SmsSubmitContext::new), new SmsChannel(),
+        FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(c -> new SmsSupervisor(flow, c), SmsContext::new, SmsSubmit.spec(t, SmsSubmitContext::new), new SmsChannel(),
             SmsFrames::decode, store);
         open.add(b);
         return b;

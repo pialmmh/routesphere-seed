@@ -24,14 +24,14 @@ import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 /**
- * Runs one application's sessions on statewalk 4.0's registry (§B): the base supervisor
- * ({@code SessionSupervisor.spec(flow.name(), contexts, flow)} — the flow IS the handler), the application's signaling machine, the
+ * Runs one application's sessions on statewalk 4.1's registry (§B): the lane's supervisor class ({@link RoutesphereSupervisor}: statewalk's
+ * final {@code SessionSupervisor}, the flow IS the handler), the application's signaling machine, the
  * budget child when the flow renews, the channel and its decoder (the kit: the first frame takes the supervisor and the signaling machine
  * from their pools), the lifetime cap, and — optionally — the store. Every machine is pooled at the settings' size; the registry resets
  * them all to IDLE at the session's end.
  *
  * <pre>
- *   RoutesphereEngine&lt;AdContext&gt; engine = RoutesphereEngine.of(adFlow, AdContext::new)
+ *   RoutesphereEngine&lt;AdContext&gt; engine = RoutesphereEngine.of(new AdSupervisor(adFlow))
  *       .signaling(AdPlayback.spec(...))
  *       .channel(httpChannel, AdFrames::decode)
  *       .start();
@@ -58,11 +58,12 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
             s.timings(), s.globalTimeoutSec(), b.signaling.name(), flow.renewsBudget() ? "every " + s.reservePeriodSec() + " s" : "none");
     }
 
-    public static <C extends RoutesphereContext> Builder<C> of(RoutesphereFlow<C> flow, Supplier<C> contexts) { return new Builder<>(flow, contexts); }
+    /** The ONE door (R6): the lane's own supervisor class — no lane runs without it. */
+    public static <C extends RoutesphereContext> Builder<C> of(RoutesphereSupervisor<C> supervisor) { return new Builder<>(supervisor); }
 
     public static final class Builder<C extends RoutesphereContext> {
+        private final RoutesphereSupervisor<C> supervisor;
         private final RoutesphereFlow<C> flow;
-        private final Supplier<C> contexts;
         private MachineSpec<?> signaling;
         private final List<MachineSpec<?>> children = new ArrayList<>();
         private Channel<?, ?> channel;
@@ -70,9 +71,9 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
         private PersistenceMode persistenceMode = PersistenceMode.OFF;
         private Supplier<? extends PersistenceProvider> store;
 
-        private Builder(RoutesphereFlow<C> flow, Supplier<C> contexts) {
-            this.flow = Objects.requireNonNull(flow, "flow");
-            this.contexts = Objects.requireNonNull(contexts, "contexts");
+        private Builder(RoutesphereSupervisor<C> supervisor) {
+            this.supervisor = Objects.requireNonNull(supervisor, "supervisor");
+            this.flow = supervisor.flow();
         }
 
         /** The application's ONE signaling machine (IDLE first, an {@code up} on every transition, Reject and Stop in every live state). */
@@ -194,7 +195,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
     private StatemachineRegistry<C> buildRegistry(Builder<C> b) {
         RoutesphereSettings s = flow.kit().settings();
         StatemachineRegistry.Builder<C> rb = StatemachineRegistry.<C>builder(flow.name())
-            .supervisor(SessionSupervisor.spec(flow.name(), b.contexts, flow), s.pool())
+            .supervisor(b.supervisor.spec(), s.pool())
             .signaling(b.signaling, s.pool());
         if (flow.renewsBudget()) rb.child(BudgetChild.spec(flow), s.pool());
         for (MachineSpec<?> child : b.children) rb.child(child, s.pool());

@@ -116,6 +116,22 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   check's own reason). **Mutants (3, red):** no sample passes; a sample of other facts passes; LabCall without its sample.
 - No existing test changed.
 
+## Item 4 · one supervisor class per lane (R6)
+
+- **`api/RoutesphereSupervisor<C>`** (abstract, no logic): holds the flow and the contexts; `name()` = `flow.name()` (ONE name: statewalk's
+  registered supervisor, its table, the log), `flow()`, `spec()` = `SessionSupervisor.spec(name(), contexts, flow)` — statewalk's final
+  `SessionSupervisor` stays the machine (the 2026-10-05 ruling).
+- **The one door:** `RoutesphereEngine.of(RoutesphereSupervisor<C>)`; `of(flow, contexts)` is gone, so no lane runs without its class.
+- **The classes:** `AdSupervisor(AdFlow)`, `CallSupervisor(VoiceFlow)`, `SmsSupervisor(RoutesphereFlow<SmsContext>)` (the SMS flow is made by
+  the builder from item 5 on), `WifiSupervisor(WifiFlow)` in the samples, `LabSupervisor(LabFlow)` in the base tests — each with `(flow)` and
+  `(flow, contexts)` (a bed that keeps its contexts). `LedgerFlow` runs no engine (its tests call the handler), so it has no class.
+- **`FlowBed`** takes the lane's class over the contexts it keeps: `new FlowBed<>(c -> new AdSupervisor(flow, c), AdContext::new, …)`.
+- **Red first:** `SupervisorClassPerLaneTest` (1) — red by compile (no class), then green. **Mutants (2, red):** statewalk's spec named by the
+  flow's class instead of the lane's name; the voice lane named `VoiceSupervisor` apart from its class.
+- **Tests touched (the door only, no expectation changed):** `Lab`, `OneTablePerLaneTest`, `OneRecoveryRoadTest`, `CreditControlTest`,
+  `FactsSampleAtBuildTest` (`of(new LabSupervisor(flow))`); the FlowBed sites of `AdFlowTest`, `VoiceFlowTest` (2), `VoiceFlowDoorbellTest`,
+  `RestoreLostUpTest`, `SmsFlowTest`, `WifiFlowTest`.
+
 ## Open questions for the owner / the architect
 
 (none yet)
