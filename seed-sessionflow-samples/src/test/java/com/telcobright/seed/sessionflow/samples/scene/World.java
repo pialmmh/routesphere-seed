@@ -4,10 +4,12 @@ import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
+import com.telcobright.seed.sessionflow.dependencies.RecordStores;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.SessionJournal;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.InMemoryLedger;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
@@ -117,6 +119,23 @@ public final class World {
             .ledger(books)
             .cdr(cdrRoad)
             .sdr((sessionId, sdr) -> sdrs.add(sdr))
+            .tasks((ctx, task) -> closedTasks.add(task))
+            .zone(DHAKA)
+            .settings(settings)
+            .build();
+    }
+
+    /**
+     * The kit of a flow on the records road (P1-R): each root's records — the CDR per tier, the SDR's rows, the summary input — go to its
+     * store, the journal of the sessions in the air is the one given; the same trees, rules, books and task sink.
+     */
+    public RoutesphereKit kitOnRecords(RoutesphereSettings settings, RecordStores records, SessionJournal journal) {
+        return RoutesphereKit.builder()
+            .tenants(TenantLookup.of(btcl, ccl))
+            .identification(rules())
+            .ledger(ledger)
+            .records(records)
+            .journal(journal)
             .tasks((ctx, task) -> closedTasks.add(task))
             .zone(DHAKA)
             .settings(settings)

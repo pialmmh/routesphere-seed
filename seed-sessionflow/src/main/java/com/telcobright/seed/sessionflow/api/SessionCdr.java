@@ -18,12 +18,14 @@ import java.util.Map;
  * The CDR of an ended call, for every application: ONE message per call, one record per tier, the leaf first. A call
  * nobody was admitted for still gets one record, on the tenant it entered, with zero amounts and its cause.
  *
- * <p>The switch only publishes. billing-core writes the record and the summary input; summary-service sums them.
- * The work behind (g)'s CDR step of {@link RoutesphereFlow#finishSession}; the application's fields are {@link RoutesphereFlow#fillCdr}.
+ * <p>On the CDR sink's road the switch only publishes: billing-core writes the record and the summary input. On the records road (P1-R) the
+ * base writes both itself, in the root's own store, through its writer. summary-service sums them. The work behind (g)'s CDR step of
+ * {@link RoutesphereFlow#finishSession}; the application's fields are {@link RoutesphereFlow#fillCdr}.
  *
  * <p>R1-6: a call that was handed over has a line in the journal of the calls in the air, written with its records made as the
  * next start would publish them ({@link #lostRecordsOf}); its own end publishes its real record and marks that line done
- * (publish FIRST, then done: a death in between publishes the call twice, and billing-core takes a call once per tier).
+ * (publish FIRST, then done: a death in between publishes the call twice, and billing-core takes a call once per tier; on the records road
+ * the line is done after the batch's commit, and the once rule takes the call once per tier).
  */
 final class SessionCdr<C extends RoutesphereContext> {
 
@@ -37,13 +39,21 @@ final class SessionCdr<C extends RoutesphereContext> {
 
     static <C extends RoutesphereContext> SessionCdr<C> of(RoutesphereFlow<C> flow) { return new SessionCdr<>(flow); }
 
-    /** (g) The session's ONE message: the application's {@code cdrPerTier}, on the root's road ({@code cdr_<root>}); once per session. */
-    void publish(C ctx, Outcome outcome) {
+    /**
+     * (g) The session's records, once per session: the application's {@code cdrPerTier} — on the records road, with the SDR's rows, to its
+     * root's writer (the journal's line is done after the commit); else ONE message on the root's road ({@code cdr_<root>}).
+     */
+    void publish(C ctx, Outcome outcome, Object sdr) {
         if (ctx.cdrPublished) return;
         List<CdrEvent> tiers = flow.cdrPerTier(ctx, outcome);
         if (tiers == null || tiers.isEmpty()) return;
-        flow.kit().cdr().publish(AdmissionChain.rootDbOf(ctx), ctx.sessionId(), tiers);
+        if (flow.kit().records() != null) flow.writeRecords(ctx, outcome, tiers, sdr);
+        else publishToTheSink(ctx, tiers);
         ctx.cdrPublished = true;
+    }
+
+    private void publishToTheSink(C ctx, List<CdrEvent> tiers) {
+        flow.kit().cdr().publish(AdmissionChain.rootDbOf(ctx), ctx.sessionId(), tiers);
         flow.kit().counters().cdrPublished.incrementAndGet();
         markDone(ctx.sessionId());
     }
@@ -151,15 +161,21 @@ final class SessionCdr<C extends RoutesphereContext> {
                 closed += done[0];
                 owed += done[1];
             }
-            flow.kit().cdr().publish(left.callId(), tiers);
-            flow.kit().counters().cdrPublished.incrementAndGet();
-            journal.done(left.callId());
+            publishALeftover(left.callId(), tiers);
             for (CdrEvent cdr : tiers) {
                 money = money.add(cdr.inPartnerCost == null ? BigDecimal.ZERO : cdr.inPartnerCost);
                 units = units.add(cdr.packageAmount == null ? BigDecimal.ZERO : cdr.packageAmount);
             }
         }
         return calls == 0 && neverHandedOver == 0 ? LeftInTheAir.NOTHING : new LeftInTheAir(calls, money, units, neverHandedOver, returned, returnedMoney, owed, closed);
+    }
+
+    /** A leftover's records on the lane's road: the records road's writer (its line done after the commit), else the CDR sink, then done. */
+    private void publishALeftover(String callId, List<CdrEvent> tiers) {
+        if (flow.kit().records() != null) { flow.writeRecordsOf(callId, tiers); return; }
+        flow.kit().cdr().publish(callId, tiers);
+        flow.kit().counters().cdrPublished.incrementAndGet();
+        flow.kit().journal().done(callId);
     }
 
     /**

@@ -63,6 +63,12 @@ public interface SessionJournal {
     /** False = the deployment keeps no journal: a call is handed over with no line, and a process death loses its record. */
     default boolean keeps() { return true; }
 
+    /**
+     * Does a line of this call stand open (P1-R: its records are not committed yet, and the next start would write them)? A journal that
+     * cannot tell answers false, and the records road keeps the call's records elsewhere when its writer parks.
+     */
+    default boolean holds(String callId) { return false; }
+
     default void close() { }
 
     /**

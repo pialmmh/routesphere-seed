@@ -19,7 +19,8 @@ the application                            the owner's methods (a)–(g) + the s
 | `api.RoutesphereContext` | Everything one session knows (persisted: ids and amounts only). Your context extends it |
 | `api.RoutesphereFacts` / `api.Ingress` | The facts your signaling machine stamps — with the INGRESS the root is found by (`listen` · `esl` · `vlan` · `topic`) |
 | `api.RoutesphereEngine<C>` | statewalk's registry: the base supervisor + your signaling machine + the budget child + your channel |
-| `dependencies.RoutesphereKit` | What the host hands in: the trees per root, the identification rules, the ONE ledger port, the sinks, the clock |
+| `dependencies.RoutesphereKit` | What the host hands in: the trees per root, the identification rules, the ONE ledger port, ONE road for the records (a CDR sink, or the records road — never both), the clock |
+| `dependencies.RecordStores` | The records road (P1-R): one store per root; the base writes the lane's CDR, SDR and summary input there |
 
 ## 2 · Write an application
 
@@ -82,6 +83,30 @@ decides; a partial window arms the final cut; a refused window may rotate onto `
 when the money ends (the supervisor sends `Stop(BALANCE_EXHAUSTED)` down). A persisting lane renews at most once a minute: every tick
 rewrites the session's row (§L.2; the engine refuses less).
 
+## 5.1 · Records — the records road (P1-R, the owner's ruling of 2026-10-23)
+
+The application makes its CDR and SDR SQL; the base writes it. A kit has ONE road for the records: a CDR sink (`CdrSinks`: Kafka
+`cdr_<root>`, the file journal — billing-core writes the rows) OR `records(RecordStores…)` (the switch writes its tenant's database
+itself); both, or neither, are refused at build.
+
+```
+the session's thread    cdrPerTier → per tier record cdrStatements(ctx, record) + summaryEntryOf(ctx, record); the SDR's sdrStatements
+                        → handed to the writer of its ROOT (writeRecords; writeRecordsOf for the leftovers at start and a replay)
+the root's writer       ONE platform thread + its queue; a batch = N tier records or T (200 / 250 ms) — ONE transaction:
+  (internal/Record*)    autocommit off → billing_batch_<tier> of every tier, in name order (MySQL GET_LOCK; PostgreSQL an advisory
+                        lock on billing-core's key) → per session its records (a probe that finds the key = written before: not
+                        run, not summed) and its SDR rows → per tier ONE summary_affected row (cdr, add, JSON → gzip → base64 of
+                        the records written now) → commit → the locks let go → the pings (their own thread) → each journal line done
+a batch that fails      rolled back whole, tried again 1 s, 2 s, … 30 s; after the budget PARKED, said once — every session stays in
+                        the journal of the sessions in the air (or the park sink, the file CDR journal, when it holds none) — and
+                        UNPARKED, said once, at the next commit
+```
+
+The defaults write billing-core's own tables exactly: `cdr` (its 104 columns, + the wire's six on PostgreSQL, each value as its ingest
+maps the wire) and `summary_affected` (its `Entry` shape, a stated group's pre-rated leg), so summary-service reads them unchanged. A lane
+overrides `cdrStatements` to add its rows (the voice: `acc_chargeable`) or to write a table of its own, and gives its SDR's rows in
+`sdrStatements`. `testkit.RecordTables` makes billing-core's tables (and the lock functions) on H2 for a product's tests.
+
 ## 6 · Persistence
 
 `RoutesphereContext` is persisted by statewalk (Jackson): ids and amounts only — the tiers as `TierLine`s, the plan, the candidates,
@@ -105,10 +130,14 @@ before statewalk 4.0). Which road each lane takes is its own round's decision (P
 ```
 api/           RoutesphereFlow · RoutesphereContext · RoutesphereFacts · Ingress · Tier · Candidate · RootTree · TierLine · RoutePlan
                RoutesphereEngine · AdmissionChain · SessionSettlement · SessionCdr · SessionTaskClose · SpanRotation · CdrEvent · TierRate …
-spi/           LedgerPort · CdrSink · SdrSink · TaskSink · TenantLookup · TenantResolver · SessionJournal   (the host implements these)
-dependencies/  RoutesphereKit · RoutesphereSettings · CdrSinks · Ledgers · TenantResolvers · IdentificationRules · RefundPolicy …
-internal/      BudgetChild · ChannelSlots · CdrAssembler · KafkaCdrSink · OncePerSessionCdrSink · OrchestrixLedger · FileCdrJournal …
-testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder · ManualClock
+               RecordStatement · RecordId
+spi/           LedgerPort · CdrSink · SdrSink · TaskSink · TenantLookup · TenantResolver · SessionJournal · SummaryPing   (the host implements these)
+dependencies/  RoutesphereKit · RoutesphereSettings · CdrSinks · Ledgers · TenantResolvers · IdentificationRules · RefundPolicy
+               RecordStores · RecordStore · RecordDialect · SummaryPings …
+internal/      BudgetChild · ChannelSlots · CdrAssembler · KafkaCdrSink · OncePerSessionCdrSink · OrchestrixLedger · FileCdrJournal
+               RecordRoad · RecordWriter · RecordBatch · RecordParking · BatchLock · StatementRunner · IdBook · CdrTableSql · CdrColumns
+               SummaryEntries · SummaryBlob · SessionRecords · PingRoad · KafkaSummaryPing …
+testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder · ManualClock · RecordTables · H2Locks
 ```
 
 ## 8 · Tests
@@ -123,6 +152,9 @@ SMS) and their scenarios live in `seed-sessionflow-samples`.
 
 ## 9 · History
 
+- 2026-10-23 — P1-R, the records road: the application's CDR/SDR SQL (`cdrStatements`, `sdrStatements`, `summaryEntryOf`), written by the
+  base in ONE transaction per batch, one writer per root, with billing-core's lock, once rule and summary input; the leftovers at start
+  through the same writer; one road per lane at build (report: `docs/agents/P1-R-report.md`).
 - 2026-10-22 — P1: the 3.x base (`SessionFlow`, `SessionFlowSteps`, its own graph `SessionFlowSupervisor`, `LevelBalanceTracker`,
   `SessionFlowEngine`) replaced by `RoutesphereFlow` on statewalk 4.0.0; the reactor at 2.0.0-SNAPSHOT. The walk, the settlement,
   the CDR, the task close, the rotation, the journal kept and re-pointed. statewalk 4.0 has no DEFERRED: a session ends SUCCEEDED or
