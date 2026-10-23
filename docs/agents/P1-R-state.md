@@ -17,4 +17,9 @@ One line per item, newest last. Times are Dhaka (+06).
   counted, every session kept in the journal of the sessions in the air, a session that journal does not hold (`SessionJournal.holds`, new
   default; `FileSessionJournal` answers it) written to the park sink (`RecordStores.parkInto`, the file CDR journal) — at the park and for each
   session handed in while parked; the next commit UN-PARKS, said once (`recordUnparks`); the close leaves what it could not commit the same
-  way. C4 green; 11 R3 mutants red; the reactor from clean **456/0/0/7**. Commit: this one (R3). Next: R4 (the switch ledger). Blocked: nothing.
+  way. C4 green; 11 R3 mutants red; the reactor from clean **456/0/0/7**. Commit **1bf4a25**. Next: R4 (the switch ledger). Blocked: nothing.
+- 2026-10-23 18:50 · **R4 done** (§D) — answered, nothing changed: mem-ledger as the seed pins it (1.0.0-SNAPSHOT) cannot keep the settled
+  reference — the settle deletes the tier's reserve row (routesphere-core's move), `PackageAccount` holds only the last move, the `MemLedger`
+  API reads no history, and `ClosedTiers` (the first answer per reference) dies with the process; so after a restart a second settle moves
+  nothing and answers OWED, and that stays (proof: ChainOnTheLedgerTest.aSessionEndedAgainAfterARestart…). Report §4 + three roads for the
+  owner. Commit: this one (R4, docs only). Next: R5 (the road choice, the leftovers, C2, C7). Blocked: nothing.

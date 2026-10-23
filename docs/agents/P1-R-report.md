@@ -8,7 +8,8 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 | the reactor on c32e374, before any change | **430 / 0 / 0 / 7** (tests / failures / errors / skipped) |
 | after R1 (77f4cc5) | **446 / 0 / 0 / 7** |
 | after R2 (bf46c82), from `clean` | **454 / 0 / 0 / 7** |
-| after R3, from `clean` | **456 / 0 / 0 / 7** |
+| after R3 (1bf4a25), from `clean` | **456 / 0 / 0 / 7** |
+| R4 | no code: the answer is "cannot" (§4) |
 
 ## 0 · The commits
 
@@ -232,6 +233,39 @@ in the park).
 | R3-M9 the close forgets what is left | the close test (green at first — the writer had parked inside the 5 s drain, so the park kept it; the test now gives a budget the drain never reaches, then red) |
 | R3-M10 a parked writer stops trying | C4 |
 | R3-M11 `FileSessionJournal.holds` always false | C4, the close test |
+
+## 4 · R4 — §D, the switch ledger's second end after a restart
+
+**The question:** seed-switch-ledger answers OWED ("no reserve row is open … nothing moved", MemLedgerPort.java:136-140) when a settled
+reserve is settled again after a restart. Can it answer the settled amount instead, from mem-ledger?
+
+**Read** (mem-ledger as the seed pins it: `com.telcobright:mem-ledger:1.0.0-SNAPSHOT`, the jar's API by `javap`):
+
+- `MemLedger` offers `getEntity`, `execCrud`, `insert`, `update`, `updateWithDelta`, `delete`, `getAllEntities`, `getRegisteredDatabases`,
+  `getStats`, `health`, `shutdown`, `reload`, `reloadDatabases`, `reloadNewEntities` — a cache of rows; no read of what happened to a key
+  (the WAL is replayed at start, never queried), no tombstone of a deleted row.
+- The switch ledger names exactly two entities (`TwoEntities.check` refuses any other, Books.java:23): `PackageAccount` (id, purchase, name,
+  uom, expiry, `balanceBefore`, `balanceAfter`, `lastAmount` — the LAST move only, no reference) and `PackageAccountReserve` (keyed by the
+  tier's reference).
+- The settle DELETES the tier's reserve row (MemLedgerPort.java:123; Books.java:139-142 — routesphere-core's `returnBalance` 254-255). The
+  first answer per reference is kept in `ClosedTiers` (in the process, 100 000 deep) and dies with it.
+
+**So: it cannot.** After a restart nothing in mem-ledger says "this reference was settled at X": a settle again finds no row and cannot tell a
+settled reserve from a released or a reaped one. It moves nothing — the money is right — and answers OWED. **Nothing changed** (the
+architect's note: "if it cannot, say so and change nothing"). The answer stands proven by the existing
+`ChainOnTheLedgerTest.aSessionEndedAgainAfterARestart_fromItsOlderRow_movesNothingOnTheSwitchLedger` (nothing moved, `closed = false`,
+the note "nothing moved").
+
+Where it shows on the records road: a death between a batch's commit and its journal line's done (C2). At the next start a session that was
+**handed over** is closed as reserved again (`SessionCdr.closeAsReserved`) → the switch ledger answers OWED: one ERROR line and `owed + 1`
+per tier — wrong words, right money; its record is not written twice (the probe). A session **never handed over** (the ad sample's views)
+has its reserves "given back" (`release`) → on the switch ledger a release of a closed tier finds no row and returns quietly
+(MemLedgerPort.java:157) — no words at all, no money.
+
+**Roads for the owner** (none taken): (a) a third mem-ledger entity — the settled references of the last N days with their amounts — which
+`TwoEntities` forbids today (a ruling); (b) keep the reserve row, marked settled, instead of deleting it — a change of the call switch's money
+moves and of the orphan reaper; (c) on the records road, the start could read the tier's `cdr` row (it holds what was charged) before it
+closes a leftover as reserved — the records and the money would then meet in the switch, which the base keeps apart today.
 
 ## 9 · Findings and questions for the owner (so far)
 
