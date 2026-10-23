@@ -46,3 +46,23 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   constructor of 2.0 kept (ad-sphere's AdDispatch.stats() builds one), its `sessions` = `PoolStats.NOT_COUNTED` (-1). Red first
   (compile: no sessions()); PoolSessionsTest 2/2 (2 sessions = 4 cells, then 1; the ten numbers still build); 5 mutants, 5 red;
   seed-sessionflow 209/0/0/0 direct. The item-1b line above corrected to its git time (it was a guess). Next: item 6.
+- 2026-10-24 05:50 · **item 6 done** (8f6bc3c) — `testkit.FakeKafka` builds its producer with `MockProducer(boolean, Partitioner,
+  Serializer, Serializer)` (in 3.7.1 and 4.0.0; 4.0's javadoc: "Create a new mock producer with invented metadata the given autoComplete
+  setting, partitioner and key\value serializers. Equivalent to MockProducer(Cluster.empty(), autoComplete, partitioner, keySerializer,
+  valueSerializer)"), the partitioner null (an empty cluster: partition 0, no partitioner asked, in both); `MockConsumer(OffsetResetStrategy)`
+  kept (deprecated in 4.0, present in both). Both jars are in ~/.m2 — proven OUTSIDE Maven on git-archive copies of the commits
+  (scratch k4proof.sh: seed-sessionflow compiled with javac against one kafka-clients, its six FakeKafka test classes — 29 tests — run
+  with one kafka-clients on the classpath):
+
+  | code | compiled on | run on | result |
+  |---|---|---|---|
+  | 35081a6 (before) | 3.7.1 | 4.0.0 | **29 run, 19 failed**: NoSuchMethodError MockProducer.<init>(boolean, Serializer, Serializer) — P2's symptom |
+  | 35081a6 (before) | 4.0.0 | — | **does not compile**: FakeKafka.java:47, the removed constructor |
+  | 8f6bc3c | 3.7.1 | 3.7.1 | 29/0 |
+  | 8f6bc3c | 3.7.1 | 4.0.0 | 29/0 (the seed's jar as ad-sphere runs it) |
+  | 8f6bc3c | 4.0.0 | 4.0.0 | 29/0 |
+
+  In the reactor: FakeKafkaOnKafka4Test reads FakeKafka's class file (red first: the removed descriptor was there), 1 mutant red;
+  seed-sessionflow 210/0/0/0 direct. Not touched (named in the README): the seed's own KafkaCdrSinkPerRootTest, SessionsInTheAirTest and
+  seed-tenant's DoorbellTest still build the three-argument MockProducer — they run on the seed's 3.7.1 only (left out of the 4.0
+  compile above). Next: the whole reactor in the worktree, then a git-archive clean copy of the head (one lock hold).
