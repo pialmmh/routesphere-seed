@@ -270,6 +270,34 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   their whole reserve at all three tiers. **No red first** (the item adds no behaviour — they pin what the base does). **Mutants (2, red):**
   the call charged its whole reserve whatever its units; a message not delivered charged whatever the lane's rule.
 
+## Item 10 · the ad sample answers at /shown (the owner's ruling)
+
+- **`AdPlayback`:** `/shown` publishes the `Established` (CONNECTING → ACTIVE; the creative, the media kind, 0 seconds watched); the beacons
+  (`BEACON`) and `/viewed` (`VIEWED`, the seconds watched) are `SignalingProgress` in ACTIVE (statewalk 4.1 takes them there); every end after
+  `/shown` — `/abandoned` (`ServiceEnd ABANDONED SUBSCRIBER`), the stall timer (`STALLED TIMER`), the supervisor's `Stop` / `Reject`
+  (`SUPERVISOR`), `/credited`, the credit window — is a `ServiceEnd`: the view is SETTLED, never released. Before `/shown` nothing changed
+  (an end is a `SignalingFailed`). New helper `watchedSecondsOf(SignalingProgress)`; the class javadoc's diagram marks CONNECTING / ACTIVE.
+- **`AdFlow`:** `onAnswered` marks the view `shown` (delivered = shown, unchanged); `onSignalingProgress` takes the hand-over (OFFERED), and
+  the seconds watched from BEACON / VIEWED, and marks `viewed` on VIEWED (new `AdContext.viewed`); `taskCompleted` = SUCCEEDED **and**
+  viewed (a view only shown does not complete its campaign task — the base's default would have completed it now that it SUCCEEDS).
+- **Changed test expectations (before → after):**
+
+| test | before | after |
+|---|---|---|
+| `AdPlaybackTest.a_whole_view_…` after /shown | `CONNECTING/SHOWING` | `ACTIVE/SHOWING`, the answer read there (creative c-77, codec video, **0** watched) |
+| same, after two beacons | `CONNECTING/SHOWING` | `ACTIVE/SHOWING` (2 × `onProgress:BEACON`, unchanged) |
+| same, after /viewed | `ACTIVE/VIEWED` + the answer read there with **15** watched | `ACTIVE/VIEWED` + one `onProgress:VIEWED` |
+| `AdPlaybackTest.an_abandoned_view_fails_without_a_second_creative` → renamed `a_view_abandoned_after_it_was_shown_ends_settled_without_a_second_creative` | `onFailed:ABANDONED:0`, `release`, `record:FAILED:ABANDONED` | `onEnd:ABANDONED:SUBSCRIBER`, `settle:SUCCEEDED:…`, `record:SUCCEEDED:ABANDONED`, no `release` (the wire and "no re-route" unchanged) |
+| `AdPlaybackTest.the_show_timer_…` the stall after /shown | `record:FAILED:STALLED` | `onEnd:STALLED:TIMER`, `record:SUCCEEDED:STALLED` |
+| `AdFlowTest.a_view_shown_then_abandoned_…` | balance 99.40 ("shown = consumed … even though it failed") | balance 99.40 unchanged; + outcome `SUCCEEDED`; + the task `FAILED` (never watched to its end) |
+
+  Unchanged: the never-shown timer (`FAILED NOT_SHOWN`, the unshown rule), the deadlines (TIMEOUT_CONNECTING while offered;
+  MAX_DURATION_REACHED once viewed, settled), the credit window, the stop in the credit window, the restore in the credit window
+  (`ACTIVE/VIEWED` on both nodes), every balance of `AdFlowTest`.
+- **Red first:** 4 of 15 (`AdPlaybackTest` 3, `AdFlowTest` 1) on the old machine with the new expectations; then green. **Mutants (4, red):**
+  /shown a progress again (6 red); an abandon after /shown a failure again; a task completed when only shown; the answer not marking the view
+  shown (money and the restore red).
+
 ## Open questions for the owner / the architect
 
 (none yet)

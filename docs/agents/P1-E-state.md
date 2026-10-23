@@ -54,3 +54,7 @@ item 6 (the kit from ONE bootstrap url).
   SMS = the refund rule, the default ledger `switch` from the bootstrap — pinned in item 6); `PrepaidPieceTest` (an answered call pays
   rate × units, the rest back) and `SmsPrepaidPieceTest` (a failed SMS returns its whole reserve, two ways) — green on the existing code (no
   red to see: the item adds no behaviour), 2 mutants red. Next: item 10 (the ad answers at /shown).
+- 2026-10-24 03:05 · **item 10 done** — the ad sample answers at /shown: `AdPlayback` emits `Established` on /shown (CONNECTING → ACTIVE),
+  the beacons and /viewed are progress in ACTIVE, every end after /shown is a `ServiceEnd` (settled, never released); `AdFlow`:
+  delivered = shown (set by the answer), the seconds watched from the progress, a task completes only when viewed. Expectations
+  changed (before → after, the report lists them); red first (4 of 15), 4 mutants red; samples 73 green.

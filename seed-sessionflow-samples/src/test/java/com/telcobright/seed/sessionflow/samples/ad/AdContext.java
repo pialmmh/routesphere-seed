@@ -8,8 +8,10 @@ public final class AdContext extends RoutesphereContext {
     public volatile String ruleCode;
     /** The creative reached the phone (the hand-over: AdPlayback's OFFERED). */
     public volatile boolean handedOver;
-    /** The creative was on the screen (AdPlayback's SHOWING). */
+    /** The creative was on the screen — the view's answer (AdPlayback's /shown). */
     public volatile boolean shown;
+    /** The whole view ran (AdPlayback's /viewed): its task completes. */
+    public volatile boolean viewed;
     /** The seconds the view's answer says were watched. */
     public volatile int watchedSeconds;
 }

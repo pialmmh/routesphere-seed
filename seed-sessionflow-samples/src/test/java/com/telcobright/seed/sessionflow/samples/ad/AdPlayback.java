@@ -34,11 +34,15 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  *   IDLE ─POST ad-sessions─► INIT ─Connect↓─► OFFERED ─/shown─► SHOWING ─/viewed─► VIEWED ─/credited | window─► TERMINATED
  *                              │ Reject↓/Stop↓/5 s   │ /abandoned · Reject↓ · Stop↓ · show timer │ /progress (stay)  │ Stop↓ / Reject↓
  *                              └──────────────────────┴── /abandoned · Reject↓ · Stop↓ · stall timer ───────────────┴──────────► TERMINATED
+ *                                    CONNECTING                    ACTIVE (the answer at /shown) ──────────────────────────────────
  * </pre>
  *
- * <p>The ad's answer stays at VIEWED and ACTIVE stays the credit window (today's mapping). The {@code Established} of a view carries
- * the creative as its remote party, the media kind as its codec and the seconds watched in its {@code sdp} field — the record has no
- * field of its own for them ({@link #watchedSecondsOf}).
+ * <p><b>The ad's answer is /shown</b> (the owner's ruling, P1-D item 9 → P1-E item 10): the creative on the screen IS the service delivered,
+ * so {@code /shown} is the {@code Established} (CONNECTING → ACTIVE), the beacons and {@code /viewed} are progress reports in ACTIVE, and every
+ * end after the answer — {@code /credited}, the credit window, an abandon, the stall timer, the supervisor's Stop or Reject — is a
+ * {@code ServiceEnd}: the view is settled (shown = delivered), never released. Before {@code /shown} an end is a {@code SignalingFailed}. The
+ * {@code Established} carries the creative as its remote party, the media kind as its codec and the seconds watched (0 at the answer) in its
+ * {@code sdp} field; a progress carries the seconds watched in its detail ({@link #watchedSecondsOf}).
  */
 public final class AdPlayback {
 
@@ -49,6 +53,8 @@ public final class AdPlayback {
     public static final String OFFERED = "OFFERED";
     public static final String SHOWING = "SHOWING";
     public static final String VIEWED = "VIEWED";
+    /** The phase of a beacon's progress report (the seconds watched so far). */
+    public static final String BEACON = "BEACON";
     public static final String TERMINATED = "TERMINATED";
 
     /** The cause words this machine writes. */
@@ -97,7 +103,7 @@ public final class AdPlayback {
                     .onEntry(NOTE)
                     .on(AdShown.class, SHOWING, null,
                         (self, e) -> { ctx(self).shownAtMs = ((AdShown) e).atMs(); send(self, AdOut.ok("shown")); },
-                        (self, e) -> new SignalingProgress(now(), SHOWING, String.valueOf(ctx(self).shownAtMs)))
+                        (self, e) -> new Established(ctx(self).shownAtMs, ctx(self).creative.creativeId(), ctx(self).creative.mediaKind(), "0"))   // ↑ the answer: CONNECTING → ACTIVE
                     .on(AdAbandoned.class, TERMINATED, null, ANSWER_THE_ABANDON, failedWith(ABANDONED))
                     .on(Reject.class, TERMINATED, null, null, FAILED_WITH_THE_COMMANDS_CAUSE)      // the phone already has the view
                     .on(Stop.class, TERMINATED, null, null, FAILED_WITH_THE_COMMANDS_CAUSE)
@@ -107,14 +113,13 @@ public final class AdPlayback {
                     .onEntry(NOTE)
                     .stay(AdProgress.class,
                         (self, e) -> { ctx(self).beacons++; ctx(self).watchedSeconds = ((AdProgress) e).watchedSeconds(); send(self, AdOut.ok("progress")); },
-                        (self, e) -> new SignalingProgress(now(), "BEACON", String.valueOf(ctx(self).watchedSeconds)))
+                        (self, e) -> new SignalingProgress(now(), BEACON, String.valueOf(ctx(self).watchedSeconds)))
                     .on(AdViewed.class, VIEWED, null, KEEP_THE_VIEW,
-                        (self, e) -> new Established(ctx(self).viewedAtMs, ctx(self).creative.creativeId(), ctx(self).creative.mediaKind(),
-                                                     String.valueOf(ctx(self).watchedSeconds)))       // ↑ CONNECTING → ACTIVE: the credit window
-                    .on(AdAbandoned.class, TERMINATED, null, ANSWER_THE_ABANDON, failedWith(ABANDONED))
-                    .on(Reject.class, TERMINATED, null, null, FAILED_WITH_THE_COMMANDS_CAUSE)
-                    .on(Stop.class, TERMINATED, null, null, FAILED_WITH_THE_COMMANDS_CAUSE)
-                    .stay(TimeoutEvent.class, null, failedWith(STALLED))                           // the stall timer
+                        (self, e) -> new SignalingProgress(ctx(self).viewedAtMs, VIEWED, String.valueOf(ctx(self).watchedSeconds)))   // ↑ a progress: the credit window
+                    .on(AdAbandoned.class, TERMINATED, null, ANSWER_THE_ABANDON, (self, e) -> new ServiceEnd(((AdAbandoned) e).atMs(), ABANDONED, "SUBSCRIBER"))
+                    .on(Reject.class, TERMINATED, null, null, (self, e) -> new ServiceEnd(now(), ((Reject) e).cause(), "SUPERVISOR"))
+                    .on(Stop.class, TERMINATED, null, null, (self, e) -> new ServiceEnd(now(), ((Stop) e).cause(), "SUPERVISOR"))
+                    .stay(TimeoutEvent.class, null, (self, e) -> new ServiceEnd(now(), STALLED, "TIMER"))   // the stall timer
 
                 .state(VIEWED).interim().timeout(t.creditWindowMs(), MILLISECONDS, TERMINATED)
                     .onEntry(NOTE)
@@ -130,9 +135,15 @@ public final class AdPlayback {
             .build();
     }
 
-    /** The seconds a view's answer says were watched (its {@code sdp} field, see the class note). */
+    /** The seconds a view's answer says were watched (its {@code sdp} field, see the class note): 0, the answer is the creative shown. */
     public static int watchedSecondsOf(Established answer) {
         return answer == null || answer.sdp() == null ? 0 : Integer.parseInt(answer.sdp());
+    }
+
+    /** The seconds a beacon's or the whole view's progress says were watched; -1 for another phase. */
+    public static int watchedSecondsOf(SignalingProgress progress) {
+        boolean watched = BEACON.equals(progress.phase()) || VIEWED.equals(progress.phase());
+        return watched && progress.detail() != null ? Integer.parseInt(progress.detail()) : -1;
     }
 
     // ── the actions the table shares ────────────────────────────────

@@ -11,6 +11,7 @@ import com.telcobright.seed.sessionflow.samples.scene.World;
 import com.telcobright.statewalk.persistence.InMemoryPersistenceProvider;
 import com.telcobright.statewalk.persistence.PersistenceProvider;
 
+import com.telcobright.statewalk.session.Outcome;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -148,7 +149,9 @@ class AdFlowTest {
         b.frame("v-ab", AdFrame.shown());
         b.frame("v-ab", AdFrame.abandoned("back-button"));
         assertEquals("ABANDONED", b.session("v-ab").endCause);
-        assertEquals(new BigDecimal("99.40"), w.balance("res_44", 701), "shown = consumed: the view is paid even though it failed");
+        assertEquals(Outcome.SUCCEEDED, b.session("v-ab").outcome, "shown is the answer: an abandon after it ends the service");
+        assertEquals(new BigDecimal("99.40"), w.balance("res_44", 701), "shown = delivered: the view is paid");
+        assertEquals(TaskState.FAILED, w.closedTasks.get(0).state(), "never watched to its end: its task did not complete");
 
         w.ledger.fund("res_44", 701, "0.10");                                      // too little for a view: never admitted
         b.frame("v-no", start(World.AD_BTCL, "zone-701"));

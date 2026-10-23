@@ -125,14 +125,20 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     /** The creative is the one hop: never a second creative after the hand-over, whatever the cause. */
     @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
 
-    /** AdPlayback's phases: the hand-over (OFFERED), then the screen (SHOWING). */
+    /** AdPlayback's progress: the hand-over (OFFERED), the beacons, the whole view (VIEWED) — each with the seconds watched so far. */
     @Override
     protected void onSignalingProgress(AdContext view, SignalingProgress progress) {
         if (AdPlayback.OFFERED.equals(progress.phase())) view.handedOver = true;
-        if (AdPlayback.SHOWING.equals(progress.phase())) view.shown = true;
+        if (AdPlayback.VIEWED.equals(progress.phase())) view.viewed = true;
+        int watched = AdPlayback.watchedSecondsOf(progress);
+        if (watched >= 0) view.watchedSeconds = watched;
     }
 
-    @Override protected void onAnswered(AdContext view, Established answer) { view.watchedSeconds = AdPlayback.watchedSecondsOf(answer); }
+    /** The answer is /shown (the owner's ruling): the creative on the screen — the view is delivered. */
+    @Override protected void onAnswered(AdContext view, Established answer) { view.shown = true; }
+
+    /** A view's task completes when it was watched to its end (/viewed), not when it was only shown. */
+    @Override protected boolean taskCompleted(AdContext view, Outcome outcome) { return outcome == Outcome.SUCCEEDED && view.viewed; }
 
     @Override protected boolean delivered(AdContext view, Outcome outcome) { return view.shown; }
 
