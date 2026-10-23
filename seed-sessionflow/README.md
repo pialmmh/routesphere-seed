@@ -86,7 +86,9 @@ The engine's numbers (`engine.stats()`, a `PoolStats`), each counted where it ha
 statewalk's pool built (the base builds no machine; it never passes `size` unless a reset failed); `busy` is a NEW session refused
 because every machine was live (statewalk's `CAPACITY_EXCEEDED`), counted at the lane's channel's inbound and at
 `engine.launch(id, firstFrame)` — `engine.deliver` counts nothing, so a lane that counts its own refusals there keeps doing so;
-`live` is the registry's live cells.
+`sessions` is the sessions live now, `live` the registry's live CELLS (kept as it was: two per session — its supervisor and its
+signaling machine — three with the budget child). A `PoolStats` made with the ten numbers of 2.0 still builds; its `sessions` is
+`PoolStats.NOT_COUNTED` (-1).
 
 ## 3 · The contract (R2–R4)
 

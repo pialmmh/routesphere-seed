@@ -198,7 +198,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
     public PoolStats stats() {
         var c = flow.kit().counters();
         return new PoolStats(flow.kit().settings().pool(), registry.activeCellCount(), supervisorsBuilt(), c.launched.get(), c.busy.get(),
-            c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held());
+            c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held(), registry.activeIdCount());
     }
 
     /** P1-F · The supervisors the registry's pool ever built — statewalk's own count (the base builds no machine; each type has its pool). */

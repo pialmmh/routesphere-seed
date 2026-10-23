@@ -29,7 +29,7 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   CdrFanOutTest 3/3 red — among them a per-root Kafka sink behind the fan-out published NOTHING before (topic per root, no root given);
   green after; 5 mutants, 5 red; seed-sessionflow 200/0/0/0 direct. (One mutant run was cut by a shell timeout: the source was checked
   intact, the module recompiled, the five run again from the start.) Next: item 4.
-- 2026-10-24 05:47 · item 1b (dc2a990) — the run-time-only rule names the build's @QuarkusTests too (docs only).
+- 2026-10-24 05:40 · item 1b (dc2a990; the time from git — first written as a guess, 05:47, later than the clock) — the run-time-only rule names the build's @QuarkusTests too (docs only).
 - 2026-10-24 05:43 · **item 4 done** — counted where they happen. `machinesBuilt`: `PoolStats.machinesBuilt` is now the supervisors the
   registry's pool built (`poolStatistics(flow.name()).totalCreated()`, statewalk's own count — the base builds no machine);
   `FlowCounters.machinesBuilt` is kept so no reader breaks, @Deprecated(forRemoval) and never written, said in its javadoc (it has no
@@ -41,3 +41,8 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   its own increment. Red first: PoolCountersTest's two behaviour tests red on the old code (machinesBuilt 0 ≠ 2, busy 0 ≠ 1), the
   launch tests by compile; PoolCountersTest 4/4 + BusyAtTheDoorTest 3/3 green (3 runs); 16 mutants, 16 red; seed-sessionflow 207/0/0/0,
   samples 73/0/0/0 direct. Next: item 5.
+- 2026-10-24 05:47 · **item 5 done** — `PoolStats.sessions` (the 11th number, last: `registry.activeIdCount()`, one per session id);
+  `live` kept as it was (the registry's CELLS: two per session here, three with the budget child), both said in the javadoc; the ten-number
+  constructor of 2.0 kept (ad-sphere's AdDispatch.stats() builds one), its `sessions` = `PoolStats.NOT_COUNTED` (-1). Red first
+  (compile: no sessions()); PoolSessionsTest 2/2 (2 sessions = 4 cells, then 1; the ten numbers still build); 5 mutants, 5 red;
+  seed-sessionflow 209/0/0/0 direct. The item-1b line above corrected to its git time (it was a guess). Next: item 6.
