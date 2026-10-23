@@ -89,3 +89,11 @@ item 6 (the kit from ONE bootstrap url).
   no MemLedger thread (end to end on H2). Red first (compile), 11 mutants (10 red, 1 equivalent: the check before the gate only spares the
   lock); sessionflow 193, samples 73, switch-ledger 61, tenant 19, naming 10, bootstrap-config 8 (direct runs). Next: the whole reactor
   and a clean copy of the head under the lock, then the report.
+- 2026-10-24 03:24–03:28 · the final runs of **a0cf3a8** (items 0–13; the run script's own `date` lines): the whole reactor in the worktree
+  from clean **518/0/0/3** (127 s), a git-archive clean copy (offline, under the lock, no install) **518/0/0/3** (124 s); the copy removed;
+  the MemLedger stack trace of 53bd001's logs gone.
+- 2026-10-24 03:30 · **DONE** — items 0–13 committed (CONTRACT DONE c992262; the head a0cf3a8; this docs commit after it); the report
+  `docs/agents/P1-E-report.md` final. The worktree's target directories and this agent's scratch files removed. Nothing running. Next for
+  the architect: merge; P2 ports ad-sphere on it (the report's "For P2" lines); the open points of the report (the envelope's findings for
+  the prime-context round, mem-ledger's `addDatabase` pin).
+

@@ -2,7 +2,7 @@
 
 Branch `p1-rules` (worktree `routesphere-seed/worktrees/p1-rules`), from f41eace (stream D's four commits + the brief). Nothing pushed;
 nothing written into `~/.m2`; no database server, broker or prime-context reached (in-process fakes, Kafka's mocks, H2 in memory only).
-**Status: items 0–13 done (items 12–13 added by the architect overnight); CONTRACT DONE at c992262; the final reactor and clean copy of the head below.**
+**Status: done — items 0–13 (12–13 added by the architect overnight); CONTRACT DONE at c992262; the head a0cf3a8 — the worktree from clean and a git-archive clean copy, both 518/0/0/3.**
 
 | | tests / failures / errors / skipped |
 |---|---|
@@ -11,6 +11,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | item 1, a git-archive clean copy of 4a8b22a (offline, under the lock) | **438 / 0 / 0 / 3** |
 | **CONTRACT DONE** — item 5's c992262 on a git-archive clean copy | **452 / 0 / 0 / 3** |
 | items 0–11 — 53bd001, the worktree from `clean` and a git-archive clean copy (offline, under the lock) | **501 / 0 / 0 / 3** both |
+| **items 0–13 — a0cf3a8, the worktree from `clean` and a git-archive clean copy (offline, under the lock)** | **518 / 0 / 0 / 3** both |
 
 ## 0 · The commits
 
@@ -28,6 +29,9 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | 6f821f6 | **item 9** — the prepaid piece written down, its pins |
 | b36db3d | **item 10** — the ad sample answers at `/shown` |
 | 53bd001 | **item 11** — the docs |
+| a884686 | the report and the state for items 0–11 (the state's times corrected) |
+| 242186f | **item 12** — the application's whole config from the bootstrap (`seed-bootstrap-config`) |
+| a0cf3a8 | **item 13** — a new reseller tier on its root's switch ledger; the road closes the ledgers it made |
 
 ## Item 0 · the records road leaves (R13)
 
@@ -446,12 +450,15 @@ on after the engine's close). The tests were green. Fixed in item 13's commit (s
 | **CONTRACT DONE**, clean copy of c992262 | **452 / 0 / 0 / 3** |
 | **53bd001** (items 0–11), the whole reactor in the worktree from `clean` (offline, under the lock, 01:45–01:47) | **501 / 0 / 0 / 3** |
 | **53bd001**, a git-archive clean copy (offline, under the lock, no install, 01:47–01:49; the copy removed) | **501 / 0 / 0 / 3** |
+| **a0cf3a8** (items 0–13), the whole reactor in the worktree from `clean` (offline, under the lock, 03:24–03:26) | **518 / 0 / 0 / 3** |
+| **a0cf3a8**, a git-archive clean copy (offline, under the lock, no install, 03:26–03:28; the copy removed) | **518 / 0 / 0 / 3** |
 
 Between the Maven runs the items were proven by direct runs (javac + the JUnit launcher, the module's classpath; no Maven, no lock): the
-last of them sessionflow 190, samples 73, switch-ledger 54, tenant 19, naming 10 — 0 failures. One timing flake was seen once in a direct run
+last of them (after item 13) sessionflow 193, samples 73, switch-ledger 61, tenant 19, naming 10, bootstrap-config 8 — 0 failures. One timing flake was seen once in a direct run
 under load (`VoiceFlowTest.a_talking_call_renews_one_minute_per_period…`, the budget child's cut: `ACTIVE/ANSWERED` where
-`ACTIVE/DISCONNECTING` was awaited); three reruns green; not seen under Maven. Mutants: 51 hand mutants (items 1–10), every one red (two survived first —
-N2, N5 — and were made red by two stronger assertions; one, M4-1, first ran on stale classes and was rerun red).
+`ACTIVE/DISCONNECTING` was awaited); three reruns green; not seen under Maven. Mutants: 70 hand mutants — 51 for items 1–10, 8 for item 12, 11 for item 13 — 69 red and 1 equivalent (item 13's check before the gate,
+which only spares the lock); three survived first (N2, N5, item 13's guard under the gate) and were made red by three stronger tests; one
+(M4-1) first ran on stale classes and was rerun red. The final logs no longer carry the MemLedger stack trace of 53bd001's.
 
 ## Open questions for the owner / the architect
 
