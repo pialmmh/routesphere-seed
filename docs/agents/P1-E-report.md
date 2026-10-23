@@ -2,7 +2,7 @@
 
 Branch `p1-rules` (worktree `routesphere-seed/worktrees/p1-rules`), from f41eace (stream D's four commits + the brief). Nothing pushed;
 nothing written into `~/.m2`; no database server, broker or prime-context reached (in-process fakes, Kafka's mocks, H2 in memory only).
-**Status: in progress.**
+**Status: items 0–11 done (53bd001: worktree and clean copy 501/0/0/3); CONTRACT DONE at c992262; item 12 (the app's whole config from the bootstrap, added by the architect) next.**
 
 | | tests / failures / errors / skipped |
 |---|---|
@@ -10,6 +10,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | after item 0 (from `clean`) | **434 / 0 / 0 / 3** |
 | item 1, a git-archive clean copy of 4a8b22a (offline, under the lock) | **438 / 0 / 0 / 3** |
 | **CONTRACT DONE** — item 5's c992262 on a git-archive clean copy | **452 / 0 / 0 / 3** |
+| items 0–11 — 53bd001, the worktree from `clean` and a git-archive clean copy (offline, under the lock) | **501 / 0 / 0 / 3** both |
 
 ## 0 · The commits
 
@@ -18,6 +19,15 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | 1caa152 | **item 0** — the records road removed (R13) |
 | 4a8b22a | **item 1** — `identifyTenant` forced, with the door helpers |
 | 891326b | **item 2** — `identifyPartner`, `partnerAbove`, `byPartnerId` / `byPartnerName` |
+| c1f5043 | **item 3** — the facts' `SessionStart` sample refused at build |
+| 1a3c83c | **item 4** — one supervisor class per lane, the one engine door |
+| c992262 | **item 5** — the builder `RoutesphereApp` (the SMS sample made with it) — **CONTRACT DONE** |
+| 88d721f | **item 6** — the kit from ONE bootstrap url |
+| 0ad4b7d | **item 7** — `seed-naming`, the topics made at the start |
+| 7b89e30 | **item 8** — a tenant created live (`tenant_created`) |
+| 6f821f6 | **item 9** — the prepaid piece written down, its pins |
+| b36db3d | **item 10** — the ad sample answers at `/shown` |
+| 53bd001 | **item 11** — the docs |
 
 ## Item 0 · the records road leaves (R13)
 
@@ -298,6 +308,88 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   /shown a progress again (6 red); an abandon after /shown a failure again; a task completed when only shown; the answer not marking the view
   shown (money and the restore red).
 
+## Item 11 · docs
+
+`seed-sessionflow/README.md` rewritten: §1 the classes (the builder, the supervisor class, `Lookups`, the deployment); §2 one package per
+application (R6's six files), a subclass, the builder, the kit from the bootstrap and the one engine door; §3 the contract table — every
+method forced ■ / final / default with the call's answer, one line each; §4.1 naming (R9); §4.2 the bootstrap (R8) and a tenant created live
+(R10); §5.1 the prepaid piece (R12, item 9); §7 the packages; §9 the history. `RoutesphereFlow`'s class javadoc follows (two ways to write a
+lane, one package, the kit) — the drift guard still finds exactly the nine ■. The root README names `seed-naming` and the framework.
+
+## Found after the final run (the final logs read)
+
+The final worktree and copy logs carry one stack trace the baseline's did not: a MemLedger's WAL consumer of
+`SwitchLedgerMakerTest` failing on "Database is already closed" after its test ended — the test never shut the MemLedger the maker
+opened, and, the real gap behind it, **the bootstrap road's `close()` did not close the ledgers it made** (a MemLedger's threads would run
+on after the engine's close). The tests were green. Fixed in the commit after the report (see "After the report" below).
+
+## The findings for the prime-context round (the envelope, §C)
+
+1. **The identification rules have two homes.** prime-context's `IdentificationContributor` serves them at `config.identification` as
+   `[{kind, match, tenant}]`; §C pins `config.routesphere.identification.rules` with `{root, kind, match}`. The seed reads §C's home
+   (`IdentificationRules.fromRoutesphere`, which also takes a bare list and `tenant` for `root`). prime-context should serve §C's home for a
+   routesphere application.
+2. **`timings.routingSec` cannot be applied** — statewalk's ROUTING timer is fixed (1 s, `SessionSupervisor.ROUTING_SEC`); the sample says 5.
+   The seed reads it, says one WARN, and does not apply it. Drop it from §C (or statewalk makes it a setting).
+3. **The seed root of the legacy names is not in §C.** btcl on the bed keeps `res_<id>`; the seed reads an optional
+   `config.routesphere.naming.seed-root` (absent = every root strict) — prime-context knows it (`primecontext.admin-db`) and should serve it.
+4. **The platform's Kafka is not in §C** (where `tenant_created` and the doorbell live); the seed reads an optional
+   `config.routesphere.kafka.bootstrap`, else the first served root's Kafka.
+5. **The zone is not in §C**: an optional `config.routesphere.zone`, Asia/Dhaka when absent. Other optional knobs read when present:
+   `reservePeriodSec`, `reserveInitialDelaySec`, `slotReconcileSec`, `admissionReserveMs`, `globalTimeoutSec` (default: the timers' sum +
+   60 s), `debug`; an `orchestrix` root's ledger words `url`, `token-env`, `tenant`, `profile`.
+6. **The tree road** is read at the bootstrap url's origin (`POST <origin>/get-specific-tenant-root?name=<root>`, `FsController` at `/`),
+   with no bearer (open today). If prime-context gates it, §C should say how.
+7. **§C.1's link3 block was placeholders**; the pinned sample fills it like btcl's (see item 6).
+8. **A partner by what the wire carries** (ip / prefix / msisdn / system id) is not on the tree the seed reads — item 2's finding.
+9. **A new reseller TIER and the switch ledger:** `tenant_created` (kind reseller) reloads the root's tree, but a root's MemLedger was built
+   over the tier schemas it had at start — the new tier's `packageaccount` rows are not loaded. MemLedger has `reloadDatabases()` /
+   `autoDiscoverDatabases(prefix)`; wiring a tier event to it (or rebuilding that root's ledger between sessions) is the next round's —
+   NOT done here (no MemLedger behaviour was proven for it, and the brief keeps the money code unchanged).
+
+## Choices made where the brief left a road open
+
+- **The makers by `ServiceLoader`** (item 6): seed-tenant and seed-switch-ledger depend on seed-sessionflow, so the kit cannot name them;
+  the classpath carries them, a missing one is refused in words, and the application's code stays one line. `fromBootstrap(source, app,
+  makers)` takes them by hand (tests, a host's pooled `DataSource`).
+- **The helpers as one object** (`api/Lookups`, `kit.lookups()`), the base's final helpers one-line delegates, the builder's identify lambdas
+  given it as their last argument (`find`) — one implementation for both ways of writing a lane.
+- **A named `AppFlow`** instead of an anonymous subclass; **`SmsFlow.of(kit, …)`** (the lane made by the builder keeps its class name and
+  its rules as small methods); **`seed-naming` a module** (the engine needs it; seed-tenant could not host it).
+- **The journal per root** (`PerRootJournal`), because §C gives each root its own directory: a session's lines follow its first reserve's
+  root (a free view: its records' root at the hand-over); the next start reads every root's leftovers. P2's brief (§E) names ONE file
+  `<cdr.dir>/views-in-the-air.jsonl` — on the bootstrap kit the ad's journal is the per-root one (`<root dir>/sessions-in-the-air.jsonl`).
+- **The topics the start makes:** `cdr_<root>` (the switch publishes), `config_event_loader_<root>` (it listens), the lane's
+  `topicsOf(root)`. Not `cdr_summary_ping_<root>` (billing-core's) nor `tenant_created` (prime-context's).
+- **`tenant_created`'s consumer group** is per process (`<app>-tenant-created-<uuid>`): every running application hears every event (R10's
+  "every running application … loads the new root").
+- **The bootstrap token** is read from the environment at every ask (a rotated token is taken without a restart).
+
+## The numbers
+
+| run | tests / failures / errors / skipped |
+|---|---|
+| f41eace, before (worktree, from clean) | 465 / 0 / 0 / 3 |
+| item 0 (worktree, from clean) | 434 / 0 / 0 / 3 |
+| item 1, clean copy of 4a8b22a | 438 / 0 / 0 / 3 |
+| **CONTRACT DONE**, clean copy of c992262 | **452 / 0 / 0 / 3** |
+| **53bd001** (items 0–11), the whole reactor in the worktree from `clean` (offline, under the lock, 01:45–01:47) | **501 / 0 / 0 / 3** |
+| **53bd001**, a git-archive clean copy (offline, under the lock, no install, 01:47–01:49; the copy removed) | **501 / 0 / 0 / 3** |
+
+Between the Maven runs the items were proven by direct runs (javac + the JUnit launcher, the module's classpath; no Maven, no lock): the
+last of them sessionflow 190, samples 73, switch-ledger 54, tenant 19, naming 10 — 0 failures. One timing flake was seen once in a direct run
+under load (`VoiceFlowTest.a_talking_call_renews_one_minute_per_period…`, the budget child's cut: `ACTIVE/ANSWERED` where
+`ACTIVE/DISCONNECTING` was awaited); three reruns green; not seen under Maven. Mutants: 51 hand mutants (items 1–10), every one red (two survived first —
+N2, N5 — and were made red by two stronger assertions; one, M4-1, first ran on stale classes and was rerun red).
+
 ## Open questions for the owner / the architect
 
-(none yet)
+1. **A new reseller tier's schema on the switch ledger** (finding 9): wire `tenant_created` (reseller) to the root's MemLedger
+   (`reloadDatabases()`), or rebuild that root's ledger between sessions — whose round, and does prime-context send the event only after the
+   tier's tables exist?
+2. **P2's journal:** on a kit made from the bootstrap the ad's journal of the views in the air is per root (`<root dir>/sessions-in-the-air.jsonl`),
+   not P2 §E's one `<cdr.dir>/views-in-the-air.jsonl` — the P2 brief should follow.
+3. **The ad at /shown (item 10):** a view abandoned or stalled after `/shown` now SUCCEEDS and pays its reserve (shown = delivered, the
+   ruling); its campaign task is FAILED unless the view ran to `/viewed`. Confirm the task rule with the owner.
+4. **The §C sample bytes** (`deployment.json` e1ca4f43…, `tenant-created.json` 63f396e2…) are the contract: the architect hands them to the
+   prime-context agent (link3's block filled, see item 6; the optional keys of findings 3–5 are NOT in the sample).
