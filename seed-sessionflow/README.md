@@ -82,6 +82,12 @@ RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdSupervisor(new 
     .signaling(AdPlayback.spec(...)).channel(httpChannel, AdFrames::decode).start();
 ```
 
+The engine's numbers (`engine.stats()`, a `PoolStats`), each counted where it happens (P1-F): `machinesBuilt` is the supervisors
+statewalk's pool built (the base builds no machine; it never passes `size` unless a reset failed); `busy` is a NEW session refused
+because every machine was live (statewalk's `CAPACITY_EXCEEDED`), counted at the lane's channel's inbound and at
+`engine.launch(id, firstFrame)` — `engine.deliver` counts nothing, so a lane that counts its own refusals there keeps doing so;
+`live` is the registry's live cells.
+
 ## 3 · The contract (R2–R4)
 
 | | method | forced ■ / final / default | the call's answer (the default where there is one) |

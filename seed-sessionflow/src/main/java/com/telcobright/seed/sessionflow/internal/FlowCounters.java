@@ -5,10 +5,20 @@ import java.util.concurrent.atomic.AtomicLong;
 /** The running numbers of one application's call flow. Counters only: nothing here decides anything. */
 public final class FlowCounters {
 
-    /** Machines ever built for the pool. It stays at or below the pool's size unless a reset failed. */
+    /**
+     * Not counted here, kept so no reader breaks (P1-F): the base builds no machine — statewalk's pools do, and count them. Read
+     * {@code RoutesphereEngine.stats().machinesBuilt()}: the supervisors' pool's own count. This one stays 0.
+     *
+     * @deprecated statewalk's registry counts the machines its pools build: {@code registry().poolStatistics(type).totalCreated()}
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public final AtomicLong machinesBuilt = new AtomicLong();
     public final AtomicLong launched = new AtomicLong();
-    /** Calls refused at the door because the pool was full. They never got a machine and have no CDR. */
+    /**
+     * NEW sessions refused at the door because every machine was live (statewalk's CAPACITY_EXCEEDED). They never got a machine and have
+     * no CDR. Counted by the engine where it sees the refusal (P1-F): the lane's channel's inbound and {@code RoutesphereEngine.launch} —
+     * never {@code deliver}, so a lane that counts its own refusals there is not counted twice.
+     */
     public final AtomicLong busy = new AtomicLong();
     public final AtomicLong ended = new AtomicLong();
     public final AtomicLong cdrPublished = new AtomicLong();
