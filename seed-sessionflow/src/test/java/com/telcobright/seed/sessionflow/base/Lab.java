@@ -149,7 +149,7 @@ public final class Lab implements AutoCloseable {
         partners.forEach((tenant, ids) -> { for (int id : ids) ledger.fund(tenant, id, "100.00"); });
     }
 
-    static Tenant btclTree() {
+    public static Tenant btclTree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("btcl").partner(1, "btcl-client", PartnerType.CUSTOMER).partner(44, "res_44", PartnerType.RESELLER);
         b.tenant("res_44", "btcl").partner(5, "res44-client", PartnerType.CUSTOMER).partner(7, "res_44_7", PartnerType.RESELLER);
@@ -157,7 +157,7 @@ public final class Lab implements AutoCloseable {
         return b.build();
     }
 
-    static Tenant tele2Tree() {
+    public static Tenant tele2Tree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("tele2").partner(1, "tele2-client", PartnerType.CUSTOMER).partner(9, "res_9", PartnerType.RESELLER);
         b.tenant("res_9", "tele2").partner(3, "res9-client", PartnerType.CUSTOMER);

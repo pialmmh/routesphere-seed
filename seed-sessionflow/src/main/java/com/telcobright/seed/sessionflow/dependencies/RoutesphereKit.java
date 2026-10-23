@@ -33,6 +33,7 @@ public final class RoutesphereKit {
     private final CdrSink cdr;
     private final SdrSink sdr;
     private final TaskSink tasks;
+    private final RecordStores records;
     private final SessionJournal journal;
     private final Clock clock;
     private final ZoneId zone;
@@ -49,6 +50,7 @@ public final class RoutesphereKit {
         this.zone = required(b.zone, "zone (the CDR's wall clock)");
         this.sdr = b.sdr;
         this.tasks = b.tasks;
+        this.records = b.records;
         this.journal = b.journal;
         this.clock = b.clock;
         this.settings = b.settings;
@@ -75,6 +77,9 @@ public final class RoutesphereKit {
 
     /** Where the closed task row goes. */
     public TaskSink tasks() { return tasks; }
+
+    /** The records road's stores, one per root (P1-R); null = the lane's CDR goes to its CDR sink. */
+    public RecordStores recordStores() { return records; }
 
     /** The sessions in the air (R1-6): none unless the host keeps one. */
     public SessionJournal journal() { return journal; }
@@ -119,6 +124,7 @@ public final class RoutesphereKit {
         private CdrSink cdr;
         private SdrSink sdr = SdrSink.NONE;
         private TaskSink tasks = TaskSink.NONE;
+        private RecordStores records;
         private SessionJournal journal = SessionJournal.NONE;
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
@@ -135,6 +141,8 @@ public final class RoutesphereKit {
         public Builder cdr(CdrSink v) { this.cdr = v; return this; }
         public Builder sdr(SdrSink v) { this.sdr = required(v, "sdr"); return this; }
         public Builder tasks(TaskSink v) { this.tasks = required(v, "tasks"); return this; }
+        /** The records road (P1-R): the base writes the lane's CDR, SDR and summary input into each root's own store. */
+        public Builder records(RecordStores v) { this.records = required(v, "records"); return this; }
         public Builder journal(SessionJournal v) { this.journal = required(v, "journal"); return this; }
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }

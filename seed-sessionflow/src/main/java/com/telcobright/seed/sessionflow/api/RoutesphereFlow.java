@@ -4,9 +4,13 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
+import com.telcobright.seed.sessionflow.dependencies.RecordStore;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
+import com.telcobright.seed.sessionflow.internal.CdrAssembler;
+import com.telcobright.seed.sessionflow.internal.CdrTableSql;
+import com.telcobright.seed.sessionflow.internal.SummaryEntries;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
@@ -421,12 +425,38 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The finish · The application's session record (the SDR), or null for none. */
     protected Object buildSdr(C ctx, Outcome outcome) { return null; }
 
+    /**
+     * The records road, per tier record (P1-R §A) · The record's statements in its batch's ONE transaction. The default writes billing-core's
+     * {@code cdr} row in the tier's own schema ({@code CdrTableSql}: the probe of billing-core's key, then the INSERT). A lane overrides to add
+     * rows of its own (the voice: {@code acc_chargeable}) or to write a table of its own. {@code ctx} is null for a record a stopped process
+     * left in the air (the next start writes it from the journal).
+     */
+    protected List<RecordStatement> cdrStatements(C ctx, CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
+
+    /** The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none. */
+    protected List<RecordStatement> sdrStatements(C ctx, Outcome outcome, Object sdr) { return List.of(); }
+
+    /**
+     * The records road, per tier record · What the record puts into its tier's summary input (the batch's {@code summary_affected} row of that
+     * tier); null = nothing. The default: billing-core's entry — {@code {Cdr, Chargeables}}, the pre-rated customer leg of a stated group
+     * ({@code SummaryEntries}). {@code ctx} is null for a record left in the air.
+     */
+    protected Object summaryEntryOf(C ctx, CdrEvent record) { return SummaryEntries.of(record, storeOf(record).switchId()); }
+
     /** The finish, last · The application's own closing. */
     protected void onEnded(C ctx, Outcome outcome) { }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
+    protected final RecordStore storeOf(CdrEvent record) {
+        String root = CdrAssembler.rootOf(record);
+        if (kit.recordStores() == null) throw new IllegalStateException("[" + name() + "] the kit has no records road: the CDR goes to its CDR sink");
+        return kit.recordStores().of(root).orElseThrow(() -> new IllegalStateException("[" + name() + "] the records road has no store for the root '"
+            + root + "' of " + record.channelCallUuid));
+    }
 
     /** The entry of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = this tree holds no such partner. */
     protected final Tier entryOfPartner(C ctx, int partnerId) {

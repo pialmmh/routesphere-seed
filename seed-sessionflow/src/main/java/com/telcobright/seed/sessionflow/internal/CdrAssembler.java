@@ -105,6 +105,14 @@ public final class CdrAssembler {
         return String.join(HIERARCHY_SEPARATOR, names);
     }
 
+    /** The ROOT of a record: the first node of its hierarchy ({@code root > … > this tier}); its own tier when it names none. */
+    public static String rootOf(CdrEvent record) {
+        String hierarchy = record.resellerHierarchy;
+        if (hierarchy == null || hierarchy.isBlank()) return record.tenant;
+        int first = hierarchy.indexOf(HIERARCHY_SEPARATOR.trim());
+        return (first < 0 ? hierarchy : hierarchy.substring(0, first)).trim();
+    }
+
     /** The wall clock of the root tenant's zone, as the CSV and billing write it. Null for a time that never came. */
     public String wallClock(long epochMs) {
         return epochMs <= 0 ? null : WALL_CLOCK.format(Instant.ofEpochMilli(epochMs).atZone(zone));
