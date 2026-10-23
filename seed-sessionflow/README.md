@@ -141,6 +141,14 @@ prime-context:
   token-env: AD_SPHERE_BOOTSTRAP_TOKEN           # the NAME of the variable, never its value
 ```
 
+**These two lines live at RUN TIME only** (the architect's rule, P1-F): in the box's external `config/application.yml` beside the jar
+(Quarkus reads `config/application.yml` from the process's working directory — the unit's `WorkingDirectory=`), or in the unit's
+environment (`PRIME_CONTEXT_BOOTSTRAP_URL`, `PRIME_CONTEXT_TOKEN_ENV`). **Never inside the jar**: Quarkus's BUILD reads every file in the
+jar, and it runs seed-bootstrap-config's factory too — a url the build can see makes `mvn package` fetch prime-context. Nor in the
+build's own run-time places: no `config/` folder or `.env` in the project's directory, no `PRIME_CONTEXT_*` exported in the shell that
+builds. There is no build-time guard in code: no reliable, documented signal tells a config factory it runs inside the build (what was
+looked at: `seed-bootstrap-config/README.md`).
+
 `RoutesphereKit.fromBootstrap(source, app)` reads prime-context's envelope (§C.1: `config.routesphere` — the roots, the pool, the timers,
 the identification rules, each root's `switch-db`, `kafka`, `redis`, `ledger`, `journal`), and makes per served root its tree (seed-tenant's
 `PrimeContextTrees`), its doors, its ledger (`switch` = seed-switch-ledger's MemLedger port, the default; `orchestrix` for the transition),

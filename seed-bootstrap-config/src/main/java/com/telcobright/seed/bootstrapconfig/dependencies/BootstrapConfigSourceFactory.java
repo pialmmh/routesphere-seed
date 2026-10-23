@@ -27,6 +27,10 @@ import java.util.function.BiFunction;
  *   <li>A url without its token's variable name, a token variable that is empty, prime-context unreachable or refusing: the start is
  *       REFUSED, exactly as the kit's door refuses it — the same words, the same {@code BootstrapUnavailable}.</li>
  *   <li>Never a secret: only {@code config} is served; the envelope's {@code secrets} stay out, a {@code password-ref} stays a reference.</li>
+ *   <li>P1-F · Quarkus runs this factory during its BUILD too ({@code mvn package} reads the config): the url and the token variable's
+ *       name live at RUN TIME only — the box's {@code config/application.yml} beside the jar, or the unit's environment
+ *       ({@code PRIME_CONTEXT_BOOTSTRAP_URL}, {@code PRIME_CONTEXT_TOKEN_ENV}), never inside the jar. No guard here: no reliable, documented
+ *       signal tells a factory it runs inside the build (the README says what was looked at).</li>
  * </ul>
  */
 public final class BootstrapConfigSourceFactory implements ConfigSourceFactory {
