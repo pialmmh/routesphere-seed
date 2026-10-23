@@ -24,3 +24,8 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   and the engine's close closing the road's producer and listener, a kit by hand carried whole, a kit in use refused); 10 mutants, 10 red;
   seed-sessionflow 197/0/0/0 direct (193 + 4). Decision: ONE door (toBuilder) rather than fromBootstrap overloads with two sinks — it also
   takes P2's local CDR journal beside the root's road (P2's kitOnTheBootstrap in one chain). Next: item 3.
+- 2026-10-24 05:33 · **item 3 done** — `FanOutCdrSink` (`CdrSinks.all`) overrides `publish(root, callId, tiers)` and hands the session's
+  root to every sink (a root-less call stays root-less; one sink's failure still never stops the next, on both roads). Red first:
+  CdrFanOutTest 3/3 red — among them a per-root Kafka sink behind the fan-out published NOTHING before (topic per root, no root given);
+  green after; 5 mutants, 5 red; seed-sessionflow 200/0/0/0 direct. (One mutant run was cut by a shell timeout: the source was checked
+  intact, the module recompiled, the five run again from the start.) Next: item 4.
