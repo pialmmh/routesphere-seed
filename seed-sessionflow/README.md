@@ -263,6 +263,12 @@ mvn -o test        # at the reactor's root: the whole suite (never one module al
 (the smallest application), `LabCall` (the smallest signaling machine the 4.0 builder accepts). The four samples (ad, voice, WiFi,
 SMS) and their scenarios live in `seed-sessionflow-samples`.
 
+`testkit.FakeKafka` (P1-F) runs on kafka-clients 3.7.1 (the seed's) and 4.0.0 (Quarkus 3.26.1's — an application's tests on that
+platform can use it): its producer is `MockProducer(boolean, Partitioner, Serializer, Serializer)`, in both — 4.0 removed the
+three-argument one. `FakeKafkaOnKafka4Test` reads FakeKafka's class file for it; the run on both versions is in `docs/agents/P1-F-state.md`.
+The seed's own `KafkaCdrSinkPerRootTest`, `SessionsInTheAirTest` (and seed-tenant's `DoorbellTest`) still build the three-argument one:
+they run on the seed's 3.7.1 only.
+
 ## 9 · History
 
 - 2026-10-24 — P1-E, the framework round (the owner's R1–R13 of 2026-10-23): `identifyTenant` / `identifyPartner` forced with the base's

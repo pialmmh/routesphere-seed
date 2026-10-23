@@ -27,6 +27,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * A test's Kafka — no broker: one {@code MockProducer} per bootstrap address (auto-completing), one {@code MockConsumer} per bootstrap
  * (latest), and an admin that keeps the topics made per bootstrap ({@code createTopics}: made once, then "exists"; a cluster scripted to
  * refuse refuses every topic).
+ *
+ * <p>P1-F · It runs on kafka-clients 3.7.1 (the seed's) AND 4.0.0 (Quarkus 3.26.1's): every Kafka constructor it calls is in both. The
+ * producer is {@code MockProducer(boolean autoComplete, Partitioner partitioner, Serializer, Serializer)} — 4.0's javadoc: "Create a new
+ * mock producer with invented metadata the given autoComplete setting, partitioner and key\value serializers. Equivalent to
+ * {@code MockProducer(Cluster.empty(), autoComplete, partitioner, keySerializer, valueSerializer)}"; 4.0 removed the three-argument one.
+ * The partitioner is null: on the invented (empty) cluster every record goes to partition 0 and no partitioner is asked, in both. The
+ * consumer is {@code MockConsumer(OffsetResetStrategy)}, deprecated in 4.0 and present in both ({@code MockConsumer(String)} is 4.0's alone).
  */
 public final class FakeKafka implements KafkaClients {
 
@@ -44,7 +51,7 @@ public final class FakeKafka implements KafkaClients {
 
     @Override
     public Producer<String, String> producer(String bootstrap, String clientId) {
-        return producers.computeIfAbsent(bootstrap, b -> new MockProducer<>(true, new StringSerializer(), new StringSerializer()));
+        return producers.computeIfAbsent(bootstrap, b -> new MockProducer<>(true, null, new StringSerializer(), new StringSerializer()));
     }
 
     @Override
