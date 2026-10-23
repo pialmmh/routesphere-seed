@@ -72,3 +72,11 @@ item 6 (the kit from ONE bootstrap url).
 - 2026-10-24 02:22 · resumed after the session limit (the owner switched accounts). The final runs had ended before the limit (their logs
   in the scratchpad: `final-worktree.log`, `final-copy.log`, both EXIT 0). Times corrected (above). Running: the report committed, then a
   clean copy of that head (its diff to 53bd001 is docs only).
+- 2026-10-24 02:50 · **item 12 done** (the architect's, added at 02:2x) — module **`seed-bootstrap-config`**: a SmallRye `ConfigSourceFactory`
+  (ServiceLoader) that reads `prime-context.bootstrap-url` / `prime-context.token-env` from the lower sources, fetches the envelope through
+  item 6's road (`BootstrapSources.http`), serves `config` flattened (`a.b.c`, `a.b[0]`, a dotted key quoted) at ordinal 275; never a
+  secret; no url = no source; unreachable / refused = the start refused as the kit's door does. SmallRye 3.13.4 provided (Quarkus 3.26.1's),
+  smallrye-common pinned 2.13.8 (2.13.7 is not on this box). New sample `bootstrap/deployment-with-app-keys.json` beside the pinned §C files
+  (unchanged). Red first (compile), 8 mutants red; module 8/0 (direct run). Decision: the reactor + clean copy run once after item 13
+  (covering 12 and 13), the lock being shared by five agents tonight. Next: item 13 (a new reseller tier on the switch ledger) + the
+  road's ledger close (found after the final run).

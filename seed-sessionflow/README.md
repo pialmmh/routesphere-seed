@@ -148,6 +148,10 @@ its CDR road (`cdr_<root>` on its own Kafka) and its journal (its own directory)
 refused in words. The start says, one line per root, every resource it got. The sample envelope and the `tenant_created` message are
 `src/test/resources/bootstrap/` — pinned byte for byte with prime-context.
 
+The application's OWN keys (everything in `config` beside `routesphere`: `adsphere.*`, `sdr.*`, `quarkus.http.*`, …) reach its
+MicroProfile / SmallRye Config through **seed-bootstrap-config** (a `ConfigSourceFactory` at ordinal 275, the same road, never a secret) —
+so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md`.
+
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree
 reloaded. The same event twice is once; another application's is nothing.
@@ -213,6 +217,7 @@ internal/      BudgetChild · ChannelSlots · CdrAssembler · KafkaCdrSink · On
 testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder · ManualClock · MapBootstrapSource · FakeKafka
 
 seed-naming    TenantNames · Topics · RedisKeys · Direction
+seed-bootstrap-config    BootstrapConfigSourceFactory (the application's whole config from the bootstrap, ordinal 275)
 seed-tenant    PrimeContextTrees (the TreesMaker)       seed-switch-ledger    SwitchLedgerMaker (the `switch` LedgerMaker)
 ```
 

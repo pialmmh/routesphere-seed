@@ -2,7 +2,7 @@
 
 Branch `p1-rules` (worktree `routesphere-seed/worktrees/p1-rules`), from f41eace (stream D's four commits + the brief). Nothing pushed;
 nothing written into `~/.m2`; no database server, broker or prime-context reached (in-process fakes, Kafka's mocks, H2 in memory only).
-**Status: items 0–11 done (53bd001: worktree and clean copy 501/0/0/3); CONTRACT DONE at c992262; item 12 (the app's whole config from the bootstrap, added by the architect) next.**
+**Status: items 0–11 done (53bd001: worktree and clean copy 501/0/0/3); CONTRACT DONE at c992262; item 12 done; item 13 (a new reseller tier on the switch ledger, the architect's) next.**
 
 | | tests / failures / errors / skipped |
 |---|---|
@@ -315,6 +315,38 @@ application (R6's six files), a subclass, the builder, the kit from the bootstra
 method forced ■ / final / default with the call's answer, one line each; §4.1 naming (R9); §4.2 the bootstrap (R8) and a tenant created live
 (R10); §5.1 the prepaid piece (R12, item 9); §7 the packages; §9 the history. `RoutesphereFlow`'s class javadoc follows (two ways to write a
 lane, one package, the kit) — the drift guard still finds exactly the nine ■. The root README names `seed-naming` and the framework.
+
+## Item 12 · the application's WHOLE config from the bootstrap (R8; added by the architect after the report)
+
+- **The module `seed-bootstrap-config`** (depends on seed-sessionflow for the bootstrap's one road; SmallRye Config **provided** —
+  `smallrye-config-core` 3.13.4, Quarkus 3.26.1's, ad-sphere's platform; `smallrye-common-*` pinned to 2.13.8 in the module's
+  dependencyManagement, because SmallRye 3.13.4 asks 2.13.7, which this box's repository does not hold — Quarkus 3.26.1 runs 2.13.8).
+  Nothing new in seed-sessionflow.
+- **`dependencies/BootstrapConfigSourceFactory`** — a SmallRye `ConfigSourceFactory` registered by `META-INF/services` (a Quarkus app gets it
+  by adding the dependency): reads `prime-context.bootstrap-url` and `prime-context.token-env` from the lower sources, fetches the envelope
+  through **item 6's road** (`BootstrapSources.http`: the token read by its variable's name, `If-None-Match`), serves the envelope's `config`
+  as ONE source (`internal/EnvelopeConfigSource`) at **ordinal 275** — above the jar's files (250), below the environment (300) and `-D`
+  (400). `internal/FlatConfig`: a nested map `a.b.c`, a list `a.b[0]`, a map in a list `a.b[0].c`, a key holding a dot quoted
+  (`quarkus.log.category."com.telcobright".level`, as SmallRye's YAML source writes it), a null no property.
+- **Behaviour:** no bootstrap url = no source (the application's own files; the kit's own door still refuses a missing url when it is used);
+  a url without its token's variable name / an empty token variable / prime-context unreachable or refusing = **the start refused, exactly as
+  the kit's door** (the same `BootstrapUnavailable` and words — the README says it). **Never a secret:** only `config` is served, the
+  envelope's `secrets` never; a `password-ref` stays a reference.
+- **Recommendation (not code):** a cached last-good copy of the envelope (written after every good read, read when prime-context does not
+  answer, with its etag and age said loudly) would let a box restart while prime-context is down — the owner's call: today a start without
+  prime-context is refused, which is the fail-closed reading of R8.
+- **The new sample** `seed-sessionflow/src/test/resources/bootstrap/deployment-with-app-keys.json` (beside the pinned §C files, which are
+  unchanged): the §C envelope with an application's own keys (`quarkus.http.*`, `adsphere.*` with a list and nested maps, `sdr.*`, `cdr.*`,
+  `reports.*` with a `password-ref`, `routing.*`) and a `secrets` map that must never be served. The module copies that directory as its test
+  resources (one place for the samples).
+- **Tests:** `BootstrapConfigSourceTest` (7 — SmallRye built by hand over a map-backed bootstrap: the app's keys above the jar, a list and a
+  dotted key, the environment and `-D` still win (and the source's ordinal 275), never a secret, no url = no source, the refusals in words,
+  the ServiceLoader registration) and `FlatConfigTest` (1). **Red first:** by compile. **Mutants (8, red):** the source below the jar (240);
+  above the environment (310); the secrets served; a list as one comma word; a dotted key not quoted; an unreachable bootstrap swallowed; no
+  url refused instead of no source; the factory not registered.
+- **For P2:** the app adds the dependency and its yml shrinks to the two lines; its own keys move into prime-context's app document (the
+  envelope's `config`, beside `routesphere`); a key an operator must override on a box is an environment variable (300) or `-D` (400).
+  Quarkus reads BUILD-time properties before any runtime source — those stay in the jar.
 
 ## Found after the final run (the final logs read)
 

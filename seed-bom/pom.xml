@@ -70,6 +70,12 @@
                 <artifactId>seed-naming</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- R8: the application's whole config from prime-context's bootstrap (a SmallRye ConfigSourceFactory at ordinal 275) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-bootstrap-config</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <!-- the tenant trees every product walks: the map of sibling tenants, the prime-context tree loader, the doorbell -->
             <dependency>
                 <groupId>com.telcobright</groupId>
