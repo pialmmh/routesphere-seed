@@ -3,14 +3,19 @@ package com.telcobright.seed.sessionflow.samples.wifi;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.CdrEvent;
+import com.telcobright.seed.sessionflow.api.RecordStatement;
+import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -73,6 +78,16 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
         WifiGate gate = gateByZone.get(session.root + "|" + ((WifiFacts) session.facts).site());
         return gate == null ? RoutePlan.none() : RoutePlan.one(gate);
     }
+
+    /** The site's gate is the one hop: a refused gate ends the session, whatever the cause (design §7 (f): none). */
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /** Delivered = the gate opened (the session was answered); a session never online takes the call's refund rule (it pays nothing). */
+    @Override protected boolean delivered(WifiContext session, Outcome outcome) { return session.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(WifiContext session) { return RefundPolicy.callsRule(); }
+
+    @Override protected List<RecordStatement> cdrStatements(WifiContext session, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** The budget child's next window: one more minute. */
     @Override

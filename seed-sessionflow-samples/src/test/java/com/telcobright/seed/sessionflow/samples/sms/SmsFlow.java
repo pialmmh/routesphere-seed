@@ -4,6 +4,8 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.CdrEvent;
+import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
@@ -108,4 +110,6 @@ public final class SmsFlow extends RoutesphereFlow<SmsContext> {
     }
 
     @Override protected RefundPolicy refundPolicy(SmsContext sms) { return RefundPolicy.of(Rule.REFUND, refundOnNonDelivery ? Rule.REFUND : Rule.CHARGE); }
+
+    @Override protected List<RecordStatement> cdrStatements(SmsContext sms, CdrEvent record) { return cdrTableRowOf(record); }
 }

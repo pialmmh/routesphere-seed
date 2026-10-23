@@ -4,11 +4,13 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
+import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Verdict;
@@ -156,6 +158,14 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
             default -> RerouteAction.FAIL_TERMINAL;
         };
     }
+
+    /** C17: the call is delivered when it was answered; an unanswered call takes the call's refund rule (it pays nothing). */
+    @Override protected boolean delivered(VoiceContext call, Outcome outcome) { return call.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(VoiceContext call) { return RefundPolicy.callsRule(); }
+
+    /** On the records road: billing-core's cdr row (the voice adds its acc_chargeable rows here when it moves to this road). */
+    @Override protected List<RecordStatement> cdrStatements(VoiceContext call, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** C13: the answer — the recording starts here (the root's switch; always on in the sample). */
     @Override protected void onServiceStarted(VoiceContext call) { call.recordingStarted = true; }

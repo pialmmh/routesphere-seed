@@ -26,13 +26,17 @@ the application                            the owner's methods (a)–(g) + the s
 
 ```java
 public final class AdFlow extends RoutesphereFlow<AdContext> {
+    // ■ the rules every lane states itself (abstract: the compiler asks each lane — none is inherited from the call)
     @Override public String name() { return "AdSupervisor"; }                     // the registered name = the lane's own table (§L.4)
     @Override protected int serviceGroup(AdContext c) { return 30; }
     @Override protected Tier identifyEntryPartner(AdContext c, Candidate k) { return entryOfPartner(c, ((AdCandidate) k).advertiserId()); }   // (c)
     @Override protected TierRate rateAtLevel(AdContext c, Tier t, Partner p) { ... }                       // (e) the tier's rate; null = UNRATED
-    @Override protected RoutePlan routing(AdContext c) { return RoutePlan.one(((AdCandidate) c.chosen).creative()); }    // (d)
-    // and only what differs from the call's defaults: selectCandidates, confirmAdmission, delivered, billedUnits,
-    // settleOutcome, refundPolicy, rerouteActionFor, buildSdr, onEnded, …
+    @Override protected RoutePlan routing(AdContext c) { return RoutePlan.one(((AdCandidate) c.candidateBeingAdmitted()).creative()); }  // (d)
+    @Override protected boolean delivered(AdContext c, Outcome o) { return c.shown; }                       // the call: c.answered()
+    @Override protected RefundPolicy refundPolicy(AdContext c) { return RefundPolicy.of(Rule.REFUND, unshown); }   // the call: callsRule()
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }   // one hop, no retry
+    @Override protected List<RecordStatement> cdrStatements(AdContext c, CdrEvent r) { return cdrTableRowOf(r); }  // billing-core's cdr row
+    // and only what differs from the call's defaults: selectCandidates, confirmAdmission, billedUnits, settleOutcome, buildSdr, onEnded, …
 }
 
 RoutesphereKit kit = RoutesphereKit.builder()
@@ -47,16 +51,21 @@ RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdFlow(kit), AdCo
 
 ## 3 · The owner's methods
 
+■ = abstract: every lane answers it. There are nine: `name`, `serviceGroup`, `identifyEntryPartner`, `routing`, `rateAtLevel`, `delivered`,
+`refundPolicy`, `rerouteActionFor`, `cdrStatements` (the owner's word of 2026-10-23: a lane that forgot one would be billed like a call).
+The money stays shared with its defaults (`reserveBalance`, `finalizeCost`, `settleOutcome`, `identifyPartner`); (b), (g) and every
+statewalk call are final. `RoutesphereFlowDriftTest` guards the set.
+
 | | method | default | when the base asks |
 |---|---|---|---|
 | (a) | `identifySiblingLevelTenants(facts)` | the kit's rules on `facts.ingress()`; none → `NO_TENANT`, never a default root | `onStart` (IDLE → INIT) |
 | (b) | `iterateResellerTenants(leaf)` | FINAL: leaf → reseller → … → root, in the root's own tree | `admit` |
-| (c) | `identifyEntryPartner(ctx, candidate)` | abstract: who pays, in which tier | `admit`, per candidate |
+| (c) | `identifyEntryPartner(ctx, candidate)` ■ | who pays, in which tier | `admit`, per candidate |
 | (c) | `identifyPartner(tier)` | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant | `admit`, above the leaf |
-| (d) | `routing(ctx)` | abstract: a `RoutePlan` of `Route` hops, made once at admission (C8) | `admit`; `nextHop` reads it |
-| (e) | `reserveBalance(ctx, tier, partner)` | `rateAtLevel` + ONE unit through the ledger port, `<session>#L<tier>` | `admit`, per tier |
-| (e) | `finalizeCost(ctx, tier, outcome)` | delivered → rate × `billedUnits` (null = as reserved), else the refund rule | `settle` (answered) |
-| (f) | `handleRerouting(ctx, failed)` | `rerouteActionFor(cause)`: RETRY_SAME · REROUTE (under `maxAttempts`) · FAIL_TERMINAL | `retry` (CONNECTING) |
+| (d) | `routing(ctx)` ■ | a `RoutePlan` of `Route` hops, made once at admission (C8) | `admit`; `nextHop` reads it |
+| (e) | `reserveBalance(ctx, tier, partner)` | `rateAtLevel` ■ + ONE unit through the ledger port, `<session>#L<tier>` | `admit`, per tier |
+| (e) | `finalizeCost(ctx, tier, outcome)` | `delivered` ■ → rate × `billedUnits` (null = as reserved), else the refund rule (`refundPolicy` ■ on `settleOutcome`) | `settle` (answered) |
+| (f) | `handleRerouting(ctx, failed)` | `rerouteActionFor(cause)` ■: RETRY_SAME · REROUTE (under `maxAttempts`) · FAIL_TERMINAL — the call: its v1 table; one hop, no retry: FAIL_TERMINAL | `retry` (CONNECTING) |
 | (g) | `finishSession(ctx, outcome)` | FINAL: teardown · the slot · the CDR per tier on `cdr_<root>` · the task · the SDR · `onEnded` | `record` (both finals) |
 
 The order of the gates per tier is the call switch's: `checkPartner` → `authorizeBeforeSlot` → the leaf's channel slot →
@@ -104,10 +113,10 @@ a batch that fails      rolled back whole, tried again 1 s, 2 s, … 30 s; after
 
 The defaults write billing-core's own tables exactly: `cdr` (its 104 columns, + the wire's six on PostgreSQL, each value as its ingest
 maps the wire) and `summary_affected` (its `Entry` shape, a stated group's pre-rated leg), so summary-service reads them unchanged. A lane
-overrides `cdrStatements` to add its rows (the voice: `acc_chargeable`) or to write a table of its own, and gives its SDR's rows in
-`sdrStatements` — written ONCE by their own key (a probe, or `ON CONFLICT DO NOTHING`): a session ended a second time (a restore from an
-older row) runs them again, and a plain INSERT that meets its duplicate rolls back the whole batch on every try, so the writer parks.
-`testkit.RecordTables` makes billing-core's tables (and the lock functions) on H2 for a product's tests.
+answers `cdrStatements` ■ with `cdrTableRowOf(record)` (that row), adds its own rows to it (the voice: `acc_chargeable`) or writes a table of
+its own, and gives its SDR's rows in `sdrStatements` — written ONCE by their own key (a probe, or `ON CONFLICT DO NOTHING`): a session ended
+a second time (a restore from an older row) runs them again, and a plain INSERT that meets its duplicate rolls back the whole batch on every
+try, so the writer parks. `testkit.RecordTables` makes billing-core's tables (and the lock functions) on H2 for a product's tests.
 
 ## 6 · Persistence
 

@@ -4,7 +4,9 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.RecordStatement;
+import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.SettleOutcome;
@@ -118,6 +120,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
         return k == null ? RoutePlan.none() : RoutePlan.one(k.creative());
     }
 
+    /** The creative is the one hop: never a second creative after the hand-over, whatever the cause. */
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+
     /** AdPlayback's phases: the hand-over (OFFERED), then the screen (SHOWING). */
     @Override
     protected void onSignalingProgress(AdContext view, SignalingProgress progress) {
@@ -135,6 +140,9 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     }
 
     @Override protected RefundPolicy refundPolicy(AdContext view) { return RefundPolicy.of(Rule.REFUND, unshownCharged ? Rule.CHARGE : Rule.REFUND); }
+
+    /** On the records road: billing-core's cdr row per tier (group 30, pre-rated). */
+    @Override protected List<RecordStatement> cdrStatements(AdContext view, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** On the records road (P1-R §C5): the view's SDR is a row of its root's {@code ad_sdr}, in the same transaction as its CDR; once per view. */
     @Override

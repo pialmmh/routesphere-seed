@@ -41,23 +41,30 @@ import java.util.function.Supplier;
  * library makes, FINAL; the application answers only its own questions, through the owner's methods (a)–(g) and the smaller hooks.
  *
  * <pre>
- *   library call (state)          the base                                              the owner's methods
+ *   library call (state)          the base                                              the owner's methods (■ = abstract: every lane answers it)
+ *   every call                    the lane's ONE name: statewalk's table, the log        name■ · serviceGroup■ (the CDR's group)
  *   onStart       IDLE → INIT     the root by the ingress, its snapshot, the task       (a) identifySiblingLevelTenants · buildTask
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyEntryPartner · (b) iterateResellerTenants
- *                                 per tier check · authorize · root rules · reserve      (c) identifyPartner · (e) reserveBalance → rateAtLevel
- *                                 the route at the root, the last gate                   (d) routing · confirmAdmission
- *   nextHop       ROUTING         the plan's current hop                                 (d) routing (made once, at admission)
- *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor
+ *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyEntryPartner■ · (b) iterateResellerTenants
+ *                                 per tier check · authorize · root rules · reserve      (c) identifyPartner · (e) reserveBalance → rateAtLevel■
+ *                                 the route at the root, the last gate                   (d) routing■ · confirmAdmission
+ *   nextHop       ROUTING         the plan's current hop                                 (d) routing■ (made once, at admission)
+ *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
  *   onActive      ACTIVE          the budget child starts on statewalk's SessionActive    onServiceStarted
  *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeCost → chargeAtSettle, billedUnits,
- *                                 rule; the rest back                                        delivered, settleOutcome, refundPolicy
+ *                                 rule; the rest back                                        delivered■, settleOutcome, refundPolicy■
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
  *                                 — then the registry resets every machine to its pool        buildSdr, onEnded
- *                                 the records road (P1-R): the CDR and the SDR written         cdrStatements · sdrStatements ·
+ *                                 the records road (P1-R): the CDR and the SDR written         cdrStatements■ · sdrStatements ·
  *                                 by the base, one transaction per batch, per root             summaryEntryOf
  * </pre>
+ *
+ * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
+ * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule, its failover by cause and its CDR's SQL — an
+ * SMS or an ad lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays
+ * shared with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code identifyPartner}); the tier walk
+ * (b), the finish (g) and every statewalk call are final.
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
  * {@link RoutesphereKit}. A step keeps nothing in a field; what it learns goes onto the session's context.
@@ -273,7 +280,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // The smaller hooks — the call's defaults, in the order a session meets them
+    // The smaller hooks, in the order a session meets them — the call's defaults; ■ = every lane answers it
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /** INIT · Turn the request into the session's task on the context (the numbers, the source, the kind). The refusal, or null. */
@@ -325,8 +332,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         return ctx.lastRefusal != null ? ctx.lastRefusal : SessionCause.NO_CANDIDATE;
     }
 
-    /** CONNECTING · The v1 policy by cause (C12). The default ends the session; the voice lane answers the call's v1 table. */
-    protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+    /**
+     * CONNECTING ■ · Every lane decides its failover by cause, after a signaling failure: {@link RerouteAction#RETRY_SAME} = the same hop,
+     * {@link RerouteAction#REROUTE} = the plan's next hop (under its cap), {@link RerouteAction#FAIL_TERMINAL} = the end. The call answers
+     * the call switch's v1 table (C12: {@code USER_BUSY} → REROUTE, {@code SWITCH_CONGESTION} → RETRY_SAME, …); a lane with one hop and no
+     * retry (the ad after its hand-over, the WiFi gate) answers FAIL_TERMINAL for every cause. Null = FAIL_TERMINAL.
+     */
+    protected abstract RerouteAction rerouteActionFor(String cause);
 
     /** CONNECTING · The signaling reported a phase (ringing, early media, the ad shown). The base stamped the first one (the PDD). */
     protected void onSignalingProgress(C ctx, SignalingProgress progress) { }
@@ -361,10 +373,10 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected Long nextAccount(C ctx, LevelAdmission tier) { return null; }
 
     /**
-     * The final state · Was the service delivered (the tier then pays rate × billed units)? Default: the session was answered. An SMS
-     * answers its delivery report; an ad, the view shown.
+     * The final state ■ · Every lane decides what "delivered" means: delivered, each tier pays rate × billed units; not delivered, the refund
+     * rule decides. The call: it was answered ({@code ctx.answered()}); the SMS: its delivery report said delivered; the ad: the view was shown.
      */
-    protected boolean delivered(C ctx, Outcome outcome) { return ctx.answered(); }
+    protected abstract boolean delivered(C ctx, Outcome outcome);
 
     /**
      * The final state · How many of the rate's units the session is billed for — the same for every tier, each at its own rate (the
@@ -388,8 +400,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The final state · What the session came to, for the refund rule: answered = consumed, else failed (the ad: offered, not shown). */
     protected SettleOutcome settleOutcome(C ctx) { return ctx.answered() ? SettleOutcome.CONSUMED : SettleOutcome.FAILED; }
 
-    /** The final state · The lane's refund rule as its config stands now; the default is the call's (a failed session pays nothing). */
-    protected RefundPolicy refundPolicy(C ctx) { return RefundPolicy.callsRule(); }
+    /**
+     * The final state ■ · Every lane names its refund rule, as its config stands now: what a session NOT delivered pays, by
+     * {@link #settleOutcome} (failed · offered and not consumed). The call: {@code RefundPolicy.callsRule()} (a failed session pays nothing);
+     * the ad: the unshown rule by config; the SMS: the non-delivery rule by config. Null = the call's rule.
+     */
+    protected abstract RefundPolicy refundPolicy(C ctx);
 
     /**
      * The settlement, first · The billed duration in seconds, fixed once; the CDR carries the same number. Default: what the signaling
@@ -432,12 +448,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected Object buildSdr(C ctx, Outcome outcome) { return null; }
 
     /**
-     * The records road, per tier record (P1-R §A) · The record's statements in its batch's ONE transaction. The default writes billing-core's
-     * {@code cdr} row in the tier's own schema ({@code CdrTableSql}: the probe of billing-core's key, then the INSERT). A lane overrides to add
-     * rows of its own (the voice: {@code acc_chargeable}) or to write a table of its own. {@code ctx} is null for a record a stopped process
-     * left in the air (the next start writes it from the journal).
+     * The records road, per tier record (P1-R §A) ■ · Every lane names its CDR's statements in its batch's ONE transaction. The call:
+     * {@link #cdrTableRowOf} — billing-core's {@code cdr} row in the tier's own schema (the probe of its key, then the INSERT); a lane adds
+     * rows of its own to it (the voice: {@code acc_chargeable}) or writes a table of its own. Asked on the records road only; {@code ctx} is
+     * null for a record a stopped process left in the air (the next start writes it from the journal).
      */
-    protected List<RecordStatement> cdrStatements(C ctx, CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
+    protected abstract List<RecordStatement> cdrStatements(C ctx, CdrEvent record);
 
     /**
      * The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none.
@@ -487,6 +503,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         List<RecordStatement> sdrRows = sdr == null ? List.of() : sdrStatements(ctx, outcome, sdr);
         return new SessionRecords(sessionId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
     }
+
+    /**
+     * The records road · billing-core's {@code cdr} row of one tier record, in the tier's own schema and the dialect of its root's store
+     * ({@code CdrTableSql}: the probe of billing-core's key, then the INSERT) — what a lane's {@link #cdrStatements} answers, or starts from.
+     */
+    protected final List<RecordStatement> cdrTableRowOf(CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
 
     /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
     protected final RecordStore storeOf(CdrEvent record) {

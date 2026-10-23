@@ -4,7 +4,10 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.Ingress;
+import com.telcobright.seed.sessionflow.api.RecordStatement;
+import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
@@ -12,10 +15,12 @@ import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.switchledger.api.AccountOrder;
 import com.telcobright.seed.switchledger.api.LiveBalance;
 import com.telcobright.seed.switchledger.api.WindowRenewal;
+import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
 import com.telcobright.statewalk.session.Verdict;
 import com.telcobright.statewalk.session.events.Established;
@@ -94,6 +99,16 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     }
 
     @Override protected RoutePlan routing(Session session) { return RoutePlan.one(new Gate("gw-1")); }
+
+    /** The gate is the one hop: no re-route, whatever the cause. */
+    @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
+
+    /** The call's rules: delivered = answered; not delivered pays nothing; billing-core's cdr row. */
+    @Override protected boolean delivered(Session session, Outcome outcome) { return session.answered(); }
+
+    @Override protected RefundPolicy refundPolicy(Session session) { return RefundPolicy.callsRule(); }
+
+    @Override protected List<RecordStatement> cdrStatements(Session session, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** The same window again, on the tier's own account. */
     @Override
