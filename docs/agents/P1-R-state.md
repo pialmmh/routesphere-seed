@@ -18,8 +18,13 @@ One line per item, newest last. Times are Dhaka (+06).
   default; `FileSessionJournal` answers it) written to the park sink (`RecordStores.parkInto`, the file CDR journal) — at the park and for each
   session handed in while parked; the next commit UN-PARKS, said once (`recordUnparks`); the close leaves what it could not commit the same
   way. C4 green; 11 R3 mutants red; the reactor from clean **456/0/0/7**. Commit **1bf4a25**. Next: R4 (the switch ledger). Blocked: nothing.
-- 2026-10-23 18:50 · **R4 done** (§D) — answered, nothing changed: mem-ledger as the seed pins it (1.0.0-SNAPSHOT) cannot keep the settled
+- 2026-10-23 18:46 · **R4 done** (§D) — answered, nothing changed: mem-ledger as the seed pins it (1.0.0-SNAPSHOT) cannot keep the settled
   reference — the settle deletes the tier's reserve row (routesphere-core's move), `PackageAccount` holds only the last move, the `MemLedger`
   API reads no history, and `ClosedTiers` (the first answer per reference) dies with the process; so after a restart a second settle moves
   nothing and answers OWED, and that stays (proof: ChainOnTheLedgerTest.aSessionEndedAgainAfterARestart…). Report §4 + three roads for the
-  owner. Commit: this one (R4, docs only). Next: R5 (the road choice, the leftovers, C2, C7). Blocked: nothing.
+  owner. Commit **cf3b3fb** (docs only). Next: R5 (the road choice, the leftovers, C2, C7). Blocked: nothing.
+- 2026-10-23 18:56 · **R5 done** — ONE road per lane at the kit's build (a records store AND a CDR sink refused, in words naming both;
+  neither refused); the leftovers at start through the same writer (`RoutesphereFlow.writeRecordsOf`, public: the leftovers and a replay of
+  the park's file, `CdrSinks.replay(file, flow::writeRecordsOf)`), a leftover's line done after ITS commit; the finish's `markDone` after the
+  commit (R2). C2 (the crash between the commit and the done, both leftover kinds), C7, the leftovers test green; 5 R5 mutants red; the reactor
+  from clean **461/0/0/7**. Commit: this one (R5). Next: R6 (the C8 sweep, the report, the clean copy). Blocked: nothing.

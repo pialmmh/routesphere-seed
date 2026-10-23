@@ -9,7 +9,8 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 | after R1 (77f4cc5) | **446 / 0 / 0 / 7** |
 | after R2 (bf46c82), from `clean` | **454 / 0 / 0 / 7** |
 | after R3 (1bf4a25), from `clean` | **456 / 0 / 0 / 7** |
-| R4 | no code: the answer is "cannot" (§4) |
+| R4 (cf3b3fb) | no code: the answer is "cannot" (§4) |
+| after R5, from `clean` | **461 / 0 / 0 / 7** |
 
 ## 0 · The commits
 
@@ -266,6 +267,34 @@ has its reserves "given back" (`release`) → on the switch ledger a release of 
 `TwoEntities` forbids today (a ruling); (b) keep the reserve row, marked settled, instead of deleting it — a change of the call switch's money
 moves and of the orphan reaper; (c) on the records road, the start could read the tier's `cdr` row (it holds what was charged) before it
 closes a leftover as reserved — the records and the money would then meet in the switch, which the base keeps apart today.
+
+## 5 · R5 — the road choice, the leftovers, the done after the commit
+
+- **One road per lane** (`RoutesphereKit.oneRoadFor`, like F3): `cdr(...)` and `records(...)` together are refused at build, in words that
+  name both; neither is refused ("needs cdr (a CDR sink) or records (the records road)"); `kit.cdr()` is null on the records road,
+  `kit.records()` null on the sink's. The Kafka-only lanes are untouched: every existing test runs as it ran (the reactor).
+- **The leftovers at start through the same writer** (`SessionCdr.publishALeftover` → `RoutesphereFlow.writeRecordsOf(sessionId, tiers)`,
+  public: the hooks see a null context): the money road of R1-6 unchanged (a reserve given back, or closed as reserved), the records written
+  by the writer with their summary input, the line done after ITS commit (on the sink's road: published, then done, as before).
+- **`markDone` after the commit**: the finish's (R2) and the leftovers'. A death between the commit and the done leaves the line; the next start
+  writes the stand-ins again and the once rule keeps them out (C2).
+- **A replay of the park's file** into the records road: `CdrSinks.replay(file, flow::writeRecordsOf)` (a `CdrSink` is one method).
+
+Tests: `RecordRoadChoiceTest` 3 (C7), `LeftoversThroughTheWriterTest` 1 (a session handed over before the death: written by the next start
+through the writer — LOST_AT_RESTART, charged as reserved, its tiers' summary input — the line kept while the start's store is down and done
+after the commit; a third start writes nothing), samples `AdRecordsTest` C2: node A dies the instant its first commit is through (a store
+that crashes the node after `commit()`, a journal that writes nothing after the death); two views in that batch — one never handed over (3
+tiers), one handed over (2 tiers); node B opens the same journal (2 leftovers) on the same databases → its writer writes the 3 stand-ins
+(v-c2's entry tier at 0.00, v-h's two tiers as reserved): **no second cdr row, no second summary entry** (no summary row at all: nothing
+written now), the rows still the views' own (CREDITED, not LOST_AT_RESTART), both lines done, no reserve open.
+
+| mutant | red |
+|---|---|
+| R5-M1 a records store and a CDR sink both taken | C7 |
+| R5-M2 neither road refused | C7 (neither), RoutesphereKitTest (no default) |
+| R5-M3 the leftovers not through the writer | C2, the leftovers test |
+| R5-M4 a leftover's line done before its commit | the leftovers test |
+| R5-M5 the finish's SDR made after the CDR step | C5 |
 
 ## 9 · Findings and questions for the owner (so far)
 

@@ -3,6 +3,9 @@ package com.telcobright.seed.sessionflow.samples.ad;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.telcobright.seed.sessionflow.dependencies.RecordStores;
 import com.telcobright.seed.sessionflow.internal.FileSessionJournal;
+import com.telcobright.seed.sessionflow.samples.bed.Crash;
+import com.telcobright.seed.sessionflow.samples.scene.CrashAfterTheCommit;
+import com.telcobright.seed.sessionflow.samples.scene.CrashingJournal;
 import com.telcobright.seed.sessionflow.samples.scene.FlowBed;
 import com.telcobright.seed.sessionflow.samples.scene.World;
 import com.telcobright.seed.sessionflow.samples.scene.WorldRecords;
@@ -98,6 +101,43 @@ class AdRecordsTest {
             "ONE summary row per batch in its root's tier (every view has a record there)");
         assertEquals(0, journal.inTheAir(), "every view's line done after its commit");
         assertEquals(4, b.flow.kit().counters().cdrPublished.get());
+    }
+
+    @Test
+    void aDeathBetweenTheCommitAndTheJournalsDone_theNextStartWritesTheLeftoversAgain_noSecondCdrRow_noSecondSummaryEntry_C2() throws Exception {
+        Crash crash = new Crash();
+        Path file = dir.resolve("in-the-air.log");
+        RecordStores nodeAsStores = RecordStores.builder().postgres(World.BTCL, new CrashAfterTheCommit(db.btcl, crash)).postgres(World.CCL, db.ccl)
+            .batch(5, Duration.ofSeconds(10)).build();
+        FlowBed<AdContext, AdOut, AdFrame> a = bed(nodeAsStores, new CrashingJournal(new FileSessionJournal(file), crash));
+        AdFlowTest.watch(a, "v-c2", World.AD_BTCL, "zone-801");                         // three tiers, never handed over by the base
+        a.frame("v-h", AdFlowTest.start(World.AD_BTCL, "zone-701"));                    // two tiers ...
+        assertTrue(a.flow.handOver(a.session("v-h"), () -> true), "... handed over: its line holds them charged as reserved");
+        a.frame("v-h", AdFrame.shown());
+        a.frame("v-h", AdFrame.viewed(15));
+        a.frame("v-h", AdFrame.credited());
+        assertTrue(crash.awaitDeath(15_000), "node A died right after its commit (5 records: one batch)");
+
+        Set<String> leafRows = cdrRows(db.btcl, "res_44_7"), resellerRows = cdrRows(db.btcl, "res_44"), rootRows = cdrRows(db.btcl, "btcl");
+        int summaryRows = count(db.btcl, "btcl.summary_affected") + count(db.btcl, "res_44.summary_affected") + count(db.btcl, "res_44_7.summary_affected");
+        assertEquals(Set.of("v-c2/801"), leafRows);
+        FileSessionJournal journal = new FileSessionJournal(file);                    // node B opens the same journal ...
+        assertEquals(2, journal.leftovers().size(), "the commit is in, the done never came: both views are left in the air");
+
+        FlowBed<AdContext, AdOut, AdFrame> b = bed(quickRetries(), journal);           // ... and starts: the leftovers through its writer
+        awaitWritten(b);
+
+        assertEquals(leafRows, cdrRows(db.btcl, "res_44_7"), "no second cdr row");
+        assertEquals(resellerRows, cdrRows(db.btcl, "res_44"));
+        assertEquals(rootRows, cdrRows(db.btcl, "btcl"));
+        assertEquals(summaryRows, count(db.btcl, "btcl.summary_affected") + count(db.btcl, "res_44.summary_affected")
+            + count(db.btcl, "res_44_7.summary_affected"), "no second summary entry: nothing was written now");
+        assertEquals(List.of("CREDITED", "CREDITED"), column(db.btcl, "select HangupCause from res_44.cdr order by ChannelCallUuid"),
+            "the rows are the views' own records, not the start's stand-ins (LOST_AT_RESTART)");
+        assertEquals(0, journal.inTheAir(), "node B's commit marked both lines done");
+        assertEquals(0, b.flow.kit().counters().recordsWritten.get());
+        assertEquals(3, b.flow.kit().counters().recordsWrittenBefore.get(), "the stand-ins: v-c2's entry tier at 0.00, v-h's two tiers as reserved");
+        assertEquals(0, w.ledger.openReserves());
     }
 
     @Test

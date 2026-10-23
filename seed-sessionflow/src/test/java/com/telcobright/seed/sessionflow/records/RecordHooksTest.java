@@ -9,7 +9,6 @@ import com.telcobright.seed.sessionflow.dependencies.RecordStores;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.InMemoryLedger;
-import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
 import com.telcobright.seed.sessionflow.testkit.RecordTables;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.junit.jupiter.api.AfterEach;
@@ -46,7 +45,7 @@ class RecordHooksTest {
     }
 
     private HookedFlow flow() {
-        RoutesphereKit kit = RoutesphereKit.builder().tenants(TenantLookup.of(Lab.btclTree())).ledger(new InMemoryLedger()).cdr(new RecordingCdrSink())
+        RoutesphereKit kit = RoutesphereKit.builder().tenants(TenantLookup.of(Lab.btclTree())).ledger(new InMemoryLedger())
             .records(RecordStores.builder().postgres("btcl", btcl).mysql("tele2", tele2).build()).zone(ZoneId.of("Asia/Dhaka")).build();
         return new HookedFlow(kit);
     }

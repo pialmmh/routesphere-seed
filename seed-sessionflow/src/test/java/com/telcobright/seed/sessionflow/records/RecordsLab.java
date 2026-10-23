@@ -38,7 +38,12 @@ final class RecordsLab implements AutoCloseable {
 
         Writing(RoutesphereKit kit) { super(kit, Map.of(), Lab.hops("carrier-a"), Set.of()); }
 
-        void write(List<CdrEvent> tiers, Object sdr) { writeRecords(null, Outcome.SUCCEEDED, tiers, sdr); }
+        /** The base's reusable method, for a session whose facts name it (its id = the records' call id). */
+        void write(List<CdrEvent> tiers, Object sdr) {
+            LabContext ctx = new LabContext();
+            ctx.facts = new com.telcobright.seed.sessionflow.base.LabFacts(tiers.get(0).callId, 1L, Lab.BTCL_DOOR, 0, "8801");
+            writeRecords(ctx, Outcome.SUCCEEDED, tiers, sdr);
+        }
 
         @Override protected List<RecordStatement> sdrStatements(LabContext ctx, Outcome outcome, Object sdr) { return sdrRows.apply(sdr); }
     }
@@ -54,7 +59,6 @@ final class RecordsLab implements AutoCloseable {
         this.db = new RecordingDataSource(pool, database);
         RecordStores.Builder stores = dialect == RecordDialect.POSTGRESQL ? RecordStores.builder().postgres("btcl", db) : RecordStores.builder().mysql("btcl", db);
         RoutesphereKit kit = RoutesphereKit.builder().tenants(TenantLookup.of(Lab.btclTree())).ledger(new InMemoryLedger())
-            .cdr(new com.telcobright.seed.sessionflow.testkit.RecordingCdrSink())
             .records(settings.apply(stores).build()).journal(journal).zone(ZoneId.of("Asia/Dhaka")).build();
         this.flow = new Writing(kit);
     }

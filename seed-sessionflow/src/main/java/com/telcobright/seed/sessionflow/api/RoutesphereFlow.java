@@ -460,15 +460,25 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * commit. The finish uses it; a lane may for records of its own.
      */
     protected final void writeRecords(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
-        kit.records().write(recordsOf(ctx, outcome, tiers, sdr));
+        kit.records().write(recordsOf(ctx.sessionId(), ctx, outcome, tiers, sdr));
+    }
+
+    /**
+     * The records road for records that have no live session: what a stopped process left in the air (the start writes it), or a replay of
+     * the park's file CDR journal ({@code CdrSinks.replay(file, flow::writeRecordsOf)}). The hooks see a null context; the once rule makes a
+     * record written before a no-op.
+     */
+    public final void writeRecordsOf(String sessionId, List<CdrEvent> tiers) {
+        if (tiers == null || tiers.isEmpty()) return;
+        kit.records().write(recordsOf(sessionId, null, null, tiers, null));
     }
 
     /** The session's records as its writer takes them: each tier record's statements and summary entry (the hooks), then its SDR's rows. */
-    final SessionRecords recordsOf(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
+    private SessionRecords recordsOf(String sessionId, C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
         List<SessionRecords.TierRecord> records = new ArrayList<>(tiers.size());
         for (CdrEvent record : tiers) records.add(new SessionRecords.TierRecord(record, cdrStatements(ctx, record), summaryEntryOf(ctx, record)));
         List<RecordStatement> sdrRows = sdr == null ? List.of() : sdrStatements(ctx, outcome, sdr);
-        return new SessionRecords(tiers.get(0).callId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
+        return new SessionRecords(sessionId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
     }
 
     /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
@@ -648,7 +658,9 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * Before the first session of a start: the record of every session a stopped process left in the air is published (handed over: charged
-     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00). One WARN with the sums.
+     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00) — on the records road through
+     * the same writer (a record committed before the death is written before: no second row, no second summary entry), its line done after
+     * the commit. One WARN with the sums.
      */
     public final void publishWhatWasLeftInTheAir() {
         SessionCdr.LeftInTheAir left = SessionCdr.of(this).publishLeftovers();

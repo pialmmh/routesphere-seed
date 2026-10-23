@@ -134,7 +134,6 @@ public final class World {
             .tenants(TenantLookup.of(btcl, ccl))
             .identification(rules())
             .ledger(ledger)
-            .cdr(cdrs)
             .records(records)
             .journal(journal)
             .tasks((ctx, task) -> closedTasks.add(task))
