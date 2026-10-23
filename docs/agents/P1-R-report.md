@@ -10,7 +10,8 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 | after R2 (bf46c82), from `clean` | **454 / 0 / 0 / 7** |
 | after R3 (1bf4a25), from `clean` | **456 / 0 / 0 / 7** |
 | R4 (cf3b3fb) | no code: the answer is "cannot" (§4) |
-| after R5, from `clean` | **461 / 0 / 0 / 7** |
+| after R5 (9b66826), from `clean` | **461 / 0 / 0 / 7** |
+| after R6 (the last code commit), from `clean` | **461 / 0 / 0 / 7** — the clean copy: §7 |
 
 ## 0 · The commits
 
@@ -296,7 +297,39 @@ written now), the rows still the views' own (CREDITED, not LOST_AT_RESTART), bot
 | R5-M4 a leftover's line done before its commit | the leftovers test |
 | R5-M5 the finish's SDR made after the CDR step | C5 |
 
-## 9 · Findings and questions for the owner (so far)
+## 6 · R6 — C8: the once rules and the lock, against every records test
+
+Run against all ten records test classes at once (CdrTableSql, StatementRunner, SummaryEntries, RecordWriter, RecordFailure,
+LeftoversThroughTheWriter, RecordRoadChoice, RecordHooks, samples AdRecords), every module's tests running:
+
+| mutant | red |
+|---|---|
+| C8-M1 once: the probe never says "written" | **C2** (the replays hit `ux_cdr_call`: that batch never commits), CdrTableSql ×3, the summary-row test |
+| C8-M2 once: a first change of 0 rows counts as written | StatementRunnerTest (a lane's own `ON CONFLICT DO NOTHING`) |
+| C8-M3 once: a record written before is summed too | **C2** (6 summary rows, not 3: a second summary entry), the summary-row test |
+| C8-M4 once: the probe looks in the root's schema, not the record's tier | CdrTableSql ×2, RecordHooks, SummaryEntries (C2 stays green under it: every session has a root record, so the root's probe finds the session — the tier tests catch it) |
+| C8-M5 lock: none taken | the MySQL lock test, the PostgreSQL key test |
+| C8-M6 lock: let go before the commit | the MySQL lock test |
+| C8-M7 lock: only the root's tier | the MySQL lock test |
+| C8-M8 lock: the key of another name | the PostgreSQL key test |
+
+Every mutated file was restored by re-applying my own copy (a fresh mtime) and compared byte for byte (identical after all 51 runs
+of R1–R6); the measured runs after them are from `clean`.
+
+## 7 · C1–C8 → the tests
+
+| | test(s) |
+|---|---|
+| C1 | samples `AdRecordsTest.viewsOnTwoRootsAndOneTwoThreeTiers_oneCdrRowPerTierRecordInItsTiersSchema_theSummaryInputOfEachBatchInEachTier_theJournalEmptyAfterTheCommit_C1` |
+| C2 | samples `AdRecordsTest.aDeathBetweenTheCommitAndTheJournalsDone_theNextStartWritesTheLeftoversAgain_noSecondCdrRow_noSecondSummaryEntry_C2`; `LeftoversThroughTheWriterTest` |
+| C3 | `RecordWriterTest.fiveHundredSessionsEndingAtOnce_oneWriterThread_everyRecordExactlyOnce_noDeadlock_aFewBatches_C3` |
+| C4 | `RecordFailureTest.aFailingStore_isTriedAgain_parksOnce_losesNothing_andTheStoreBack_isWritten_unparkedOnce_C4`; `…theClose_leavesWhatDidNotCommit…` |
+| C5 | samples `AdRecordsTest.theViewsSdrIsARowInTheSameTransaction_andAFailingSdrRowRollsTheWholeBatchBack_C5`; `RecordWriterTest.aBatchThatDoesNotCommit_rollsBackWhole…` |
+| C6 | `CdrTableSqlTest` (6: PostgreSQL once + the columns and values, MySQL once with and without the by-hand index, the IdCall seed, billing-core's key in `cdrerror`, the column list, a tier name refused) |
+| C7 | `RecordRoadChoiceTest` (3); the Kafka-only lanes: every test that was green on c32e374 is green, unchanged (430 → 461 = +31 new, none altered but `Lab`'s two trees made public and the test kits on the records road without a sink) |
+| C8 | the mutant tables of §1.4, §2, §3, §5, §6 (51 hand-mutant runs, all red — the C8 sweep repeats five earlier mutants against every records test); the reactor after every code commit (the table at the head); the clean copy (§8) |
+
+## 9 · Findings and questions for the owner
 
 1. **One `summary_affected` row per tier per batch, not per batch.** summary-service reads the outbox of ONE schema per drain (JdbcOutboxStore.java:116,
    unqualified tables on the tier's connection) and sums it into that tier's tables (`tup_tenant` = the schema, AdSummaryBean.java:31-33); billing-core
@@ -311,4 +344,37 @@ written now), the rows still the views' own (CREDITED, not LOST_AT_RESTART), bot
    by `ChannelCallUuid` (`<sid>.<n>`) and keeps every span. A question for the voice lane before it moves to this road.
 5. **SG 101** (a WiFi session): billing-core projects the meta into the WiFi columns (`WifiColumns.project`, :241, BC-0008, after d74d466); the
    default does not — a WiFi lane on this road overrides `cdrStatements` (or a later round adds it).
-6. **Proven on H2 only.** The SQL ran on H2 2.2.224 in PostgreSQL and MySQL modes; no real server was reached (rule 3).
+6. **Proven on H2 only.** The SQL ran on H2 2.2.224 in PostgreSQL and MySQL modes; no real server was reached (rule 3). Worth one look on a
+   real server before P2's bed: the 110-column INSERT with `LocalDateTime` / `BigDecimal` / null parameters (pgjdbc, Connector/J), the probe's
+   `union all`, `pg_try_advisory_xact_lock`, MySQL's `GET_LOCK` held for several tiers at once (MySQL ≥ 5.7.5, MariaDB ≥ 10.0.2).
+7. **The PostgreSQL lock** is billing-core's KEY, taken as a transaction lock (`pg_try_advisory_xact_lock`, asked again every 25 ms for up to
+   30 s) where billing-core takes a session lock (`pg_advisory_lock` under `lock_timeout = 30s`, PostgresEdge.java:137-151): one lock space,
+   so they serialize; the commit itself lets ours go (nothing to forget on a pooled connection), and no session setting is touched.
+8. **The once rule is billing-core's** (§1.2): a probe of its key under the lock + a plain INSERT, not the brief's `INSERT IGNORE` /
+   `ON CONFLICT DO NOTHING`; the brief's "affected = 1" stays the rule for a lane's own statements.
+9. **Who makes the tables of a tier on this road?** On PostgreSQL billing-core makes `cdr`, `cdrerror`, `acc_chargeable`, `summary_affected`
+   the first time it serves a schema (PostgresTenantTables); on the records road billing-core may never serve a new tier, and a batch that
+   writes there fails and parks (nothing lost, said once). The default also READS `cdrerror` (the probe, the IdCall seed), as billing-core
+   does. **Question:** provisioning makes them (prime-context's provision road runs billing-core's DDL?), or billing-core's DDL runs once per
+   schema at the switch's start?
+10. **Grants.** ad-is-a-call §3 gives `cdr` / `summary_affected` "writers: billing-core only"; the switch's role now needs SELECT + INSERT on
+    `cdr`, SELECT on `cdrerror`, INSERT on `summary_affected` in every tier schema of its root (and its SDR table). **Question:** the owner's word
+    for the role change.
+11. **A lane's SDR rows must be written once by their own key** (`on conflict do nothing`, as the sample's `ad_sdr`): a session ended a second
+    time (a restore from an older row, §L.1) runs them again, and a plain INSERT on a keyed table would fail its batch and park the writer.
+    P2's `ad_sdr` SQL must do the same.
+12. **A death between the settle and the commit** leaves the start's stand-in (LOST_AT_RESTART, charged as reserved, or the entry tier at 0.00)
+    instead of the session's real record — as on the Kafka road today (R1-6), not new. A death between the commit and the done is clean (C2).
+13. **A parked writer keeps its queue in memory** (unbounded): durable meanwhile through the journal and the park sink, but a long outage
+    grows the heap. **Question:** a cap (and past it, the park sink only)?
+14. **A gap of the Kafka road, unchanged** ("Kafka-only lanes unchanged"): `publishLeftovers` publishes a leftover WITHOUT its root
+    (`cdr().publish(callId, tiers)`), and the per-root sink (`CdrSinks.kafkaPerRoot`) refuses that ("names no root … NOT published",
+    KafkaCdrSink.java:61-63) — a dead process's leftovers never reach `cdr_<root>`. The records road takes the root from the record's
+    hierarchy. **Question:** fix it in its own round (one line: the root from the hierarchy)?
+15. **No `acc_chargeable`** is written by the default (the owner's default 3: the ad's SQL does not need it), but the summary blob carries
+    `SfPreRated`'s customer leg, exactly as billing-core's — summary-service's ad sums read the charge from it (AdSummaryBuilder.java:93-96).
+16. **The ping** goes for each tier that got an outbox row (billing-core's WiFi-flow ingest's rule, WifiFlowKafkaConsumer.java:59); its
+    CDR ingest pings every tier batch, also one with 0 rated (CdrProcessor.java:137-138). A tier with nothing new is not pinged.
+17. **"H2 none"**: the lab defines the lock functions on H2 (`testkit.H2Locks`), so every test runs the real lock statements; production has
+    no H2 store.
+18. **R4**: the switch ledger cannot answer the settled amount after a restart (§4); three roads listed there, none taken.

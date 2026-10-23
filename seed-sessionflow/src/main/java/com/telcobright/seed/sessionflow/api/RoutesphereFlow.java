@@ -55,6 +55,8 @@ import java.util.function.Supplier;
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
  *                                 — then the registry resets every machine to its pool        buildSdr, onEnded
+ *                                 the records road (P1-R): the CDR and the SDR written         cdrStatements · sdrStatements ·
+ *                                 by the base, one transaction per batch, per root             summaryEntryOf
  * </pre>
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
