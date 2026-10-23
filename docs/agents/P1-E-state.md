@@ -45,3 +45,8 @@ item 6 (the kit from ONE bootstrap url).
   served root's `cdr_<root>`, `config_event_loader_<root>` and the lane's `topicsOf(root)` (a new hook, base + builder);
   `Deployment.tenantNames()`. Red first (naming 10/10 on stubs, the rest by compile), 12 mutants red (2 survivors made red by two stronger
   assertions); naming 10, sessionflow 183, samples 71, switch-ledger 54, tenant 19. Next: item 8 (tenant_created live).
+- 2026-10-24 02:30 · **item 8 done** — `api/TenantCreated` (§C.2 read), `internal/TenantCreatedListener` (subscribes `tenant_created` on the
+  platform Kafka, its own group; a bad message said, the next read), the road's `onTenantCreated`: a new ROOT this app serves → the
+  bootstrap read again, the root's tree / doors / ledger / CDR road / journal / topics made, served live; a reseller TIER → its root's tree
+  reloaded; the same event twice = once; another app's = nothing; a root the bootstrap does not serve yet = WARN, heard again later.
+  Red first (compile), 6 mutants red; sessionflow 190, samples 71, switch-ledger 54, tenant 19. Next: item 9 (the prepaid piece).

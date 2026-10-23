@@ -31,6 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class FakeKafka implements KafkaClients {
 
     public final Map<String, MockProducer<String, String>> producers = new ConcurrentHashMap<>();
+    /** One per bootstrap (a {@code MockConsumer}: a test rebalances it and adds the records it wants heard). */
     public final Map<String, MockConsumer<String, String>> consumers = new ConcurrentHashMap<>();
     /** Every topic made, per bootstrap, in the order made. */
     public final Map<String, List<String>> topics = new ConcurrentHashMap<>();
@@ -48,7 +49,7 @@ public final class FakeKafka implements KafkaClients {
 
     @Override
     public Consumer<String, String> consumer(String bootstrap, String groupId) {
-        return consumers.computeIfAbsent(bootstrap, b -> new MockConsumer<>(OffsetResetStrategy.LATEST));
+        return consumers.computeIfAbsent(bootstrap, b -> new PacedConsumer());
     }
 
     @Override
@@ -61,6 +62,20 @@ public final class FakeKafka implements KafkaClients {
             case "equals" -> proxy == args[0];
             default -> throw new UnsupportedOperationException("the fake admin does only createTopics: " + method.getName());
         });
+    }
+
+    /** Kafka's MockConsumer answers a poll at once; a listener's loop would spin — this one waits (the monitor let go) while nothing came. */
+    private static final class PacedConsumer extends MockConsumer<String, String> {
+        PacedConsumer() { super(OffsetResetStrategy.EARLIEST); }
+
+        @Override
+        public synchronized org.apache.kafka.clients.consumer.ConsumerRecords<String, String> poll(java.time.Duration timeout) {
+            org.apache.kafka.clients.consumer.ConsumerRecords<String, String> records = super.poll(timeout);
+            if (records.isEmpty()) {
+                try { wait(Math.min(20, Math.max(1, timeout.toMillis()))); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+            return records;
+        }
     }
 
     private CreateTopicsResult create(String bootstrap, Collection<?> wanted) {

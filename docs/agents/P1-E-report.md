@@ -235,6 +235,28 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   added → red); a `:` in a Redis part; an app's topic without its direction; a topic already there taken for a refusal; a name asked twice;
   the engine never starts the road; the lane's own topics ignored; a name not checked before the cluster is asked.
 
+## Item 8 · a tenant created live (R10)
+
+- **`api/TenantCreated`** — §C.2 read (`root`, `tierDb`, `parentDb`, `partnerId`, `kind`, `apps`, `at`; unknown fields ignored; no root =
+  refused in words); `isRoot()` (`kind: root`), `names(app)` (no list = every app), `identity()` (kind:root:tierDb — the same tenant created
+  twice is one event).
+- **`internal/TenantCreatedListener`** — subscribes `Topics.TENANT_CREATED` through the kit's Kafka (`KafkaClients.consumer(platformKafka,
+  <app>-tenant-created-<uuid>)`: its own group, so every process hears every event), one daemon thread, `pollOnce` for tests; a message that
+  is not §C.2's is one WARN and the next is read; `close()` wakes the consumer and joins.
+- **The road's `onTenantCreated(event)`** (≤ 10 lines of named steps): another application's or a seen event → nothing; a new ROOT →
+  `serveTheNewRoot`: the bootstrap read again (the source's If-None-Match makes it cheap); the root must be in its roots now, else one WARN
+  and the event is forgotten so a later word is heard; then the root's tree (`LiveTrees.serve`), its roads (ledger, CDR road, journal — the
+  same `makeTheRootsRoads` as at start), its doors (`LiveRules.replace` with the new rules) and its topics (item 7); one INFO with the root's
+  resources. A new reseller TIER of a served root → `LiveTrees.reload(root)` (the doorbell's road; the next session takes the new snapshot);
+  of a root not served → nothing. No restart anywhere: the engine resolves the root of every session through the kit's live parts.
+- **Not done here (a gap, see below):** a new tier's SCHEMA for the switch ledger — the MemLedger of a root was built over the tiers it had.
+- **Tests:** `TenantCreatedLiveTest` (6: the sample message read; a new root on the topic served live end to end — through the running
+  listener, the fake's MockConsumer — its door, tree, ledger and topics; the same event twice once; a new tier reloads its root once;
+  another app's and a tier of a root not served are nothing; a root not served yet, then heard again), `TenantCreatedListenerTest` (1). The
+  fake Kafka's consumer is a paced `MockConsumer` (Kafka's answers a poll at once: a listener's loop would spin a core).
+- **Red first:** by compile. **Mutants (6, red):** the same event served twice; another application's tenant served; a root not served yet
+  never heard again; the new root's doors not added; the listener never started; a bad message stops the batch.
+
 ## Open questions for the owner / the architect
 
 (none yet)

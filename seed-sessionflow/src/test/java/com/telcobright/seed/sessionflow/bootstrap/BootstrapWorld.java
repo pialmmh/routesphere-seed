@@ -54,6 +54,21 @@ final class BootstrapWorld {
         return copy;
     }
 
+    /** The envelope serving one root alone: its roots, its rules, its block (prime-context before it provisioned the others for this app). */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> servingOnly(Map<String, Object> envelope, String root) {
+        Map<String, Object> copy = new java.util.HashMap<>(envelope);
+        Map<String, Object> config = new java.util.HashMap<>((Map<String, Object>) envelope.get("config"));
+        Map<String, Object> rs = new java.util.HashMap<>((Map<String, Object>) config.get("routesphere"));
+        rs.put("roots", List.of(root));
+        List<Object> rules = (List<Object>) ((Map<String, Object>) rs.get("identification")).get("rules");
+        rs.put("identification", Map.of("rules", rules.stream().filter(r -> root.equals(((Map<String, Object>) r).get("root"))).toList()));
+        rs.put("root", Map.of(root, ((Map<String, Object>) rs.get("root")).get(root)));
+        config.put("routesphere", rs);
+        copy.put("config", config);
+        return copy;
+    }
+
     KitMakers makers() {
         return KitMakers.builder()
             .trees((deployment, src) -> trees = new FakeLiveTrees(prime, deployment.roots()))

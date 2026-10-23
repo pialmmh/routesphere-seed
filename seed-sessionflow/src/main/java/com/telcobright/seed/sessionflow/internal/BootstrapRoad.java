@@ -5,6 +5,7 @@ import com.telcobright.seed.naming.api.Topics;
 import com.telcobright.seed.sessionflow.api.Deployment;
 import com.telcobright.seed.sessionflow.api.RootResources;
 import com.telcobright.seed.sessionflow.api.RootTree;
+import com.telcobright.seed.sessionflow.api.TenantCreated;
 import com.telcobright.seed.sessionflow.dependencies.KitMakers;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.TopicProvisioner;
@@ -19,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -43,6 +46,8 @@ public final class BootstrapRoad implements AutoCloseable {
     private final Map<String, Producer<String, String>> producers = new ConcurrentHashMap<>();
     private final Map<String, Admin> admins = new ConcurrentHashMap<>();
     private volatile Function<String, List<String>> laneTopics = root -> List.of();
+    private final Set<String> seen = ConcurrentHashMap.newKeySet();
+    private TenantCreatedListener listener;
 
     private BootstrapRoad(BootstrapSource source, KitMakers makers, Deployment deployment) {
         this.source = source;
@@ -80,10 +85,15 @@ public final class BootstrapRoad implements AutoCloseable {
 
     // ── the topics of every served root, made at the start (R9) ──
 
-    /** The start (the engine calls it once, before the first session): every served root's topics made. */
+    /**
+     * The start (the engine calls it once, before the first session): every served root's topics made, then {@code tenant_created} listened
+     * to on the platform's Kafka (its own consumer group: every process hears every event).
+     */
     public void start(Function<String, List<String>> laneTopics) {
         this.laneTopics = laneTopics;
         deployment.roots().forEach(this::ensureTheTopicsOf);
+        listener = new TenantCreatedListener(makers.kafka().consumer(deployment.platformKafka(), deployment.app() + "-tenant-created-" + UUID.randomUUID()),
+            this::onTenantCreated, deployment.app()).start();
     }
 
     /** The topics of one root: {@code cdr_<root>} (the switch publishes), {@code config_event_loader_<root>} (the doorbell), the lane's own. */
@@ -101,8 +111,45 @@ public final class BootstrapRoad implements AutoCloseable {
 
     private Admin adminOf(String bootstrap) { return admins.computeIfAbsent(bootstrap, b -> makers.kafka().admin(b)); }
 
+    // ── a tenant created live (R10) ──
+
+    /**
+     * prime-context created a tenant (§C.2): a new ROOT this application serves → the bootstrap read again, the root's tree, doors, ledger,
+     * CDR road, journal and topics made, served from now on (no restart); a new reseller TIER of a served root → that root's tree reloaded.
+     * The same event twice is one; an event of another application, or a tier of a root not served, is nothing.
+     */
+    public void onTenantCreated(TenantCreated event) {
+        if (!event.names(deployment.app()) || !seen.add(event.identity())) return;
+        if (event.isRoot()) serveTheNewRoot(event);
+        else reloadTheRootOf(event);
+    }
+
+    private synchronized void serveTheNewRoot(TenantCreated event) {
+        if (deployment.roots().contains(event.root())) return;
+        Deployment next = Deployment.of(source.envelope(), deployment.app());
+        if (!next.roots().contains(event.root())) { forgetItUntilTheBootstrapServesIt(event, next); return; }
+        trees.serve(event.root());
+        deployment = next;
+        makeTheRootsRoads(event.root());
+        rules.replace(next.rules());
+        ensureTheTopicsOf(event.root());
+        log.info("[{}] the root {} is served from now on (tenant_created at {}): {}", next.app(), event.root(), event.at(), describe(next.root(event.root()).orElseThrow()));
+    }
+
+    private void forgetItUntilTheBootstrapServesIt(TenantCreated event, Deployment next) {
+        seen.remove(event.identity());
+        log.warn("[{}] tenant_created names the root {}, but the bootstrap does not serve it to {} yet (roots {}): not served", next.app(), event.root(), next.app(), next.roots());
+    }
+
+    private void reloadTheRootOf(TenantCreated event) {
+        if (!deployment.roots().contains(event.root())) return;
+        trees.reload(event.root());
+        log.info("[{}] the tier {} under {} is in the tree from now on (its root reloaded)", deployment.app(), event.tierDb(), event.root());
+    }
+
     @Override
     public void close() {
+        if (listener != null) listener.close();
         admins.values().forEach(Admin::close);
         cdr.close();
         journal.close();
