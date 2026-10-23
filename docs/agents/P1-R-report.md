@@ -1,7 +1,8 @@
 # P1-R · stream R — the records road (report)
 
 Branch `p1-records` (worktree `routesphere-seed/worktrees/p1-records`), from `routesphere-flow` c32e374 (the brief). Nothing pushed;
-nothing written into `~/.m2`; no database server, no broker reached (H2 in process only). Draft — kept current per item.
+nothing written into `~/.m2`; no database server, no broker reached (H2 in process only). **Status: done** — R1–R6 built, C1–C8 green,
+51 hand-mutant runs red; this report is the branch's last commit. Written 2026-10-23 19:09 +06.
 
 | | |
 |---|---|
@@ -11,7 +12,8 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 | after R3 (1bf4a25), from `clean` | **456 / 0 / 0 / 7** |
 | R4 (cf3b3fb) | no code: the answer is "cannot" (§4) |
 | after R5 (9b66826), from `clean` | **461 / 0 / 0 / 7** |
-| after R6 (the last code commit), from `clean` | **461 / 0 / 0 / 7** — the clean copy: §7 |
+| after R6 (585edca, the last code commit), from `clean` | **461 / 0 / 0 / 7** |
+| **the clean copy of 585edca** (`git archive 585edca \| tar -x`, offline, alone under the lock) | **461 / 0 / 0 / 7** — per module below (§8) |
 
 ## 0 · The commits
 
@@ -328,6 +330,24 @@ of R1–R6); the measured runs after them are from `clean`.
 | C6 | `CdrTableSqlTest` (6: PostgreSQL once + the columns and values, MySQL once with and without the by-hand index, the IdCall seed, billing-core's key in `cdrerror`, the column list, a tier name refused) |
 | C7 | `RecordRoadChoiceTest` (3); the Kafka-only lanes: every test that was green on c32e374 is green, unchanged (430 → 461 = +31 new, none altered but `Lab`'s two trees made public and the test kits on the records road without a sink) |
 | C8 | the mutant tables of §1.4, §2, §3, §5, §6 (51 hand-mutant runs, all red — the C8 sweep repeats five earlier mutants against every records test); the reactor after every code commit (the table at the head); the clean copy (§8) |
+
+## 8 · The numbers
+
+| module | c32e374 (before) | the clean copy of 585edca |
+|---|---|---|
+| seed-campaign | 72/0/0/0 | 72/0/0/0 |
+| seed-config | 5/0/0/0 | 5/0/0/0 |
+| seed-config-client | 5/0/0/0 | 5/0/0/0 |
+| seed-context | 20/0/0/1 | 20/0/0/1 |
+| seed-idgen | 19/0/0/0 | 19/0/0/0 |
+| seed-routing | 33/0/0/2 | 33/0/0/2 |
+| seed-sessionflow | 143/0/0/0 | **171/0/0/0** (+28: CdrTableSql 6, SummaryEntries 5, RecordHooks 3, StatementRunner 2, RecordWriter 6, RecordFailure 2, RecordRoadChoice 3, LeftoversThroughTheWriter 1) |
+| seed-sessionflow-samples | 69/0/0/4 | **72/0/0/4** (+3: AdRecords C1, C2, C5) |
+| seed-switch-ledger | 50/0/0/0 | 50/0/0/0 |
+| seed-tenant | 14/0/0/0 | 14/0/0/0 |
+| **total** | **430/0/0/7** | **461/0/0/7** (the worktree from `clean`: the same) |
+
+The 7 skipped are the ones before: seed-context 1, seed-routing 2, the samples' four `@Disabled` R-1 proofs.
 
 ## 9 · Findings and questions for the owner
 

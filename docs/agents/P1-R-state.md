@@ -28,6 +28,8 @@ One line per item, newest last. Times are Dhaka (+06).
   the park's file, `CdrSinks.replay(file, flow::writeRecordsOf)`), a leftover's line done after ITS commit; the finish's `markDone` after the
   commit (R2). C2 (the crash between the commit and the done, both leftover kinds), C7, the leftovers test green; 5 R5 mutants red; the reactor
   from clean **461/0/0/7**. Commit **9b66826**. Next: R6 (the C8 sweep, the report, the clean copy). Blocked: nothing.
-- 2026-10-23 19:05 · **R6 in progress** — the C8 sweep: 8 mutants on the once rules and the lock against every records test, all red
-  (C2 red under the probe and under "summed before"); the module README's records section, the base's class table; the reactor from clean
-  **461/0/0/7**. Commit: this one (R6, the last code commit). Next: the clean copy of this commit, its numbers into the report. Blocked: nothing.
+- 2026-10-23 19:05 · **R6** — the C8 sweep: 8 mutants on the once rules and the lock against every records test, all red (C2 red under
+  the probe and under "summed before"); the module README's records section, the base's class table; the reactor from clean **461/0/0/7**.
+  Commit **585edca** (the last code commit).
+- 2026-10-23 19:09 · **DONE** — the clean copy of 585edca (`git archive | tar -x`, offline, under the lock): **461/0/0/7**, the same as the
+  worktree; the copy removed; nothing written into `~/.m2`; nothing pushed. In progress: nothing. Next: the architect's review. Blocked: nothing.
