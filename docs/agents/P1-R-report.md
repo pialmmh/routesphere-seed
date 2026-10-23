@@ -19,7 +19,14 @@ nothing written into `~/.m2`; no database server, no broker reached (H2 in proce
 
 | commit | item |
 |---|---|
-| (R1) | **R1** §A — the hooks, `RecordStatement`, `RecordId`, the records stores, the default `CdrTableSql`, the default summary entry, C6 |
+| 77f4cc5 | **R1** §A — the hooks, `RecordStatement`, `RecordId`, the records stores, the default `CdrTableSql`, the default summary entry; C6 |
+| bf46c82 | **R2** §B — the writer, the batch, the lock, the outbox row per tier, the ping, the journal after the commit; C1, C3, C5 |
+| 1bf4a25 | **R3** the failure road — park / unpark, said once, nothing lost; C4 |
+| cf3b3fb | **R4** §D — the switch ledger's second end after a restart: answered here (§4), nothing changed |
+| 9b66826 | **R5** the road choice, the leftovers through the writer, the line done after the commit; C2, C7 |
+| 585edca | **R6** C8 — the once rules and the lock against every records test; the module README's records section (the last code commit) |
+| 14d116e | the report and the state: done, the clean copy's numbers |
+| (this) | the report's commit table made whole |
 
 ## 1 · R1 — §A, the application's part
 
