@@ -3,8 +3,6 @@ package com.telcobright.seed.sessionflow.samples.wifi;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
-import com.telcobright.seed.sessionflow.api.CdrEvent;
-import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
@@ -15,7 +13,6 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -87,7 +84,6 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
 
     @Override protected RefundPolicy refundPolicy(WifiContext session) { return RefundPolicy.callsRule(); }
 
-    @Override protected List<RecordStatement> cdrStatements(WifiContext session, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** The budget child's next window: one more minute. */
     @Override

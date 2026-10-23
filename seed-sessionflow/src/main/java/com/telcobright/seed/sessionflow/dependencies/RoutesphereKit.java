@@ -5,7 +5,6 @@ import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.ChannelSlots;
 import com.telcobright.seed.sessionflow.internal.FlowCounters;
-import com.telcobright.seed.sessionflow.internal.RecordRoad;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.SdrSink;
@@ -22,10 +21,9 @@ import java.util.function.Function;
 
 /**
  * Everything a {@code RoutesphereFlow} needs from its host, handed in — never looked up (the design's "the only field"): the tenant
- * trees per root (prime-context's snapshots, reloaded per root by the doorbell), the identification rules, the ONE ledger port, ONE road
- * for the records (the CDR sink, or the records road: each root's own store, P1-R), the task sink, the SDR sink, the clock, the zone, the
- * settings — and the base's own shared books (the channel slots, the counters, the CDR sequence). One kit per application; the host builds
- * it once at start.
+ * trees per root (prime-context's snapshots, reloaded per root by the doorbell), the identification rules, the ONE ledger port, the CDR
+ * sink, the task sink, the SDR sink, the clock, the zone, the settings — and the base's own shared books (the channel slots, the
+ * counters, the CDR sequence). One kit per application; the host builds it once at start.
  */
 public final class RoutesphereKit {
 
@@ -35,7 +33,6 @@ public final class RoutesphereKit {
     private final CdrSink cdr;
     private final SdrSink sdr;
     private final TaskSink tasks;
-    private final RecordRoad records;
     private final SessionJournal journal;
     private final Clock clock;
     private final ZoneId zone;
@@ -48,11 +45,10 @@ public final class RoutesphereKit {
     private RoutesphereKit(Builder b) {
         this.tenants = required(b.tenants, "tenants (the trees per root)");
         this.ledger = required(b.ledger, "ledger (the one ledger port)");
-        this.cdr = oneRoadFor(b);
+        this.cdr = required(b.cdr, "cdr (the CDR sink)");
         this.zone = required(b.zone, "zone (the CDR's wall clock)");
         this.sdr = b.sdr;
         this.tasks = b.tasks;
-        this.records = b.records == null ? null : new RecordRoad(b.records, b.journal, counters);
         this.journal = b.journal;
         this.clock = b.clock;
         this.settings = b.settings;
@@ -71,7 +67,7 @@ public final class RoutesphereKit {
     /** The ONE money road (§E): reserve, settle, release — idempotent per (session, tier). */
     public LedgerPort ledger() { return ledger; }
 
-    /** Where the CDR goes: one message per session, one record per tier, leaf first, on {@code cdr_<root>}. Null on the records road. */
+    /** Where the CDR goes: one message per session, one record per tier, leaf first, on {@code cdr_<root>} (R13: the switch only publishes). */
     public CdrSink cdr() { return cdr; }
 
     /** Where the session record goes. */
@@ -79,12 +75,6 @@ public final class RoutesphereKit {
 
     /** Where the closed task row goes. */
     public TaskSink tasks() { return tasks; }
-
-    /** The records road (P1-R): one writer per root store; null = the lane's CDR goes to its CDR sink. */
-    public RecordRoad records() { return records; }
-
-    /** The records road's stores, one per root; null = the lane's CDR goes to its CDR sink. */
-    public RecordStores recordStores() { return records == null ? null : records.stores(); }
 
     /** The sessions in the air (R1-6): none unless the host keeps one. */
     public SessionJournal journal() { return journal; }
@@ -111,20 +101,6 @@ public final class RoutesphereKit {
     /** The engine attaches its registry's lookup once it is built. */
     public void attachSessions(Function<String, RoutesphereContext> lookup) { this.sessions = required(lookup, "the sessions' lookup"); }
 
-    /**
-     * ONE road for the lane's records (P1-R, like F3's one recovery road): a CDR sink (Kafka, the file journal) OR the records road — both
-     * would write every record twice, by two writers that never meet. Neither = the records have nowhere to go. Answers the sink (null on the
-     * records road).
-     */
-    private static CdrSink oneRoadFor(Builder b) {
-        if (b.cdr != null && b.records != null) {
-            throw new IllegalStateException("one road per lane: the kit has a CDR sink (" + b.cdr.getClass().getSimpleName() + ") AND the records road ("
-                + b.records.all().size() + " store(s)) — every record would be written twice, by two writers that never meet. Keep one: cdr(...) or records(...)");
-        }
-        if (b.cdr == null && b.records == null) required(null, "cdr (a CDR sink) or records (the records road)");
-        return b.cdr;
-    }
-
     /** Every rule must name a root this process serves: a rule naming an unknown root refuses the start (§C). */
     private static TenantResolver checkedResolver(List<IdentificationRule> rules, TenantLookup tenants) {
         for (IdentificationRule rule : rules) {
@@ -143,7 +119,6 @@ public final class RoutesphereKit {
         private CdrSink cdr;
         private SdrSink sdr = SdrSink.NONE;
         private TaskSink tasks = TaskSink.NONE;
-        private RecordStores records;
         private SessionJournal journal = SessionJournal.NONE;
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
@@ -160,14 +135,12 @@ public final class RoutesphereKit {
         public Builder cdr(CdrSink v) { this.cdr = v; return this; }
         public Builder sdr(SdrSink v) { this.sdr = required(v, "sdr"); return this; }
         public Builder tasks(TaskSink v) { this.tasks = required(v, "tasks"); return this; }
-        /** The records road (P1-R): the base writes the lane's CDR, SDR and summary input into each root's own store. */
-        public Builder records(RecordStores v) { this.records = required(v, "records"); return this; }
         public Builder journal(SessionJournal v) { this.journal = required(v, "journal"); return this; }
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }
         public Builder settings(RoutesphereSettings v) { this.settings = required(v, "settings"); return this; }
 
-        /** Refuses to build without the trees, the ledger, ONE road for the records (a CDR sink or the records road) or the zone. */
+        /** Refuses to build without the trees, the ledger, the CDR sink or the zone: there is no fallback for them. */
         public RoutesphereKit build() { return new RoutesphereKit(this); }
     }
 

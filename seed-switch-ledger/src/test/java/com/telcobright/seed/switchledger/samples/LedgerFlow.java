@@ -4,9 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
-import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.api.Ingress;
-import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
@@ -103,12 +101,11 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     /** The gate is the one hop: no re-route, whatever the cause. */
     @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }
 
-    /** The call's rules: delivered = answered; not delivered pays nothing; billing-core's cdr row. */
+    /** The call's rules: delivered = answered; not delivered pays nothing. */
     @Override protected boolean delivered(Session session, Outcome outcome) { return session.answered(); }
 
     @Override protected RefundPolicy refundPolicy(Session session) { return RefundPolicy.callsRule(); }
 
-    @Override protected List<RecordStatement> cdrStatements(Session session, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** The same window again, on the tier's own account. */
     @Override

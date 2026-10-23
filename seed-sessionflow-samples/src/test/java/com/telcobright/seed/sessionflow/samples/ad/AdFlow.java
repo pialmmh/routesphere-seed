@@ -4,8 +4,6 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.sessionflow.api.Candidate;
-import com.telcobright.seed.sessionflow.api.CdrEvent;
-import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
@@ -141,17 +139,6 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     @Override protected RefundPolicy refundPolicy(AdContext view) { return RefundPolicy.of(Rule.REFUND, unshownCharged ? Rule.CHARGE : Rule.REFUND); }
 
-    /** On the records road: billing-core's cdr row per tier (group 30, pre-rated). */
-    @Override protected List<RecordStatement> cdrStatements(AdContext view, CdrEvent record) { return cdrTableRowOf(record); }
-
-    /** On the records road (P1-R §C5): the view's SDR is a row of its root's {@code ad_sdr}, in the same transaction as its CDR; once per view. */
-    @Override
-    protected List<RecordStatement> sdrStatements(AdContext view, Outcome outcome, Object sdr) {
-        AdSdr s = (AdSdr) sdr;
-        return List.of(RecordStatement.of("insert into " + s.root() + ".ad_sdr (session_id, campaign_id, creative_id, handed_over, shown, watched_seconds,"
-            + " outcome, end_cause) values (?, ?, ?, ?, ?, ?, ?, ?) on conflict do nothing", s.sessionId(), s.campaignId(), s.creativeId(), s.handedOver(),
-            s.shown(), s.watchedSeconds(), s.outcome(), s.endCause()));
-    }
 
     @Override
     protected Object buildSdr(AdContext view, Outcome outcome) {

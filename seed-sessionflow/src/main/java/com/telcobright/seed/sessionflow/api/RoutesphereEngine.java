@@ -158,15 +158,11 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
             c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held());
     }
 
-    /**
-     * Stop: statewalk drives every live session to its end first (FAILED, the forced failover's reason), so each still settles and records; then
-     * the records road commits what it was handed (bounded) — what it could not stays in the journal of the sessions in the air.
-     */
+    /** Stop: statewalk drives every live session to its end first (FAILED, the forced failover's reason), so each still settles and records. */
     @Override
     public void close() {
         if (housekeeping != null) housekeeping.shutdownNow();
         registry.shutdown();
-        if (flow.kit().records() != null) flow.kit().records().close();
         log.info("[{}] routesphere flow stopped: {}", flow.name(), stats());
     }
 

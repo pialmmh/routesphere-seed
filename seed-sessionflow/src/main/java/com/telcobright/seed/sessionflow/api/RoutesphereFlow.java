@@ -4,14 +4,9 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
-import com.telcobright.seed.sessionflow.dependencies.RecordStore;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
-import com.telcobright.seed.sessionflow.internal.CdrAssembler;
-import com.telcobright.seed.sessionflow.internal.CdrTableSql;
-import com.telcobright.seed.sessionflow.internal.SessionRecords;
-import com.telcobright.seed.sessionflow.internal.SummaryEntries;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
@@ -29,7 +24,6 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -56,14 +50,12 @@ import java.util.function.Supplier;
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
  *                                 — then the registry resets every machine to its pool        buildSdr, onEnded
- *                                 the records road (P1-R): the CDR and the SDR written         cdrStatements■ · sdrStatements ·
- *                                 by the base, one transaction per batch, per root             summaryEntryOf
  * </pre>
  *
  * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
- * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule, its failover by cause and its CDR's SQL — an
- * SMS or an ad lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays
- * shared with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code identifyPartner}); the tier walk
+ * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule and its failover by cause — an SMS or an ad
+ * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
+ * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code identifyPartner}); the tier walk
  * (b), the finish (g) and every statewalk call are final.
  *
  * <p><b>The pool rule.</b> ONE flow object serves every session of its application, on many threads: its only field is the
@@ -264,17 +256,16 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected boolean handleRerouting(C ctx, SignalingFailed failed) { return rerouteByTable(ctx, failed.cause()); }
 
     /**
-     * (g) The finish, from both finals, once: the teardown, the channel slot, the SDR made, the CDR per tier (the records road: with the SDR's
-     * rows in its batch's ONE transaction; else one message, leaf first, on {@code cdr_<root>}), the task, the SDR to its sink, the
-     * application's own close. No step's failure stops the next.
+     * (g) The finish, from both finals, once: the teardown, the channel slot, the CDR per tier (one message, leaf first, on
+     * {@code cdr_<root>} — the switch publishes, billing-core writes, R13), the task, the SDR, the application's own close. No step's
+     * failure stops the next.
      */
     protected final void finishSession(C ctx, Outcome outcome) {
         guarded(ctx, "TEARDOWN", () -> tearDown(ctx, outcome));
         guarded(ctx, "RELEASE_SLOT", () -> kit.slots().release(ctx.sessionId()));
-        Object sdr = safely(ctx, "BUILD_SDR", () -> buildSdr(ctx, outcome), null);
-        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome, sdr));
+        guarded(ctx, "PUBLISH_CDR", () -> SessionCdr.of(this).publish(ctx, outcome));
         guarded(ctx, "CLOSE_TASK", () -> SessionTaskClose.of(this).close(ctx, outcome));
-        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, sdr));
+        guarded(ctx, "WRITE_SDR", () -> writeTheSdr(ctx, outcome));
         guarded(ctx, "ON_ENDED", () -> onEnded(ctx, outcome));
         kit.counters().ended.incrementAndGet();
     }
@@ -447,76 +438,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The finish · The application's session record (the SDR), or null for none. */
     protected Object buildSdr(C ctx, Outcome outcome) { return null; }
 
-    /**
-     * The records road, per tier record (P1-R §A) ■ · Every lane names its CDR's statements in its batch's ONE transaction. The call:
-     * {@link #cdrTableRowOf} — billing-core's {@code cdr} row in the tier's own schema (the probe of its key, then the INSERT); a lane adds
-     * rows of its own to it (the voice: {@code acc_chargeable}) or writes a table of its own. Asked on the records road only; {@code ctx} is
-     * null for a record a stopped process left in the air (the next start writes it from the journal).
-     */
-    protected abstract List<RecordStatement> cdrStatements(C ctx, CdrEvent record);
-
-    /**
-     * The records road, once per session · The lane's SDR row(s), in the same transaction as its CDR (the ad's {@code ad_sdr}). Default: none.
-     * Write them ONCE by your own key — a probe ({@link RecordStatement#probe}) or {@code ON CONFLICT DO NOTHING} ({@code INSERT IGNORE} on
-     * MySQL): a session ended a second time (a restore from an older row, §L.1) runs them again, and a plain INSERT that meets its duplicate
-     * rolls back the whole batch — every session in it — on every try, so the writer parks.
-     */
-    protected List<RecordStatement> sdrStatements(C ctx, Outcome outcome, Object sdr) { return List.of(); }
-
-    /**
-     * The records road, per tier record · What the record puts into its tier's summary input (the batch's {@code summary_affected} row of that
-     * tier); null = nothing. The default: billing-core's entry — {@code {Cdr, Chargeables}}, the pre-rated customer leg of a stated group
-     * ({@code SummaryEntries}). {@code ctx} is null for a record left in the air.
-     */
-    protected Object summaryEntryOf(C ctx, CdrEvent record) { return SummaryEntries.of(record, storeOf(record).switchId()); }
-
     /** The finish, last · The application's own closing. */
     protected void onEnded(C ctx, Outcome outcome) { }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // Help for the steps
     // ═════════════════════════════════════════════════════════════════════════════════════════════
-
-    /**
-     * The records road (P1-R §B) — the reusable method: the session's records (its CDR per tier, its SDR) handed to the writer of its root,
-     * which writes them and their summary input in ONE transaction per batch and marks the session's line in the journal done after the
-     * commit. The finish uses it; a lane may for records of its own.
-     */
-    protected final void writeRecords(C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
-        kit.records().write(recordsOf(ctx.sessionId(), ctx, outcome, tiers, sdr));
-    }
-
-    /**
-     * The records road for records that have no live session: what a stopped process left in the air (the start writes it), or a replay of
-     * the park's file CDR journal ({@code CdrSinks.replay(file, flow::writeRecordsOf)}). The hooks see a null context; the once rule makes a
-     * record written before a no-op.
-     */
-    public final void writeRecordsOf(String sessionId, List<CdrEvent> tiers) {
-        if (tiers == null || tiers.isEmpty()) return;
-        kit.records().write(recordsOf(sessionId, null, null, tiers, null));
-    }
-
-    /** The session's records as its writer takes them: each tier record's statements and summary entry (the hooks), then its SDR's rows. */
-    private SessionRecords recordsOf(String sessionId, C ctx, Outcome outcome, List<CdrEvent> tiers, Object sdr) {
-        List<SessionRecords.TierRecord> records = new ArrayList<>(tiers.size());
-        for (CdrEvent record : tiers) records.add(new SessionRecords.TierRecord(record, cdrStatements(ctx, record), summaryEntryOf(ctx, record)));
-        List<RecordStatement> sdrRows = sdr == null ? List.of() : sdrStatements(ctx, outcome, sdr);
-        return new SessionRecords(sessionId, CdrAssembler.rootOf(tiers.get(0)), records, sdrRows);
-    }
-
-    /**
-     * The records road · billing-core's {@code cdr} row of one tier record, in the tier's own schema and the dialect of its root's store
-     * ({@code CdrTableSql}: the probe of billing-core's key, then the INSERT) — what a lane's {@link #cdrStatements} answers, or starts from.
-     */
-    protected final List<RecordStatement> cdrTableRowOf(CdrEvent record) { return CdrTableSql.statementsOf(record, storeOf(record)); }
-
-    /** The records store of a record's root (P1-R); a root the road has no store for is refused in words. */
-    protected final RecordStore storeOf(CdrEvent record) {
-        String root = CdrAssembler.rootOf(record);
-        if (kit.recordStores() == null) throw new IllegalStateException("[" + name() + "] the kit has no records road: the CDR goes to its CDR sink");
-        return kit.recordStores().of(root).orElseThrow(() -> new IllegalStateException("[" + name() + "] the records road has no store for the root '"
-            + root + "' of " + record.channelCallUuid));
-    }
 
     /** The entry of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = this tree holds no such partner. */
     protected final Tier entryOfPartner(C ctx, int partnerId) {
@@ -687,9 +614,8 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * Before the first session of a start: the record of every session a stopped process left in the air is published (handed over: charged
-     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00) — on the records road through
-     * the same writer (a record committed before the death is written before: no second row, no second summary entry), its line done after
-     * the commit. One WARN with the sums.
+     * as reserved, its reserves closed as such; never handed over: every reserve given back, its record at 0.00) on the root's road
+     * ({@code cdr_<root>}). One WARN with the sums.
      */
     public final void publishWhatWasLeftInTheAir() {
         SessionCdr.LeftInTheAir left = SessionCdr.of(this).publishLeftovers();
@@ -739,7 +665,8 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         onTeardown(ctx, outcome);
     }
 
-    private void writeTheSdr(C ctx, Object sdr) {
+    private void writeTheSdr(C ctx, Outcome outcome) {
+        Object sdr = buildSdr(ctx, outcome);
         if (sdr != null) kit.sdr().write(ctx.sessionId(), sdr);
     }
 

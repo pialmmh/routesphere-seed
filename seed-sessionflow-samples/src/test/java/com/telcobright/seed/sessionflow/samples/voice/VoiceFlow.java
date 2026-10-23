@@ -4,7 +4,6 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
-import com.telcobright.seed.sessionflow.api.RecordStatement;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
@@ -164,8 +163,6 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
 
     @Override protected RefundPolicy refundPolicy(VoiceContext call) { return RefundPolicy.callsRule(); }
 
-    /** On the records road: billing-core's cdr row (the voice adds its acc_chargeable rows here when it moves to this road). */
-    @Override protected List<RecordStatement> cdrStatements(VoiceContext call, CdrEvent record) { return cdrTableRowOf(record); }
 
     /** C13: the answer — the recording starts here (the root's switch; always on in the sample). */
     @Override protected void onServiceStarted(VoiceContext call) { call.recordingStarted = true; }

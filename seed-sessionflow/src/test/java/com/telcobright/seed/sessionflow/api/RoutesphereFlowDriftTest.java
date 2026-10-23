@@ -19,15 +19,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * P1-D §1 · The drift guard of the base's shape (like statewalk's GuideDriftTest): the rules every lane must state itself are exactly the
- * abstract methods — a new lane cannot inherit the call's delivery, refund, failover or CDR SQL by forgetting them — and what the base
+ * abstract methods — a new lane cannot inherit the call's delivery, refund or failover by forgetting them — and what the base
  * owns stays final: every statewalk call, (b) {@code iterateResellerTenants}, (g) {@code finishSession}. The class javadoc's table marks
  * the forced ones (■), and only those.
  */
 class RoutesphereFlowDriftTest {
 
-    /** The owner's word of 2026-10-23 (decision 3): what every lane answers itself. */
+    /** The owner's word of 2026-10-23 (decision 3; R13: the CDR's SQL left with the records road): what every lane answers itself. */
     static final Set<String> FORCED = Set.of("name", "serviceGroup", "identifyEntryPartner", "routing", "rateAtLevel",
-        "delivered", "refundPolicy", "rerouteActionFor", "cdrStatements");
+        "delivered", "refundPolicy", "rerouteActionFor");
 
     @Test
     void theAbstractMethods_areExactlyTheRulesEveryLaneMustState() {
