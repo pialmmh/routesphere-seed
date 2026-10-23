@@ -44,8 +44,24 @@ RoutesphereKit kit = RoutesphereKit.builder()
     .ledger(port).cdr(CdrSinks.kafkaPerRoot(brokers, "cdr_", "ad-sphere")).tasks(campaigns::closed).sdr(sdrs)
     .zone(ZoneId.of("Asia/Dhaka")).settings(settings)
     .build();
-RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdFlow(kit), AdContext::new)
-    .signaling(AdPlayback.spec(...)).channel(httpChannel, AdFrames::decode).start();
+RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdSupervisor(new AdFlow(kit)))   // the lane's own class (R6): the one door
+    .signaling(AdPlayback.spec(...)).channel(httpChannel, AdFrames::decode).start();              // the spec shows its SessionStart sample (R2)
+```
+
+A small lane answers the same questions with the builder (R5) — the seven forced answers required, the optional hooks the call's
+defaults when not given, the base's lookups the lambdas' last argument (`find`):
+
+```java
+RoutesphereFlow<SmsContext> flow = RoutesphereApp.<SmsContext>builder("SmsSupervisor")
+    .serviceGroup(0)
+    .identifyTenant((facts, find) -> find.byIngress(facts.ingress()))
+    .identifyPartner((sms, candidate, find) -> find.byPartnerId(sms, accounts.get(sms.user)))
+    .rateAtLevel((sms, tier, partner) -> rates.perSegment(tier, partner, sms.segments))
+    .routing(sms -> RoutePlan.of(smscs))
+    .delivered((sms, outcome) -> "DELIVERED".equals(sms.endCause))
+    .refundPolicy(sms -> RefundPolicy.of(Rule.REFUND, Rule.REFUND))
+    .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL)
+    .build(kit);                                                       // the sample: seed-sessionflow-samples …/sms/SmsFlow.java
 ```
 
 ## 3 · The owner's methods

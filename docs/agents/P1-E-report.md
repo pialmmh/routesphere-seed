@@ -132,6 +132,33 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   `FactsSampleAtBuildTest` (`of(new LabSupervisor(flow))`); the FlowBed sites of `AdFlowTest`, `VoiceFlowTest` (2), `VoiceFlowDoorbellTest`,
   `RestoreLostUpTest`, `SmsFlowTest`, `WifiFlowTest`.
 
+## Item 5 · the builder (R5) — CONTRACT DONE
+
+- **`api/RoutesphereApp`**: `RoutesphereApp.<C>builder(String name)` → `Builder<C>` with the forced answers `serviceGroup(int)`,
+  `identifyTenant((facts, find) -> root)`, `identifyPartner((ctx, candidate, find) -> tier)`, `rateAtLevel((ctx, tier, partner) -> rate)`,
+  `routing(ctx -> plan)`, `delivered((ctx, outcome) -> yes/no)`, `refundPolicy(ctx -> policy)`, `rerouteActionFor(cause -> action)` — each
+  REQUIRED: `build(kit)` refuses with every missing one named and its question ("[SmsSupervisor] every lane states its rules (R2) — the builder
+  has no serviceGroup(int) — the CDR's service group; no identifyTenant(…) — which root operator owns this door? …"). The optional hooks
+  (the call's default when not given): `buildTask`, `selectCandidates`, `authorize`, `applyRootRules`, `confirmAdmission`, `settleOutcome`,
+  `billedUnits`, `rateNextWindow`, `onSignalingProgress`, `onAnswered`, `onServiceEnded`, `fillCdr`, `buildSdr`, `onEnded`. A lane that needs
+  more (the voice's slots, the WiFi's renewal) subclasses — R5's "big lanes subclass; small lanes use the builder".
+- **The helpers from a lambda:** the two identify answers get the base's lookups as their LAST argument (`find.byListener(…)`,
+  `find.byPartnerId(ctx, id)`) — the brief's `Function<RoutesphereFacts,String>` / `BiFunction<C,Candidate,Tier>` shapes plus the `Lookups`
+  argument it offered ("through a Helpers argument"); three small named interfaces carry the three-argument answers (`TenantRule`,
+  `PartnerRule`, `RateRule`, plus `TierGate` and `CdrFill` for the optional ones).
+- **`api/AppFlow`** (package-private): the flow `build(kit)` answers — a NAMED subclass rather than an anonymous one (readable, one file); its
+  only state is the kit and the sealed builder (the lane's rules, the pool rule). The lambdas run under the base's `safely` / `guarded` like
+  overrides (a throw at admission refuses the candidate `INTERNAL_ERROR` — pinned). **Sealed:** once built, a setter refuses ("the application
+  is built: its answers are sealed"); the same builder may build the flow of another kit.
+- **The proof — the SMS sample as a builder:** `SmsFlow` is now a small class whose `SmsFlow.of(kit, partnerByUser, ratePerSegment,
+  smscsByRoot, refundOnNonDelivery)` builds the lane; its rules are lambdas and four small methods (`rootByTheDoor`, `taskOf`, `everySegment`,
+  `theRootsSmscs`, `nextSmscWhenCongested`, `whatTheReceiptSaid`). `SmsFlowTest` (7) and `SmsSubmitTest` (7) green; **`SmsFlowTest` changed in
+  ONE line** (`SmsFlow flow = new SmsFlow(…)` → `RoutesphereFlow<SmsContext> flow = SmsFlow.of(…)` + its import) — no expectation;
+  `SmsSubmitTest` unchanged. AdFlow, VoiceFlow, WifiFlow stay subclasses.
+- **Red first:** `RoutesphereAppTest` (5) — red by compile, then green. **Mutants (5, red):** a missing `rerouteActionFor` passes; the answers
+  never sealed; a given `buildTask` ignored; the lambdas not handed the lookups; the SMS lane without its `settleOutcome` (2 money scenarios
+  of `SmsFlowTest` red: the refund on non-delivery charged).
+
 ## Open questions for the owner / the architect
 
 (none yet)

@@ -1,5 +1,7 @@
 # P1-E · stream F — state
 
+**CONTRACT DONE** (items 0–5, 2026-10-24 01:05) — see the line of that time below.
+
 One line per item, newest last. Times are Dhaka (+06).
 
 - 2026-10-23 23:05 · START — worktree `p1-rules` at f41eace (stream D's four commits + the brief); the reactor there **465/0/0/3** (offline,
@@ -21,3 +23,11 @@ One line per item, newest last. Times are Dhaka (+06).
   door `RoutesphereEngine.of(supervisor)` (`of(flow, contexts)` gone); `AdSupervisor`, `CallSupervisor`, `SmsSupervisor`, `WifiSupervisor`,
   `LabSupervisor`; `FlowBed` takes the lane's class (`c -> new AdSupervisor(flow, c)`); red first (the classes missing), 2 mutants red;
   sessionflow 158, samples 71, switch-ledger 50 green. Next: item 5 (the builder) → CONTRACT DONE.
+- 2026-10-24 01:05 · **item 5 done** — `api/RoutesphereApp` (the builder: `builder(name)`, the seven forced answers + `serviceGroup` REQUIRED
+  and refused in words, 15 optional hooks, sealed once built) + `api/AppFlow` (the flow it builds); the SMS sample rewritten with the
+  builder (`SmsFlow.of(kit, …)`), `SmsFlowTest` / `SmsSubmitTest` green with one line of `SmsFlowTest` changed (the flow's type); red first
+  (compile), 5 mutants red; sessionflow 163, samples 71, switch-ledger 50 green.
+
+CONTRACT DONE — items 0–5 (the records road gone; identifyTenant / identifyPartner forced with helpers; the facts' sample at build; one
+supervisor class per lane; the builder). The architect may merge up to item 5's commit and start the ad-sphere port on it. Running next:
+item 6 (the kit from ONE bootstrap url).

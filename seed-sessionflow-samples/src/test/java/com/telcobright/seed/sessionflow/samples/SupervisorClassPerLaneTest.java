@@ -30,7 +30,7 @@ class SupervisorClassPerLaneTest {
     void eachSamplesSupervisorClass_isNamedAsItsLane() {
         named(new AdSupervisor(new AdFlow(kit, Map.of(), Map.of(), Map.of(), false, new AdQuota())));
         named(new CallSupervisor(new VoiceFlow(kit, Map.of(), Map.of(), Map.of())));
-        named(new SmsSupervisor(new SmsFlow(kit, Map.of(), Map.of(), Map.of(), true)));
+        named(new SmsSupervisor(SmsFlow.of(kit, Map.of(), Map.of(), Map.of(), true)));
         named(new WifiSupervisor(new WifiFlow(kit, Map.of(), Map.of(), Map.of())));
     }
 
