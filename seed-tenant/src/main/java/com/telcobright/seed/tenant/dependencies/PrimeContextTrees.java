@@ -6,6 +6,7 @@ import com.telcobright.seed.sessionflow.spi.LiveTrees;
 import com.telcobright.seed.sessionflow.spi.TreesMaker;
 import com.telcobright.seed.tenant.api.TenantTrees;
 import com.telcobright.seed.tenant.internal.LiveTenantTrees;
+import com.telcobright.seed.tenant.internal.TreeGateHolder;
 import com.telcobright.seed.tenant.internal.PrimeContextTreeSource;
 import com.telcobright.seed.tenant.spi.TreeSource;
 
@@ -39,8 +40,9 @@ public final class PrimeContextTrees implements TreesMaker {
     @Override
     public LiveTrees make(Deployment deployment, BootstrapSource source) {
         LiveTenantTrees.Served served = new LiveTenantTrees.Served(deployment.roots());
-        TenantTreesBuilder b = TenantTrees.builder().directory(served::active).source(sourceOf.apply(source.origin()));
+        TreeGateHolder gate = new TreeGateHolder();                       // P1-G: the road's gate, given after the trees are made
+        TenantTreesBuilder b = TenantTrees.builder().directory(served::active).source(sourceOf.apply(source.origin())).gate(gate);
         if (doorbell) b.doorbell(deployment.platformKafka(), deployment.app() + "-doorbell-" + UUID.randomUUID());
-        return LiveTenantTrees.started(b.build(), served);
+        return LiveTenantTrees.started(b.build(), served, gate);
     }
 }

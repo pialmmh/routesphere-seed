@@ -22,6 +22,9 @@ public final class PerRootCdrSink implements CdrSink {
     /** The road of one more root (its database name). */
     public void add(String root, CdrSink sink) { byRoot.put(root, sink); }
 
+    /** P1-H · A root's road taken out again (its roads could not all be made); never closed here — its producer may be another root's too. */
+    public CdrSink remove(String root) { return byRoot.remove(root); }
+
     /** The roots with a road. */
     public java.util.Set<String> roots() { return java.util.Set.copyOf(byRoot.keySet()); }
 

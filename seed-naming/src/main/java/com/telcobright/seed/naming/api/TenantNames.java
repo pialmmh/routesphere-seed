@@ -13,8 +13,9 @@ import java.util.regex.Pattern;
  *   <li>a reseller tier is {@code <root>_res_<partnerId>}, nested {@code _<partnerId>} per level ({@code link3_res_5}, {@code link3_res_5_2});
  *       the id is the partner's id in the parent's database — the call switch's live rule reads it at the end of the name; ids are digits
  *       only (STRICT); a word like {@code reseller1} is a display name, never a database name;</li>
- *   <li>the SEED root — the one the bootstrap names, never a name in this code — keeps the LEGACY prefix {@code res_} and its LOOSE rule:
- *       any name under the prefix is its tier ({@code res_2}, {@code res_2_1}, the lab's {@code res_44}).</li>
+ *   <li>the SEED root — the one the bootstrap names, never a name in this code — keeps the LEGACY prefix and its LOOSE rule: any name
+ *       under the prefix is its tier ({@code res_2}, {@code res_2_1}, the lab's {@code res_44}). The prefix is the bootstrap's word too
+ *       ({@code naming.seed-prefix}, prime-context's {@code primecontext.reseller-db-prefix}; P1-G), {@link #LEGACY_PREFIX} when it says none.</li>
  * </ul>
  * A tier's parent is found by splitting on its root's prefix, never by counting underscores: {@code res_5} is never acme's.
  */
@@ -24,22 +25,45 @@ public final class TenantNames {
     public static final String LEGACY_PREFIX = "res_";
 
     private static final Pattern AN_ID_PER_LEVEL = Pattern.compile("[1-9][0-9]{0,9}(_[1-9][0-9]{0,9})*");
+    /** A word a database name can start with: a lowercase letter, then lowercase letters, digits and underscores. */
+    private static final Pattern A_NAME_PREFIX = Pattern.compile("[a-z][a-z0-9_]{0,39}");
 
     private final String seedRoot;
+    private final String seedPrefix;
 
-    private TenantNames(String seedRoot) { this.seedRoot = seedRoot == null || seedRoot.isBlank() ? null : seedRoot.trim(); }
+    private TenantNames(String seedRoot, String seedPrefix) {
+        this.seedRoot = seedRoot == null || seedRoot.isBlank() ? null : seedRoot.trim();
+        this.seedPrefix = seedPrefix;
+    }
 
     /** The rule of a deployment whose seed root (the legacy {@code res_<id>} tiers) is {@code seedRoot}, as its bootstrap names it. */
-    public static TenantNames withSeedRoot(String seedRoot) { return new TenantNames(seedRoot); }
+    public static TenantNames withSeedRoot(String seedRoot) { return new TenantNames(seedRoot, LEGACY_PREFIX); }
+
+    /**
+     * P1-G · The same, the seed root's tiers under {@code seedPrefix} — the bootstrap's {@code naming.seed-prefix}; {@link #LEGACY_PREFIX}
+     * when null or blank. Refused in words when it is not a name prefix (a lowercase letter, then lowercase letters, digits, underscores).
+     */
+    public static TenantNames withSeedRoot(String seedRoot, String seedPrefix) {
+        if (seedPrefix == null || seedPrefix.isBlank()) return withSeedRoot(seedRoot);
+        String prefix = seedPrefix.trim();
+        if (!A_NAME_PREFIX.matcher(prefix).matches()) {
+            throw new IllegalArgumentException("'" + prefix + "' is not a name prefix (a lowercase letter, then lowercase letters, digits and underscores"
+                + " — like " + LEGACY_PREFIX + "): the seed root's tiers would carry names no database has");
+        }
+        return new TenantNames(seedRoot, prefix);
+    }
 
     /** The rule of a deployment with no seed root: every root's tiers are {@code <root>_res_<id>}. */
-    public static TenantNames strict() { return new TenantNames(null); }
+    public static TenantNames strict() { return new TenantNames(null, LEGACY_PREFIX); }
 
     /** The seed root, or empty. */
     public Optional<String> seedRoot() { return Optional.ofNullable(seedRoot); }
 
-    /** The prefix of a root's reseller tiers: {@code res_} for the seed root alone, {@code <root>_res_} for every other. */
-    public String resellerPrefixOf(String root) { return isTheSeed(named(root, "root")) ? LEGACY_PREFIX : root + "_res_"; }
+    /** The seed root's prefix: the bootstrap's {@code naming.seed-prefix}, {@link #LEGACY_PREFIX} when it said none. */
+    public String seedPrefix() { return seedPrefix; }
+
+    /** The prefix of a root's reseller tiers: the seed prefix for the seed root alone, {@code <root>_res_} for every other. */
+    public String resellerPrefixOf(String root) { return isTheSeed(named(root, "root")) ? seedPrefix : root + "_res_"; }
 
     /**
      * A new reseller's tier: {@code <prefix><partnerId>} under the root ({@code parentDb} null or the root), {@code <parentDb>_<partnerId>}

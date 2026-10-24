@@ -85,6 +85,37 @@ without its token's variable name, or an empty token variable, is refused naming
 a later round, not code). No `prime-context.bootstrap-url` at all = no source: the application runs on its own files (a test, a lab) — and
 its kit's door, if it builds one from the bootstrap, still refuses the missing url.
 
+## When the values are visible (Quarkus 3.26.1 — P1-G, proven)
+
+Quarkus asks this factory ONCE at a run: for the RUN-TIME config, at the start of RUNTIME_INIT — never for the STATIC_INIT config. Why:
+Quarkus 3.26.1's `ConfigGenerationBuildStep` gives the static-init config builder only the discovered factories that are
+`@StaticInitSafe` (or SmallRye's own — `staticSafeServices`), the run-time builder every one; the run-time config is built by the
+generated `io.quarkus.runtime.generated.Config.createRunTimeConfig()`, which `RuntimeConfigSetupBuildStep` makes the FIRST RUNTIME_INIT
+task ("before any StartupTask that uses runtime configuration"). This factory is not `@StaticInitSafe`, on purpose: it fetches over
+HTTP, and in a native image static init runs at the image BUILD (and Quarkus would ask it twice per start).
+
+So the bootstrap's values are visible to everything that reads the config at RUNTIME_INIT or later, and to nothing created at
+STATIC_INIT. The trap: Quarkus REST builds its deployment — its request filters and resources — at STATIC_INIT
+(`ResteasyReactiveRecorder.createDeployment`), and a bean they INJECT is created then, with the static-init config (the jar's own
+values), and keeps that `Config` for the life of the process.
+
+Proven by `docs/agents/P1-G-quarkus-probe` (a factory registered the same way, serving `probe.value`; the jar's own file says
+`from-the-jar`), on `@QuarkusTest` and on the packaged jar alike (2026-10-24, offline):
+
+| reader | saw |
+|---|---|
+| the factory's calls | `[RUNTIME_INIT]` — once |
+| a `@Startup @Singleton` bean nobody injects | from-the-factory @RUNTIME_INIT |
+| an `@Observes StartupEvent` method reading `ConfigProvider.getConfig()` | from-the-factory @RUNTIME_INIT |
+| a `@Startup` bean a REST resource and a `@ServerRequestFilter` inject by its type (as ad-sphere's `AdSphereRuntime` is) | **from-the-jar @STATIC_INIT** — and still from-the-jar at a later request |
+| the same kind of bean reached through `Instance<…>` from the resource and the filter | from-the-factory @RUNTIME_INIT — a request through it too |
+
+**What an application must do**: read the bootstrap's keys at RUNTIME_INIT or later. Its composition root is never injected by its own
+type into a REST resource or filter — they reach it through `Instance<…>` (or `Provider<…>`) and call `get()` when they serve; or it
+reads `ConfigProvider.getConfig()` when it needs a value; or it builds its own config over the envelope (ad-sphere's
+`AdBootstrap.configOver`, which works today). What P2 saw on the box — the factory's fetch ~10 s after the start, its `@Startup` bean
+on the jar's own values — is consistent with that bean being created at STATIC_INIT through ad-sphere's filters and resources.
+
 ## Never a secret
 
 Only `config` is served. The envelope's `secrets` never become config values; a `password-ref: env:<NAME>` stays a reference, resolved

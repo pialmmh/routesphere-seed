@@ -1,6 +1,8 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.naming.api.TenantNames;
 import com.telcobright.seed.sessionflow.api.Deployment;
+import com.telcobright.seed.sessionflow.api.PendingRootPace;
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
 import com.telcobright.seed.sessionflow.api.RootResources;
 import com.telcobright.seed.sessionflow.dependencies.IdentificationRules;
@@ -28,6 +30,7 @@ public final class DeploymentReader {
     private static final Logger log = LoggerFactory.getLogger(DeploymentReader.class);
 
     public static final String KEY = "routesphere";
+    private static final java.util.concurrent.atomic.AtomicBoolean SAID_THE_LEGACY_PREFIX = new java.util.concurrent.atomic.AtomicBoolean();
     static final String DEFAULT_ZONE = "Asia/Dhaka";
 
     private DeploymentReader() {}
@@ -41,7 +44,33 @@ public final class DeploymentReader {
         Map<String, RootResources> resources = resourcesOf(rs, roots, served);
         return new Deployment(word(map(envelope.get("tenant")), "code"), served, word(envelope, "env"), roots, settingsOf(rs), zoneOf(rs),
             rulesOf(rs, roots, served), resources, platformKafkaOf(rs, resources, roots), word(map(rs.get("naming")), "seed-root"),
-            secretsOf(envelope), word(envelope, "etag"));
+            secretsOf(envelope), word(envelope, "etag"), pendingRootOf(rs), seedPrefixOf(map(rs.get("naming"))));
+    }
+
+    /**
+     * P1-G · {@code naming.seed-prefix} (PC-0022 §9.1: prime-context's {@code primecontext.reseller-db-prefix}): the legacy {@code res_} when not
+     * said — said once when a seed root is named without it; a value that is not a name prefix refused here, in words.
+     */
+    private static String seedPrefixOf(Map<String, Object> naming) {
+        String prefix = word(naming, "seed-prefix");
+        if (prefix == null) {
+            String seed = word(naming, "seed-root");
+            if (seed != null && SAID_THE_LEGACY_PREFIX.compareAndSet(false, true)) {
+                log.info("the bootstrap names the seed root {} without naming.seed-prefix: its tiers keep the legacy {}", seed, TenantNames.LEGACY_PREFIX);
+            }
+            return null;
+        }
+        try {
+            return TenantNames.withSeedRoot(word(naming, "seed-root"), prefix).seedPrefix();
+        } catch (IllegalArgumentException notAPrefix) {
+            throw refused("config." + KEY + ".naming.seed-prefix " + notAPrefix.getMessage());
+        }
+    }
+
+    /** P1-G · {@code pending-root: {retry-sec, give-up-min}} — 30 s and 120 min when not said. */
+    private static PendingRootPace pendingRootOf(Map<String, Object> rs) {
+        Map<String, Object> pace = map(rs.get("pending-root"));
+        return new PendingRootPace(number(pace, "retry-sec", PendingRootPace.DEFAULT.retrySec()), number(pace, "give-up-min", PendingRootPace.DEFAULT.giveUpMin()));
     }
 
     private static List<String> rootsOf(Map<String, Object> rs, String app) {

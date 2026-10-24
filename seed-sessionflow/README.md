@@ -179,7 +179,9 @@ books (slots, counters, the CDR sequence) start fresh. Refused, in words, once a
 
 The application's OWN keys (everything in `config` beside `routesphere`: `adsphere.*`, `sdr.*`, `quarkus.http.*`, …) reach its
 MicroProfile / SmallRye Config through **seed-bootstrap-config** (a `ConfigSourceFactory` at ordinal 275, the same road, never a secret) —
-so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md`.
+so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md` — and its "When the values are
+visible": from RUNTIME_INIT on (P1-G, proven on Quarkus 3.26.1); a bean Quarkus REST builds at STATIC_INIT (one a resource or filter
+injects by its type) sees the jar's own values — reach it through `Instance<…>`.
 
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree
@@ -187,6 +189,43 @@ reloaded — and, first, THAT root's ledger loads the tier (`LedgerPort.tierAdde
 the root's money moves, see `seed-switch-ledger/README.md`, with what P2 must prove on PostgreSQL), so no session sees a tier its ledger
 cannot serve. The same event twice is once; another application's is nothing. The engine's close closes everything the road opened: the
 listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR road and journal, the producers, the trees.
+
+**Live tenants made safe (P1-G):**
+
+- **A `kind: root` message comes BEFORE the root is served.** prime-context announces a root at its provisioning; its tree road answers
+  404 ROOT_NOT_SERVED until tenant-master's switch row exists (and its next build), and the deployment document may list the root only later
+  (a PUT after the creation). Such a root is never half-served (`LiveTrees.serve` leaves nothing when it fails — a lane's own trees undo the
+  same): it goes PENDING and is tried again every `config.routesphere.pending-root.retry-sec` (default 30 s: the bootstrap read again, the
+  tree loaded) until served, or given up after `pending-root.give-up-min` (default 120) — said once each (pending with the reason, served,
+  given up: "a restart, or a new tenant_created, serves it"); a later word tries at once. One daemon thread `<app>-pending-roots` per road,
+  stopped by the engine's close (`road.pendingRoots()`, `road.said()`). A root's roads are all-or-nothing (P1-H): a try that fails
+  half-way closes what it opened — its ledger first, then its CDR road and journal —, takes the tree back, leaves the deployment and the
+  doors as they were; the road never opens a second ledger for a root while one is open. **A deployment must not set `pending-root` yet**:
+  prime-context's document checker (`DeploymentShape`) refuses keys it does not know today — logged for a prime-context round; until it
+  accepts the key, the defaults (30 s, 120 min) are the pace.
+- **A tree never shows a tier its ledger was not handed.** A reseller's provisioning rings the doorbell `config_event_loader_<root>` AND
+  sends `tenant_created`; the ring can come first. Every NEW tree passes the road's gate before a session can see it (`spi/TreeGate`,
+  `LiveTrees.gateEachNewTree`): each tier its root's ledger was not built over is handed to that ledger first (`tierAdded`), once — the ring
+  and the event together are one hand. seed-tenant's trees pass every loaded tree through it (the ring, a reload, the backstop). **A lane's
+  OWN LiveTrees** (ad-sphere's `AdTrees`) must take the gate (`gateEachNewTree`) and call `gate.pass(root, newTree)` before it swaps its
+  own snapshot; the default does nothing. A ledger that throws keeps the new tree from being shown; the switch ledger says its own failure
+  and the tree is shown, the tier's money refused until it loads.
+- **The seed root's prefix is the bootstrap's word**: `config.routesphere.naming: {seed-root, seed-prefix}` (the envelope's one addition,
+  PC-0022 §9.1) — `res_` when no prefix is said; a value that is not a name prefix is refused at the read. The naming rule is held to
+  prime-context's own table (`seed-naming`'s `bootstrap/naming-cases.tsv`, byte-identical, 23 cases).
+- **The deployment's tenant is the operator's** (btcl on the bed), never `platform`: tenant-master reserves that word (PC-0022 §9.7) — the
+  pinned sample's `platform` is a sample's.
+- **A deployment's identification rules have ONE home**: `config.routesphere.identification.rules` — prime-context serves nothing at the old
+  home `config.identification` to a deployment (the seed reads only the new home).
+- **`tenant_created`'s `apps` are sorted** (prime-context writes them so); the message names the root (its key) and is sent after the
+  provisioning's writes are committed.
+- **A root's switch ledger has ONE writer**: serve each root from ONE process. Its MemLedger is STANDALONE — the only writer of the root's
+  package accounts and reserves; a second process on the same root (or another replication mode) would be a second writer of the same
+  money, and a live tier's merge (its rows beside it) assumes the one writer (`seed-switch-ledger/README.md`).
+- **A root added live needs its door to be a listener the process already has**: Quarkus binds its listeners at the start, so a new root
+  whose rule names another address gets no request until the unit listens there — a window step (P2 gap 9).
+- **The pinned samples stay byte-identical with prime-context's** (`src/test/resources/bootstrap/`: `deployment.json` sha256
+  e1ca4f43a016ce4f…, `tenant-created.json` 63f396e263457824… — equal at prime-context framework-bootstrap 8f8d922, checked 2026-10-24).
 
 ## 5 · Money
 

@@ -11,6 +11,7 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.TopicProvisioner;
 import com.telcobright.seed.sessionflow.spi.BootstrapSource;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
+import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.LiveTrees;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.producer.Producer;
@@ -42,11 +43,15 @@ public final class BootstrapRoad implements AutoCloseable {
     private final LiveRules rules;
     private final PerRootCdrSink cdr = new PerRootCdrSink();
     private final PerRootLedger ledger;
+    private final TiersFirst tiersFirst;
     private final PerRootJournal journal = new PerRootJournal();
     private final Map<String, Producer<String, String>> producers = new ConcurrentHashMap<>();
     private final Map<String, Admin> admins = new ConcurrentHashMap<>();
     private volatile Function<String, List<String>> laneTopics = root -> List.of();
     private final Set<String> seen = ConcurrentHashMap.newKeySet();
+    private final PendingRoots pending;
+    /** P1-H · A root's ledger whose close failed: no second ledger is opened for that root until it closes. */
+    private final Map<String, AutoCloseable> notClosed = new ConcurrentHashMap<>();
     private TenantCreatedListener listener;
 
     private BootstrapRoad(BootstrapSource source, KitMakers makers, Deployment deployment) {
@@ -56,14 +61,27 @@ public final class BootstrapRoad implements AutoCloseable {
         this.trees = makers.trees().make(deployment, source);
         this.rules = new LiveRules(deployment.rules());
         this.ledger = new PerRootLedger(this::rootOf);
+        this.tiersFirst = new TiersFirst(ledger);
+        trees.gateEachNewTree(tiersFirst);                                  // P1-G: a new tree's tiers into their root's ledger first
+        this.pending = new PendingRoots(deployment.app(), deployment.pendingRoot(), makers.clock(), root -> tryToServe(root, "tried again, it was pending"));
     }
 
     /** The bootstrap read for {@code app}, every served root's resources made; refused in words when the envelope says too little. */
     public static BootstrapRoad open(BootstrapSource source, String app, KitMakers makers) {
         BootstrapRoad road = new BootstrapRoad(source, makers, Deployment.of(source.envelope(), app));
-        road.deployment.roots().forEach(road::makeTheRootsRoads);
+        road.makeEveryServedRootsRoads();
         log.info("[{}] the bootstrap of {} ({}): {}", app, road.deployment.tenant(), source.where(), road.describe());
         return road;
+    }
+
+    /** P1-H · The start: every served root's roads, or none — a start refused half-way closes what it opened, then says why. */
+    private void makeEveryServedRootsRoads() {
+        try {
+            for (String root : deployment.roots()) makeTheRootsRoads(deployment, root, new RootRoadsMade(rootDbOf(root)));
+        } catch (RuntimeException refused) {
+            close();
+            throw refused;
+        }
     }
 
     /** The kit of this road: the trees, the doors, the ledger, the CDR road and the journal of every served root. */
@@ -104,8 +122,10 @@ public final class BootstrapRoad implements AutoCloseable {
         return topics;
     }
 
-    private void ensureTheTopicsOf(String root) {
-        RootResources.KafkaRoad kafka = deployment.root(root).orElseThrow().kafka();
+    private void ensureTheTopicsOf(String root) { ensureTheTopicsOf(deployment, root); }
+
+    private void ensureTheTopicsOf(Deployment d, String root) {
+        RootResources.KafkaRoad kafka = d.root(root).orElseThrow().kafka();
         TopicProvisioner.ensure(adminOf(kafka.bootstrap()), topicsOf(root), kafka.partitions(), kafka.replication(), kafka.bootstrap());
     }
 
@@ -116,7 +136,9 @@ public final class BootstrapRoad implements AutoCloseable {
     /**
      * prime-context created a tenant (§C.2): a new ROOT this application serves → the bootstrap read again, the root's tree, doors, ledger,
      * CDR road, journal and topics made, served from now on (no restart); a new reseller TIER of a served root → that root's tree reloaded.
-     * The same event twice is one; an event of another application, or a tier of a root not served, is nothing.
+     * The same event twice is one; an event of another application, or a tier of a root not served, is nothing. P1-G: a root that cannot be
+     * served yet — not listed for this application yet, or its tree not served by prime-context yet (the message comes BEFORE the root is
+     * served) — is never half-served: it goes PENDING and is tried again ({@link PendingRoots}); a later word tries it again at once.
      */
     public void onTenantCreated(TenantCreated event) {
         if (!event.names(deployment.app()) || !seen.add(event.identity())) return;
@@ -125,26 +147,65 @@ public final class BootstrapRoad implements AutoCloseable {
     }
 
     private synchronized void serveTheNewRoot(TenantCreated event) {
-        if (deployment.roots().contains(event.root())) return;
-        Deployment next = Deployment.of(source.envelope(), deployment.app());
-        if (!next.roots().contains(event.root())) { forgetItUntilTheBootstrapServesIt(event, next); return; }
-        trees.serve(event.root());
-        deployment = next;
-        makeTheRootsRoads(event.root());
-        rules.replace(next.rules());
-        ensureTheTopicsOf(event.root());
-        log.info("[{}] the root {} is served from now on (tenant_created at {}): {}", next.app(), event.root(), event.at(), describe(next.root(event.root()).orElseThrow()));
+        String notYet = tryToServe(event.root(), "tenant_created at " + event.at());
+        if (notYet == null) return;
+        seen.remove(event.identity());                                    // a later word tries it again at once
+        pending.pend(event.root(), notYet);
     }
 
-    private void forgetItUntilTheBootstrapServesIt(TenantCreated event, Deployment next) {
-        seen.remove(event.identity());
-        log.warn("[{}] tenant_created names the root {}, but the bootstrap does not serve it to {} yet (roots {}): not served", next.app(), event.root(), next.app(), next.roots());
+    /**
+     * One try to serve a root (a word, or the pending roots' timer): the bootstrap read again, the root's tree loaded, then its roads, its
+     * doors and its topics. Null = served now (or before); otherwise why not yet, in words — and nothing of the root is served.
+     */
+    private synchronized String tryToServe(String root, String why) {
+        if (deployment.roots().contains(root)) { pending.served(root); return null; }
+        Deployment next;
+        try { next = Deployment.of(source.envelope(), deployment.app()); }
+        catch (RuntimeException e) { return "the bootstrap could not be read again: " + e.getMessage(); }
+        if (!next.roots().contains(root)) return "not listed for " + next.app() + " yet (its roots " + next.roots() + ")";
+        try { trees.serve(root); }
+        catch (RuntimeException e) { return "prime-context does not serve its tree yet: " + e.getMessage(); }
+        return serveItsRoads(next, root, why);
     }
+
+    /**
+     * P1-H · A root's roads, all or nothing: its ledger, CDR road and journal, its topics, then its doors and the deployment — in that order,
+     * the deployment last. A failure on the way closes what THIS try made (its ledger first, then its CDR road and journal), takes the
+     * tree's serve back and leaves the deployment and the doors as they were; the root goes pending (the caller). Null = served.
+     */
+    private String serveItsRoads(Deployment next, String root, String why) {
+        RootRoadsMade made = new RootRoadsMade(rootDbOf(root));
+        try {
+            makeTheRootsRoads(next, root, made);
+            ensureTheTopicsOf(next, root);
+            rules.replace(next.rules());
+            deployment = next;
+        } catch (RuntimeException e) {
+            closeAgain(made);
+            trees.unserve(root);
+            return "its roads could not all be made (" + e.getMessage() + ") — what this try opened is closed again";
+        }
+        sayItIsServed(next, root, why);
+        return null;
+    }
+
+    private void sayItIsServed(Deployment next, String root, String why) {
+        String line = "[" + next.app() + "] the root " + root + " is served from now on (" + why + "): " + describe(next.root(root).orElseThrow());
+        log.info(line);
+        if (pending.roots().contains(root)) pending.note(line);
+        pending.served(root);
+    }
+
+    /** The roots announced that cannot be served yet, tried again (P1-G). */
+    public Set<String> pendingRoots() { return pending.roots(); }
+
+    /** What the road said of its pending roots — once each: pending (why), served, given up (P1-G; the operations' view). */
+    public List<String> said() { return pending.said(); }
 
     /** A new tier of a served root: its root's ledger loads the tier first, then the tree shows it to the next session (item 13). */
     private void reloadTheRootOf(TenantCreated event) {
         if (!deployment.roots().contains(event.root())) return;
-        ledger.tierAdded(rootDbOf(event.root()), event.tierDb());
+        tiersFirst.hand(rootDbOf(event.root()), event.tierDb());
         trees.reload(event.root());
         log.info("[{}] the tier {} under {} is in the ledger and the tree from now on (its root reloaded)", deployment.app(), event.tierDb(), event.root());
     }
@@ -152,6 +213,7 @@ public final class BootstrapRoad implements AutoCloseable {
     /** The engine's close: the listener, the admins, every root's CDR road, journal and ledger, the producers, the trees. */
     @Override
     public void close() {
+        pending.close();
         if (listener != null) listener.close();
         admins.values().forEach(Admin::close);
         ledger.close();
@@ -163,13 +225,79 @@ public final class BootstrapRoad implements AutoCloseable {
 
     // ── one root's roads ──
 
-    private void makeTheRootsRoads(String root) {
-        RootResources r = deployment.root(root).orElseThrow();
-        String rootDb = rootDbOf(root);
-        LedgerMaker.Context context = new LedgerMaker.Context(deployment, trees, makers.clock(), makers.environment());
-        ledger.add(rootDb, makers.ledger(r.ledger().kind()).make(r, context));
-        cdr.add(rootDb, new KafkaCdrSink(producerOf(r.kafka().bootstrap()), Topics.platform(CDR, rootDb), null));
-        journal.add(rootDb, makers.journalOf(r.dir()));
+    /** One root's ledger, CDR road and journal, each written down in {@code made} as it is opened — never a second ledger beside an open one. */
+    private void makeTheRootsRoads(Deployment d, String root, RootRoadsMade made) {
+        RootResources r = d.root(root).orElseThrow();
+        refuseASecondLedger(made.rootDb);
+        LedgerMaker.Context context = new LedgerMaker.Context(d, trees, makers.clock(), makers.environment());
+        RootTree builtWith = trees.snapshot(root).orElse(null);
+        made.ledger = makers.ledger(r.ledger().kind()).make(r, context);
+        ledger.add(made.rootDb, made.ledger);
+        if (builtWith != null) tiersFirst.builtOver(made.rootDb, builtWith.tree());
+        makeItsCdrRoad(r, made);
+        made.journal = makers.journalOf(r.dir());
+        journal.add(made.rootDb, made.journal);
+    }
+
+    private void makeItsCdrRoad(RootResources r, RootRoadsMade made) {
+        String bootstrap = r.kafka().bootstrap();
+        if (!producers.containsKey(bootstrap)) made.producerOf = bootstrap;
+        cdr.add(made.rootDb, new KafkaCdrSink(producerOf(bootstrap), Topics.platform(CDR, made.rootDb), null));
+        made.cdrRoad = true;
+    }
+
+    /**
+     * P1-H · Never two ledgers for one root: two MemLedgers over one switch database and one directory would be two write-behind consumers
+     * for the same money. A ledger left open by a failed close is closed first; while it cannot be, or while the root has one, none is opened.
+     */
+    private void refuseASecondLedger(String rootDb) {
+        closeWhatAFailedCloseLeftOpen(rootDb);
+        if (ledger.of(rootDb).isEmpty() && !notClosed.containsKey(rootDb)) return;
+        String why = "the root " + rootDb + " has a ledger open already: a second one over its switch database and directory would be a second"
+            + " write-behind consumer for the same money — none opened";
+        log.error("[{}] {}", deployment.app(), why);
+        throw new IllegalStateException(why);
+    }
+
+    private void closeWhatAFailedCloseLeftOpen(String rootDb) {
+        AutoCloseable left = notClosed.get(rootDb);
+        if (left == null) return;
+        try {
+            left.close();
+            notClosed.remove(rootDb);
+        } catch (Exception e) {
+            log.warn("[{}] the ledger of {} left open by a failed close still does not close: {}", deployment.app(), rootDb, e.toString());
+        }
+    }
+
+    /** P1-H · What a failed try made for a root, closed again: its ledger first, then its CDR road (and the producer it made), then its journal. */
+    private void closeAgain(RootRoadsMade made) {
+        if (made.ledger != null) closeTheLedger(made.rootDb, ledger.remove(made.rootDb));
+        if (made.cdrRoad) cdr.remove(made.rootDb);
+        if (made.producerOf != null) closeQuietly(producers.remove(made.producerOf), "the CDR producer of " + made.producerOf);
+        if (made.journal != null) {
+            journal.remove(made.rootDb);
+            closeQuietly(made.journal::close, "the journal of " + made.rootDb);
+        }
+    }
+
+    private void closeTheLedger(String rootDb, LedgerPort opened) {
+        if (!(opened instanceof AutoCloseable closing)) return;
+        try {
+            closing.close();
+        } catch (Exception e) {
+            notClosed.put(rootDb, closing);
+            log.error("[{}] the ledger of {} did not close ({}): no second ledger is opened for {} until it does", deployment.app(), rootDb, e.toString(), rootDb);
+        }
+    }
+
+    private void closeQuietly(AutoCloseable part, String what) {
+        if (part == null) return;
+        try {
+            part.close();
+        } catch (Exception e) {
+            log.warn("[{}] {} did not close cleanly: {}", deployment.app(), what, e.toString());
+        }
     }
 
     private Producer<String, String> producerOf(String bootstrap) {

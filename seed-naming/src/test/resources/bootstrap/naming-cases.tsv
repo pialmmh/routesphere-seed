@@ -1,0 +1,28 @@
+# PC-0022 item 5: the ONE naming rule (prime-context RootNaming), as a table both repositories run - the seed copies the rule
+# (P1-E item 7) and its test reads THIS file; the architect carries it across. Tab-separated; "-" = none.
+#   seedRoot = the instance's seed root (primecontext.admin-db; in the bootstrap: routesphere.naming.seed-root), legacy prefix res_
+#   ask      = tierDb (the tier of partnerId under parentDb, or under the root) | parentOf (the tier above tierDb) | isTierOf (yes|no)
+# seedRoot	ask	root	parentDb	partnerId	tierDb	answer
+btcl	tierDb	btcl	-	2	-	res_2
+btcl	tierDb	btcl	btcl	2	-	res_2
+btcl	tierDb	btcl	res_2	1	-	res_2_1
+btcl	tierDb	btcl	res_2_1	9	-	res_2_1_9
+btcl	tierDb	link3	-	5	-	link3_res_5
+btcl	tierDb	link3	link3	5	-	link3_res_5
+btcl	tierDb	link3	link3_res_5	2	-	link3_res_5_2
+btcl	tierDb	link3	link3_res_5_2	7	-	link3_res_5_2_7
+btcl	tierDb	acme_res	-	5	-	acme_res_res_5
+-	tierDb	btcl	-	2	-	btcl_res_2
+-	tierDb	link3	-	5	-	link3_res_5
+btcl	parentOf	btcl	-	-	res_2	btcl
+btcl	parentOf	btcl	-	-	res_2_1	res_2
+btcl	parentOf	link3	-	-	link3_res_5	link3
+btcl	parentOf	link3	-	-	link3_res_5_2	link3_res_5
+btcl	parentOf	link3	-	-	link3_res_5_2_7	link3_res_5_2
+btcl	parentOf	link3	-	-	res_5	-
+btcl	isTierOf	btcl	-	-	res_x	yes
+btcl	isTierOf	link3	-	-	link3_res_5	yes
+btcl	isTierOf	link3	-	-	link3_res_x	no
+btcl	isTierOf	link3	-	-	link3_res_05	no
+btcl	isTierOf	acme	-	-	acme_res_res_5	no
+btcl	isTierOf	link3	-	-	link3	no

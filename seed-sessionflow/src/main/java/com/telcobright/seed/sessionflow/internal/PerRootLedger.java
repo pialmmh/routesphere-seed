@@ -33,6 +33,9 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     public Optional<LedgerPort> of(String root) { return Optional.ofNullable(byRoot.get(root)); }
 
+    /** P1-H · A root's ledger taken out again (its roads could not all be made); the caller closes it. */
+    public LedgerPort remove(String root) { return byRoot.remove(root); }
+
     @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) { return ledgerOf(level).reserve(level, amount, reference); }
 
     @Override

@@ -80,13 +80,28 @@ final class BootstrapWorld {
     }
 
     /** The same makers with a switch ledger of the test's own. */
-    KitMakers makers(LedgerMaker switchLedger) {
+    KitMakers makers(LedgerMaker switchLedger) { return makersBuilder(switchLedger).build(); }
+
+    /** The world's makers on a clock of the test's own (P1-G: a pending root given up after its time). */
+    KitMakers makers(java.time.Clock clock) {
+        KitMakers plain = makers();
+        return makersBuilder(new LedgerMaker() {
+            @Override public String kind() { return RootResources.Ledger.SWITCH; }
+            @Override public LedgerPort make(RootResources root, Context context) { return plain.ledger(kind()).make(root, context); }
+        }).clock(clock).build();
+    }
+
+    /** P1-H · The world's makers with a switch ledger and a journal maker of the test's own (a journal that cannot be opened). */
+    KitMakers makers(LedgerMaker switchLedger, java.util.function.Function<Path, com.telcobright.seed.sessionflow.spi.SessionJournal> journals) {
+        return makersBuilder(switchLedger).journals(dir -> { journalDirs.add(dir); return journals.apply(dir); }).build();
+    }
+
+    private KitMakers.Builder makersBuilder(LedgerMaker switchLedger) {
         return KitMakers.builder()
             .trees((deployment, src) -> trees = new FakeLiveTrees(prime, deployment.roots()))
             .ledger(switchLedger)
             .kafka(kafka)
             .journals(dir -> { journalDirs.add(dir); return SessionJournals.none(); })
-            .environment(name -> null)
-            .build();
+            .environment(name -> null);
     }
 }

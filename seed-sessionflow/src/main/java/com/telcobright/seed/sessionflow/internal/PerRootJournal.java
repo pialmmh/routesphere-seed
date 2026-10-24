@@ -20,6 +20,9 @@ public final class PerRootJournal implements SessionJournal {
 
     public void add(String root, SessionJournal journal) { byRoot.put(root, journal); }
 
+    /** P1-H · A root's journal taken out again (its roads could not all be made); the caller closes it. */
+    public SessionJournal remove(String root) { return byRoot.remove(root); }
+
     @Override
     public void reserved(String callId, long atMs, String records, Held held) {
         String root = held.root() != null ? held.root() : rootOfRecords(records);
