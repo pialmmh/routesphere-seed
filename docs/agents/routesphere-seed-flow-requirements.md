@@ -41,9 +41,12 @@ identifyPartner() …"*
 | `rerouteActionFor(cause)` | retry same, next hop, or stop? | the v1 table | stop | stop | congestion → next |
 
 `identifyRootLevelTenant` and `identifyPartner` are the owner's names; the base's one-line helpers do the common lookups
-(`byListener`, `byEslSocket`, `byVlan`, `byTopic` against prime-context's identification rules; `byPartnerId`,
-`bySubscriber`, `byIpOrPrefix`, `bySystemId` inside the session's own tree). `null` = refused by the base
-(`NO_TENANT`, `PARTNER_NOT_FOUND`).
+(`byListener`, `byEslSocket`, `byVlan`, `byTopic` against prime-context's identification rules; for the partner — **the
+route layer, the owner 2026-10-25** — `byRouteCredentials · byIp · byDomain · bySipAccount · byPrefix · bySystemId · byPartnerId`
+(the route's user name + password, the SMS lane's `route_metadata.extra1/extra2`; the address `route.field5` — `byIp` with the port
+the lane saw, then the bare ip; the SIP account; the longest number prefix; the SMPP `system_id`; the partner id), every one a HashMap
+get on the index built ONCE per snapshot of the session's own tree (seed round P1-O; `byPartnerName` stays, exact). `null` = refused
+by the base (`NO_TENANT`, `PARTNER_NOT_FOUND`, and `CREDENTIALS_REJECTED` for refused route credentials).
 
 **R3 · Final in the base** (no lane may change): the order of the steps; the reseller walk leaf → root inside the
 session's own tree; reserve / renew / finalize through the one ledger (idempotent per session and tier); the retry

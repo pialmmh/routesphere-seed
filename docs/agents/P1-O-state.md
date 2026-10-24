@@ -100,3 +100,11 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   HttpServer on 127.0.0.1 as prime-context; no platform Kafka, no doorbell): the token on the first ask and the rotated one on the reload;
   no token → no header; a 401's refusal never prints the token. Mutants 2, 2 red: the tree road without the bearer (2/2), the bearer read
   once (1/2); restored with a fresh mtime.
+- 2026-10-25 05:44 · **item 7 done** — docs: the sessionflow README's new §4.0 "Identification — the partner through its route, one get each"
+  (the owner's words; the index per snapshot and its maps with their helpers; a route's partner; a key two holders share; route
+  credentials, the two forms, the one cause, the measured PBKDF2 cost; the climb; the guard and NoWalkAfterInstallTest; a lane's own
+  lookup; never print a Route/RouteMetadata whole), its class table (Lookups, RootTree/RootIndex), the contract table's (c) rows,
+  the packages and the history line; the seed-tenant README's "built once per snapshot" made true (the install through RootInstall, one
+  get for a root by code or db name, the counters, the tree road's bearer); `docs/agents/routesphere-seed-flow-requirements.md` R2's
+  helper names = `byRouteCredentials · byIp · byDomain · bySipAccount · byPrefix · bySystemId · byPartnerId` (the architect updates routesphere
+  main's copy); this state file; the report `docs/agents/P1-O-report.md`.
