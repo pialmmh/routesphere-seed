@@ -86,4 +86,70 @@ changed. Every Maven run offline and under the shared lock; nothing installed in
 
 ## P1-G
 
-(the next round, on this branch after this report's commit — its section follows here)
+The architect's brief: `docs/agents/P1-G-brief.md` (live tenants made safe, the naming table, the late config values). On this branch
+after the P1-F report head 0d170db; additive — every existing signature kept (the `Deployment` 12-word constructor, `withSeedRoot(root)`,
+`LiveTenantTrees.started(trees, served)`, `LiveTrees`' methods with defaults), ad-sphere's P2 on 723f160 + P1-F must not break.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | c54be9c | A new root that cannot be served yet is never half-served: `LiveTenantTrees.serve` undoes a failed serve (out of the directory again); the road keeps such a root PENDING (`internal/PendingRoots`): the bootstrap read again + the tree loaded every `config.routesphere.pending-root.retry-sec` (30), given up after `give-up-min` (120); said once pending (the reason in words), once served, once given up; one daemon thread `<app>-pending-roots` per road, stopped by the engine's close; a later word still tries at once. `api/PendingRootPace`, `Deployment.pendingRoot`, `road.pendingRoots()` / `road.said()`. |
+| 2 | bc8f3a0 | A root's tree never shows a tier its ledger was not handed: `spi/TreeGate`, `LiveTrees.gateEachNewTree` (default: nothing); the road's gate `internal/TiersFirst` hands each tier of a NEW tree its ledger was not built over to that root's ledger FIRST, once — the doorbell's ring and `tenant_created` together are one hand, whichever comes first; seed-tenant's loader passes every loaded tree through the gate before the swap (`TenantTreesBuilder.gate`, `TreeGateHolder`). |
+| 3 | 1b8f9d0 | A new tier's own account at its PARENT is loaded: after the tier's schema, the switch ledger's port calls `MemLedger.reloadNewEntities()` (a plain call on the pinned jar) under the same write gate (`internal/NewRowsOfATier`); a reserve row the reload would bring back is a ghost and is taken out at once. |
+| 4 | b69099c | prime-context's `naming-cases.tsv` (8f8d922) byte-identical in seed-naming's test resources (sha256 3dfb24f2414f593f…, pinned by the test); `TenantNames` answers all 23 cases as prime-context's RootNaming — **no red to report**. |
+| 5 | a292366 | `naming.seed-prefix` read beside `seed-root` (`Deployment.seedPrefix`, `TenantNames.withSeedRoot(root, prefix)`, `seedPrefix()`); `res_` when not said (said once); not a name prefix → refused at the read in words. |
+| 6 | 0c26518 | Why item 12's values come late — proven on Quarkus 3.26.1 offline (`docs/agents/P1-G-quarkus-probe`); no code change; the rule and what an app must do in `seed-bootstrap-config/README.md`. |
+| 7 | 7689115 | README lines (committed before item 6: item 6's Quarkus proof waited on the shared lock; each item stands alone). |
+
+### Numbers
+
+- **Head 0c26518** (all seven items): the worktree from clean **557/0/0/3** (131 s) and a git-archive clean copy of the head **557/0/0/3** (128 s),
+  one lock hold 07:09–07:13 (offline, no install); the P1-F head 66ec564 was 535/0/0/3.
+- **+22 tests, all new**: ServeOrNothingTest 2, PendingRootTest 4, TiersBeforeTreesTest 4, GateBeforeTheSwapTest 2, ParentRowsOfANewTierTest 2,
+  NamingCasesTest 2, SeedPrefixTest 3, SeedPrefixFromTheBootstrapTest 3. **No existing test's assertion changed**; two test helpers grew:
+  `BootstrapWorld` (+ `makers(Clock)`), `FakeLiveTrees` (the gate on serve and reload). P1-E's `TenantCreatedLiveTest` stays green unchanged.
+- **Red first** for every code item (items 1–3 on behaviour: link3 half-served; the tree's refusal thrown out of the event and a not-listed
+  root never tried again; a ring showing a tier with no hand; the parent's row absent; items 4–5 by the missing table / API).
+- **Mutants: 35, 35 red** (item 1: 11, item 2: 11, item 3: 4, item 4: 4, item 5: 5); each restored with a fresh mtime and recompiled.
+- **Item 6's proof** (a factory registered as ours, serving `probe.value`; the jar says `from-the-jar`; `@QuarkusTest` and the packaged jar):
+
+  | reader | saw |
+  |---|---|
+  | the factory's calls | `[RUNTIME_INIT]` — once |
+  | a `@Startup` bean nobody injects | from-the-factory @RUNTIME_INIT |
+  | `@Observes StartupEvent` + `ConfigProvider.getConfig()` | from-the-factory @RUNTIME_INIT |
+  | a `@Startup` bean a REST resource and a request filter inject by its type | **from-the-jar @STATIC_INIT**, still at a later request |
+  | the same reached through `Instance<…>` | from-the-factory @RUNTIME_INIT |
+
+### Decisions (defendable defaults)
+
+1. **Item 2: a ledger that SAYS its own failure lets the tree be shown** (the switch ledger without `addDatabase`, the pinned mem-ledger):
+   freezing the whole root's tree for one tier it cannot load would stop every other change of that root; the tier's money is refused
+   until it loads (the port's own words). A ledger that THROWS keeps the tree from being shown.
+2. **Item 2: the event still hands a tier the ledger was built over** (the ledger's own "nothing") — P1-E's test of the event kept as it is;
+   the gate hands only tiers the ledger was not built over.
+3. **Item 3: the ghost reserves.** The pinned `reloadNewEntities` is a whole-table read + `putIfAbsent` (bytecode); a settled reserve whose
+   row the write-behind has not deleted would come back, and the orphan reaper would give its money back twice — taken out at once (the
+   port is the only writer of its root's reserves: STANDALONE). Cost: the pinned jar reads both tables of every tier schema WHOLE; the
+   high-water mark is mem-ledger 0f04624 (2026-10-11), LATER than the pin (2026-10-07) — from it on, the accounts above their mark.
+4. **Item 6: no code change.** Marking the factory `@StaticInitSafe` would make a native image fetch prime-context at its BUILD and Quarkus
+   ask it twice per start; the README says when the values are visible and what an app does.
+
+### What P2 must change (P1-G)
+
+1. **`AdTrees` (its own LiveTrees)**: `serve` must leave nothing when prime-context answers 404 ROOT_NOT_SERVED (throw, nothing kept) —
+   the road then keeps the root pending and tries again; and `gateEachNewTree(gate)`: keep the road's gate and call
+   `gate.pass(root, newTree)` before it swaps its own snapshot — else a doorbell ring before `tenant_created` shows a tier its ledger lacks.
+2. **`AdSphereRuntime`**: its filters and resources reach it through `Instance<AdSphereRuntime>` (`get()` when they serve) — then it is
+   created at RUNTIME_INIT and sees the bootstrap's values (proven), and `AdBootstrap.configOver` can go; or keep `configOver`.
+3. Prove on PostgreSQL (mem-ledger main, with `addDatabase`): `AdTierCreatedPostgresIT.gap_…` (the parent's account) should now pass.
+4. Nothing to change for the seed prefix or the pending pace; a deployment document that sets `pending-root` needs prime-context's
+   checker to accept it (prime-context's round).
+
+### Open points
+
+- Item 1: a root whose roads fail half-way (its ledger made, then a later road fails) is retried whole — the first ledger would be made
+  again (`PerRootLedger.add` replaces it unclosed). An edge, not fixed.
+- Item 3: the ghost guard assumes STANDALONE (one writer per root's reserves); a replicated switch ledger needs another rule.
+- Item 6: an opt-in `@StaticInitSafe` factory for JVM-mode apps (one fetch, cached for the run-time ask) — a later round if wanted.

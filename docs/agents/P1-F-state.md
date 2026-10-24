@@ -147,3 +147,6 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   a pointer in the sessionflow README. For P2: reach AdSphereRuntime through Instance<> from its filters and resources (then configOver
   can go), or keep configOver. Ports used by the probe: 127.0.0.1:7795/7796, the jar stopped by PID. Next: the whole reactor + the clean
   copy, the report's P1-G section.
+- 2026-10-24 07:14 · **P1-G DONE** — items 1–7; the head 0c26518 from clean in the worktree **557/0/0/3** (131 s) and on a git-archive clean
+  copy **557/0/0/3** (128 s), one lock hold 07:09–07:13 (offline, no install); +22 tests, all new; 35 mutants, 35 red. The report's P1-G
+  section: `docs/agents/P1-F-report.md`.
