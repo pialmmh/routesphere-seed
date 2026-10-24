@@ -119,10 +119,15 @@ cleaned. The door says its door, the session id and a failed rule's words and st
 session id, a call id, a reference, a task id, a lane's cause or a store's or a ledger's words (sessionflow, seed-switch-ledger,
 seed-campaign). A lane logging a request's value uses it too: `log.warn("… {}", LogText.clean(request.mac()))`.
 
-**No password inside a url is printed** (P1-M): `LogText.maskPassword(url)` writes the userinfo's password (`redis://:***@host`,
-`redis://user:***@host`, `jdbc:mysql://user:***@host`) and the value of every parameter whose name says password, passwd, pwd or secret
-(`?password=***`, `&pwd=***`, `;password=***`, case-blind, inside a longer name too) as `***`, the rest as it is — wherever the seed
-prints a url: the start line (every root's switch-db and redis url, the bootstrap's `where()`), the records' text (`SwitchDb`,
+**No password inside a url is printed** (P1-M, P1-N — the principle: an over-mask beats a leak; a line may lose a user name, never show
+a password): `LogText.maskPassword(url)` writes the userinfo's password (`redis://:***@host`, `redis://user:***@host`,
+`jdbc:mysql://user:***@host`) — and a userinfo WITHOUT ':' whole (`redis://***@host`: Lettuce reads `redis://password@host` as the
+password; a bare token `https://***@host`) —, the value of every parameter whose name says password, passwd, pwd or secret
+(`?password=***`, `&pwd=***`, `;password=***`, case-blind, inside a longer name too) and of every key-value block that names one
+(Connector/J's `address=(host=…)(password=***)`) as `***`, the rest as it is. The userinfo runs to the LAST '@' before the first '?' or
+'#' — a password may carry ';' or '/' unencoded (Connector/J's authority runs past ';'): an '@' in a path, or in a ';' property before any
+'?', therefore over-masks (`https://host/users/a@b/x` → `https://***@b/x`), accepted; a '?' or '#' unencoded inside a password still ends
+the search (every parser breaks there), accepted. It is used wherever the seed prints a url: the start line (every root's switch-db and redis url, the bootstrap's `where()`), the records' text (`SwitchDb`,
 `RootResources`, the ledger's words, `LedgerSettings`, `Deployment`), the orchestrix ledger's lines and refusals. Only for printing: the url
 used to connect is the one written (`BootstrapSource.origin()` stays raw — seed-tenant's trees connect by it).
 
@@ -370,6 +375,9 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, evening (4) — P1-N (the architect's probe of P1-M's `maskPassword`): three url forms it printed raw are masked — a userinfo
+  without ':' whole (Lettuce's `redis://password@host`, a bare token), a userinfo password carrying ';' or '/' (the userinfo runs to the
+  last '@' before '?' or '#'), Connector/J's `(password=…)` blocks; an over-mask beats a leak. State: `docs/agents/P1-F-state.md`.
 - 2026-10-24, evening (3) — P1-M (from P1-L's open points): the log cleaner moved to the seed's bottom module `seed-logtext`
   (`api.LogText` its delegate) so seed-campaign's lines are cleaned too; a password inside a url is masked wherever the seed prints one
   (`maskPassword`: the userinfo's, any password/pwd/secret parameter; the url used to connect untouched); the whole Unicode format category
