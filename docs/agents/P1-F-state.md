@@ -194,3 +194,19 @@ two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
 - 2026-10-24 08:01 · **P1-H DONE** — items 1–3; the head 9f6873b from clean in the worktree **562/0/0/3** (136 s) and on a git-archive clean
   copy **562/0/0/3** (136 s), one lock hold 07:56–08:01 (offline, no install); +5 tests (RootsRoadsAllOrNothingTest), 8 mutants red; the
   timing proof under the hog in item 3's line. The report's P1-H section: `docs/agents/P1-F-report.md`.
+
+## P1-I
+
+The architect's brief: `docs/agents/P1-I-brief.md` (a connect cut by the admission's budget says so; the budget test holds under load;
+the root's source guarded). On this branch, fast-forwarded by the architect to routesphere-flow 97afef3 (the owner's readable shape R14;
+its gate 569/0/0/3).
+
+- 2026-10-24 13:51 · START — from 97afef3. Running: item 1 (the words of a connect the budget cut).
+- 2026-10-24 13:59 · **P1-I item 1 done** — a connect that did not complete says WHICH clock cut it (`OrchestrixLedger.noConnectionWithin`):
+  Java's HttpClient applies the request's own timeout (waitMs = min(read timeout, the time left)) to the connect phase too, so — the
+  admission's budget: "no connection within the <waitMs> ms the admission had left"; the read timeout, when it is the shorter clock:
+  "within its <waitMs> ms read timeout"; the configured connect timeout: today's words. Always a LedgerFault (nothing was sent: no unsure
+  line). Red first with a connect that cannot complete — a local port whose accept queue is full (backlog 1, never accepted: the kernel
+  drops the SYN): OrchestrixLedgerConnectTest red 2 of 3, both "no connection within 30000 ms" (the architect's finding reproduced);
+  3 green after; 5 mutants, 5 red (one turns the cut connect into a NoAnswer: an unsure line appears). seed-sessionflow direct green.
+  Next: item 2.
