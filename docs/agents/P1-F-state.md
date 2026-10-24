@@ -344,3 +344,22 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 18:53 · **P1-L DONE** — items 1–4; the head 060b500 from clean in the worktree **615/0/0/3** (162 s) and on a git-archive clean
   copy **615/0/0/3** (155 s), two short lock holds 18:36–18:39 and 18:50–18:52 (offline, no install); +20 tests; 25 mutants red. The
   report's P1-L section: `docs/agents/P1-F-report.md`.
+
+## P1-M
+
+- 2026-10-24 19:14 · START — p1-follow at routesphere-flow cb236c9 (the architect's merge of P1-L, fast-forwarded by him); the brief
+  `docs/agents/P1-M-brief.md`. The plan: a NEW bottom module `seed-logtext` (one class, `com.telcobright.seed.logtext.LogText`, no
+  dependency of its own) that seed-campaign and seed-sessionflow depend on; `api.LogText` a thin delegate (its signature kept); then
+  seed-campaign's 5 lines. A password inside a url masked by ONE helper (`maskPassword`) wherever the seed prints a url — the start line
+  (`BootstrapRoad.describe`, the bootstrap's `where()`), the records' text (SwitchDb, RootResources, Ledger's words, LedgerSettings), the
+  orchestrix lines and messages; `origin()` stays raw (seed-tenant CONNECTS with it). The whole Unicode Cf category escaped. Next: item 1.
+- 2026-10-24 19:28 · item 1 DONE — a NEW bottom module `seed-logtext` (one class `com.telcobright.seed.logtext.LogText` + its tests, no
+  dependency of its own; in the root pom right after the BOM, in the BOM; seed-campaign and seed-sessionflow depend on it). The cleaner
+  moved there whole (its 8 tests with it); `api.LogText` is a thin delegate (its name, package and signatures kept — a lane's import
+  stands; its own test checks the same answers). seed-campaign's lines cleaned — the 5 of P1-L's list (DefaultCampaignService's failed
+  step, JdbcCampaignStore's cut, QueuedCampaignStore's lost and refused changes, ChangeJournal's unreadable line) and 3 found on the way
+  (QueuedCampaignStore's failed batch and the stop's last failure — the store's words quote the task id — and the writer's own fault, its
+  stack cleaned); a change's text at the 1000 cap (the lost change's line may be its only record). Red first: NoForgedCampaignLogLinesTest
+  (2) + NoForgedStoreLogLinesTest (2) — a task id with "\\n" forged a line, a journal line's U+2028 and ESC went raw. Mutants 6/6 red;
+  the lost-change, the stop and the writer-fault lines have no test of their own (said). Direct: logtext 8, campaign 76, sessionflow 265,
+  switch-ledger 70, seed-tenant 23, samples 73. Next: item 2.

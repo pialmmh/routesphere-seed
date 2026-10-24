@@ -17,6 +17,12 @@
         a store SPI (routesphere's MySQL schema, or in memory). A runner (SMS) or an API (ads) calls it;
         it never fires a task itself. Plain Java 21 — no Spring, no Quarkus.</description>
     <dependencies>
+        <!-- P1-M: the ONE cleaner of what goes into a log line (a request's value, a url's password), the seed's bottom module -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-logtext</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>

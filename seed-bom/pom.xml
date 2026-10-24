@@ -40,6 +40,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- P1-M: the ONE cleaner of what the seed writes into a log line (a request's value; a url's password masked) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-logtext</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- the generic campaign service: campaign + campaign_task, runnable/targeting/quota rules,
                  the task ladder and counters, behind a store SPI (routesphere MySQL schema or in memory) -->
             <dependency>

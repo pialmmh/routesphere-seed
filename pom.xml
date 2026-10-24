@@ -16,6 +16,8 @@
 
     <modules>
         <module>seed-bom</module>
+        <!-- P1-M: the ONE cleaner of what goes into a log line — at the bottom, so every module reaches it -->
+        <module>seed-logtext</module>
         <module>seed-config</module>
         <module>seed-config-client</module>
         <module>seed-context</module>
