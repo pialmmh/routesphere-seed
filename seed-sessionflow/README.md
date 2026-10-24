@@ -314,6 +314,11 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, afternoon — P1-J (ad-sphere P2c's end-to-end run against prime-context 8f8d922): every reload of a root's tree merges its
+  new rows into its switch ledger (`LedgerPort.treeReloaded`, coalesced: at most one merge per `ledger.merge-spacing-sec`, default 5 s) —
+  an account written after its tier exists pays at the next ring; the switch ledger's OWN login `ledger.db` (optional; the app's and the
+  ledger's roles kept apart). Before it: P1-G (live tenants made safe), P1-H (a root's roads all-or-nothing; timing tests under load),
+  P1-I (a connect cut by the budget says so; the root's source). State: `docs/agents/P1-F-state.md`.
 - 2026-10-24, morning — P1-F, the six gaps the ad-sphere port found, fixed additively: the bootstrap url at RUN time only (no build
   guard: no documented signal), `RoutesphereKit.toBuilder()` (the lane's own sinks on a kit from the bootstrap), `CdrSinks.all` keeps
   the root, `machinesBuilt` = the supervisors' pool's own count and `busy` counted at the door (`DoorChannel`, `engine.launch`; never

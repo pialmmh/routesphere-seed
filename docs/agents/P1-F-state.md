@@ -250,3 +250,9 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   `bootstrap/deployment-with-ledger-login.json` (btcl with a login, link3 without); the pinned samples byte-identical (e1ca4f43…,
   63f396e2…). Red first (compile); LedgerLoginFromTheBootstrapTest 3, LedgerOwnLoginTest 3 green; 6 mutants, 6 red. Direct: sessionflow
   239, switch-ledger 68, seed-tenant 23, samples 73. Next: item 3 (docs).
+- 2026-10-24 16:26 · **P1-J item 3 done** — docs: the switch ledger's README ("Every reload merges the root's new rows": the order a BSS
+  follows, the gate, the bound — at most one merge per merge-spacing-sec, the first at once, the rest of a burst one at the end —, never a
+  session's thread, the backstop counts, the cost on the pinned jar and from 0f04624; "The switch ledger's own login": the shape, why two
+  logins — separation of duties at the database, ONE writer of money per root —, the environment-only password, and that until
+  prime-context accepts the keys (PC-0023) a deployment document cannot carry ledger.db nor merge-spacing-sec); the sessionflow README's
+  history line. Next: item 4 (the reactor, a clean copy, the report).

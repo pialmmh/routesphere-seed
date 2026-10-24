@@ -104,6 +104,28 @@ refused by this rule, not by code: a second PROCESS serving the same root (two a
 another `ReplicationConfig.Mode`. Either would be two write-behind consumers for the same money, and a ghost reserve could no longer be
 told from another writer's live one. Serve each root from ONE process.
 
+**Every reload merges the root's new rows** (P1-J, ad-sphere P2c's G1). The only order a BSS can follow: prime-context's road makes the
+tier (`tenant_created`), THEN the tier's accounts are written (a package purchase), the tree is rebuilt and the doorbell
+`config_event_loader_<root>` rings. Before P1-J the tree showed the accounts and the ledger answered ACCOUNT_NOT_FOUND until another tier
+came or the process restarted. Now every new tree passes the road's gate before it is shown and tells its root's ledger
+(`LedgerPort.treeReloaded`): the port merges the rows written since its last look (`reloadNewEntities`, ghost reserves taken out), under
+its write gate, at most ONE merge per `ledger.merge-spacing-sec` (default 5 s) — the first ring merges at once, on the reloading thread,
+before the tree is shown; the rest of a burst become ONE merge at the end of the spacing, on the port's own daemon thread (an account
+written in a burst reaches the ledger at most one spacing after its ring). Never on a session's thread: a session's money move waits for
+a merge in progress (the write gate). Every reload counts — the ring, a `tenant_created`, a root served, and seed-context's backstop (every
+5 min). The cost of one merge: the pinned mem-ledger (2026-10-07) reads both tables of every tier schema of the root WHOLE; from mem-ledger
+0f04624 on (2026-10-11), the accounts above each schema's high-water mark and the reserve table whole.
+
+**The switch ledger's own login** (P1-J, G3): `ledger.db {user, password-ref[, url, schema]}`, OPTIONAL, for a root whose ledger is the
+switch ledger — its url and schema switch-db's where it says none; absent = switch-db's login, as before (no deployment changes on the
+day). Why two logins: separation of duties at the database — prime-context grants the app's role (`ad_sphere`: the app's tables) and the
+ledger's role (the money tables: `packageaccount`, `packageaccountreserve`) separately, and never one role for both ("a role is never
+another's"); with the app's login the ledger's write-through was refused ("permission denied for table packageaccountreserve", P2c run 5).
+ONE writer of money per root: the ledger's role. Its password is read from the PROCESS environment only (secreteer's env file), never the
+bootstrap's `secrets`. **Until prime-context accepts the keys (PC-0023, on the owner's word), a deployment document cannot carry
+`ledger.db` — nor `ledger.merge-spacing-sec`** (prime-context's `DeploymentShape` refuses keys it does not know): switch-db's login and
+the 5 s spacing apply. The shape is in the NEW sample `seed-sessionflow/src/test/resources/bootstrap/deployment-with-ledger-login.json`.
+
 **What P2 must prove on its PostgreSQL lab** (this box has no database server: here the proof is MemLedger on H2 for the gate, the once rule
 and the close, a stand-in for `addDatabase`):
 
