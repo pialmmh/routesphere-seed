@@ -299,3 +299,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   count not reset, one window for every door, no bound, rule one, a throwing rule escaping, the old door, the session id, the summary).
   Under the 8-thread hog (load 12 → 22): the door test 20 runs, the window test 10 runs, 0 red; the hog stopped by PID. Direct:
   sessionflow 251, seed-tenant 23, samples 73, switch-ledger 70. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 17:38 · **P1-K DONE** — items 1–5; the head 94e00c1 from clean in the worktree **595/0/0/3** (147 s) and on a git-archive clean
+  copy **595/0/0/3** (159 s), two short lock holds 17:33–17:38 (offline, no install); +15 tests; 19 mutants red; the door tests 20 + 10
+  runs under the hog green. The report's P1-K section: `docs/agents/P1-F-report.md`.

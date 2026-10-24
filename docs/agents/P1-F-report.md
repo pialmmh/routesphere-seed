@@ -283,3 +283,69 @@ roles). On this branch, fast-forwarded to routesphere-flow 206e7f0 (the merge of
 
 1. Use `ledger.db` (the ledger's role) once prime-context accepts the key (PC-0023); until then the lab's role membership stands.
 2. Nothing to change for G1: the merge is the seed's; P2's own `AdTrees` must call the road's gate (P1-G) for its reloads to merge.
+
+## P1-K
+
+The architect's brief (`docs/agents/P1-K-brief.md`), on the owner's ruling of 16:51 ("Environment only", re-affirming his rule of
+2026-09-24): a password comes from the process environment only. The coordinator added item 5 during the round, on the owner's second
+ruling: "if we fail to identify the root level tenant at the ingress points, the request shall be rejected and logs shall be generated".
+On this branch, fast-forwarded by the architect to routesphere-flow c17ffaa (his merge of P1-J). Additive except where the ruling removes a road.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | 2a5a919 | switch-db's password from the PROCESS environment only: `SwitchLedgerMaker` reads `SwitchDb.passwordFromTheEnvironment` for both logins (switch-db's and the ledger's own). `SwitchDb.password(env, secrets)` removed. A missing variable is refused naming the variable and the login, never a value; a `password-ref` that is not `env:<NAME>` is refused WITHOUT repeating its text. SwitchLedgerMakerTest's pin moved here (the removed method would not compile otherwise). |
+| 2 | d7620dc | The seed reads no secret from the bootstrap: said in `Deployment`'s javadoc and the README's bootstrap section. `Deployment.secrets()` deprecated (read by nobody; the signature kept; the reader still parses). A `Deployment`'s text names the secrets, never their values. |
+| 3 | 53f8657 | Docs: the switch-ledger README (the password's one road, the refusal's words), the sessionflow README's history line. |
+| 5 | 94e00c1 | The door refuses AND says: `RoutesphereEngine.identifyRootLevelTenant` — no root (null, or the rule throws) → a WARN line, `refusedNoRoot` counted (FlowCounters; PoolStats' twelfth number, the 10- and 11-number constructors kept), and null. Flood-safe per door (`internal/NoRootAtTheDoor`: a 60 s window, ONE summary line at the next refusal after it, no timer thread, at most 1024 doors held apart); debug on = every refusal said; `engine.saidAtTheDoor()`. The README's ingress shape: the two lines plus the guard. |
+
+### Numbers
+
+- **Head 94e00c1**: the worktree from clean **595/0/0/3** (147 s, 17:33) and a git-archive clean copy of the head **595/0/0/3** (159 s,
+  17:35), two short lock holds 17:33–17:38 (offline, no install); c17ffaa was 580/0/0/3.
+- **+15 tests, all new**: PasswordFromTheEnvironmentOnlyTest 2 (switch-ledger), NoSecretFromTheBootstrapTest 1, NoRootAtTheDoorTest 6,
+  NoRootAtTheDoorWindowTest 6 (sessionflow). SwitchLedgerMakerTest's pin moved to the new behaviour (one test replaced, same count).
+- **Red first**: item 1 — a password only in the envelope's `secrets` connected ("Expecting code to raise a throwable"), and the moved
+  pin: a written `password-ref` was echoed in the refusal; item 2 — a `Deployment`'s text carried the secret's value; item 5 — the old
+  door: no line, the count 0, a throwing rule escaped the door.
+- **19 mutants, 19 red**: item 1, 3 (the fallback put back, the variable not named, the ref repeated); item 2, 3 (the values said, the
+  override taken away, the names dropped — this one SURVIVED first, because "AD_SWITCH_DB_PASSWORD" is also the sample's `password-ref`;
+  the test now names `AD_REPORTS_DB_PASSWORD`, which nothing else in the sample names); item 5, 13 (the log, the count, the window gone /
+  never closing / its boundary / its count not reset, one window for every door, no bound, rule one, a throwing rule escaping, the old
+  door, the session id dropped, the summary never said).
+- **The burst** (item 5): 1000 refusals from 8 threads at the real door → 1 line, the count 1000; on the window's own clock: 1000, then
+  the window's end → 3 lines ("… and 999 more refused at esl 10.10.197.9:8021 in the 60 s window from 2026-10-24T11:20:00Z"), 1001; a
+  second window → "… and 10 more", 1012.
+- **Under an 8-thread CPU hog** (stopped by PID; load 12 → 22): NoRootAtTheDoorTest 20 runs, NoRootAtTheDoorWindowTest 10 runs, 0 red.
+
+### Decisions
+
+1. `SwitchDb.password(env, secrets)` **goes**: no caller left in the seed, none in ad-sphere p2-adflow 514d37a (read only), and no public
+   signature needs it. `passwordFromTheEnvironment(env)` is the one road, for both logins.
+2. A refusal names the variable and the login, never a value. **A `password-ref` that is not `env:<NAME>` is no longer repeated** in the
+   refusal: until now a password written there by mistake reached the log.
+3. `Deployment.secrets()` is deprecated, not for removal: the brief keeps the signature and lets the reader parse. **A `Deployment`'s
+   text names the secrets only** (the record's own `toString` printed their values; nothing in the seed logs a `Deployment` today).
+4. The door's line names the app as `flow.name()` (as every engine line does). The summary names its window's START, not "the last
+   60 s": it is written at the door's next refusal, which may come much later. A failed rule's stack is logged with its full line (once
+   per window per door; every time with debug on).
+5. The log itself is proven: a test reads slf4j-simple's output for one call (System.err swapped; test classes run one at a time).
+
+### Open points
+
+- **The machine's own road**: a lane whose facts carry no root keeps the old road (the machine asks the rule at its start and refuses
+  `NO_TENANT`). That refusal is noted in the session's history, not by the door's WARN line. Should the same sayer cover it? Your call.
+- A door that sees no further refusal never writes its last summary (no timer thread, as asked). The total stays in `refusedNoRoot`,
+  and the engine's stop line prints the stats.
+- `RootResources` / `SwitchDb`'s own record text still prints a `password-ref` as written. Nothing in the seed prints it
+  (`BootstrapRoad.describe` prints url and schema only); a written password there is refused at the root's start.
+- prime-context still serves the envelope's `secrets`; the seed ignores them. Whether the envelope keeps carrying them is prime-context's.
+
+### For P2
+
+1. Every password the seed reads (switch-db's, and `ledger.db`'s once PC-0023 lands) must be in the box's environment file (the
+   secreteer). P2c's G4 says the bed's env file already carries every variable the document names, so nothing changes there. A box
+   whose password lived only in the envelope's `secrets` now refuses the root at its start, naming the variable.
+2. ad-sphere's ingress keeps its two lines and its guard. The door now says and counts the no-root refusals, so ad-sphere's own DEBUG
+   line for that case is a duplicate (keep it or drop it). `PoolStats.refusedNoRoot` is the number to watch.
