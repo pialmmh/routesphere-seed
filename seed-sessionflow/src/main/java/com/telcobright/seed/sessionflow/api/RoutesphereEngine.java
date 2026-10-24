@@ -3,6 +3,8 @@ package com.telcobright.seed.sessionflow.api;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.internal.BootstrapRoad;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
+import com.telcobright.seed.sessionflow.internal.BusyAtTheDoor;
+import com.telcobright.seed.sessionflow.internal.DoorChannel;
 import com.telcobright.statewalk.channel.Channel;
 import com.telcobright.statewalk.channel.Delivery;
 import com.telcobright.statewalk.persistence.PersistenceMode;
@@ -156,8 +158,21 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
 
     // ── the door ────────────────────────────────────────────────────────────
 
-    /** A frame for a session, targeted by the application's decoder — the registry's own door (the channel's inbound goes the same way). */
+    /**
+     * A frame for a session, targeted by the application's decoder — the registry's own door (the channel's inbound goes the same way).
+     * It counts nothing: a refused frame is the caller's to count (a lane that counts its own {@code busy} here keeps doing so); a NEW
+     * session's first frame counted is {@link #launch}.
+     */
     public CompletableFuture<Void> deliver(String sessionId, Delivery delivery) { return registry.submitDelivery(sessionId, delivery); }
+
+    /**
+     * P1-F · A NEW session's first frame through the registry's door, COUNTED: the kit (a supervisor and the signaling machine) leaves its
+     * pools, or the registry refuses it — a refusal because every machine is live is counted {@code busy}, as at the lane's channel's
+     * inbound. The stage is the registry's own: it completes and fails as {@link #deliver}'s does.
+     */
+    public CompletableFuture<Void> launch(String sessionId, Delivery firstFrame) {
+        return BusyAtTheDoor.counted(registry.submitDelivery(sessionId, firstFrame), flow.kit().counters());
+    }
 
     /** Wait until the session has nothing more queued. */
     public boolean awaitSettled(String sessionId, long timeout, TimeUnit unit) throws InterruptedException {
@@ -174,13 +189,22 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
 
     public RoutesphereFlow<C> flow() { return flow; }
 
-    /** statewalk's registry, for what this class does not wrap (pool statistics, child states, maintenance). */
+    /**
+     * statewalk's registry, for what this class does not wrap (pool statistics, child states, maintenance). Its channel is the lane's behind
+     * the door's counter ({@code DoorChannel}; {@code lane()} is the lane's own object).
+     */
     public StatemachineRegistry<C> registry() { return registry; }
 
     public PoolStats stats() {
         var c = flow.kit().counters();
-        return new PoolStats(flow.kit().settings().pool(), registry.activeCellCount(), c.machinesBuilt.get(), c.launched.get(), c.busy.get(),
-            c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held());
+        return new PoolStats(flow.kit().settings().pool(), registry.activeCellCount(), supervisorsBuilt(), c.launched.get(), c.busy.get(),
+            c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held(), registry.activeIdCount());
+    }
+
+    /** P1-F · The supervisors the registry's pool ever built — statewalk's own count (the base builds no machine; each type has its pool). */
+    private long supervisorsBuilt() {
+        var pool = registry.poolStatistics(flow.name());
+        return pool == null ? 0 : pool.totalCreated();
     }
 
     /** Stop: statewalk drives every live session to its end first (FAILED, the forced failover's reason), so each still settles and records. */
@@ -202,7 +226,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
             .signaling(b.signaling, s.pool());
         if (flow.renewsBudget()) rb.child(BudgetChild.spec(flow), s.pool());
         for (MachineSpec<?> child : b.children) rb.child(child, s.pool());
-        rb.channel((Channel) b.channel, (BiFunction) b.decoder);
+        rb.channel(new DoorChannel<>((Channel) b.channel, flow.kit().counters()), (BiFunction) b.decoder);    // P1-F: busy counted at the door
         if (b.store != null) rb.persistence(b.persistenceMode, b.store);
         return rb.threads(s.threads())
             .maxConcurrent(s.pool())

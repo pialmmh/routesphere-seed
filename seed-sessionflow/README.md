@@ -24,7 +24,7 @@ the application                            its forced answers ■ + the hooks it
 | `api.RoutesphereContext` | Everything one session knows (persisted: ids and amounts only). Your context extends it |
 | `api.RoutesphereFacts` / `api.Ingress` | The facts your signaling machine stamps — with the INGRESS the root is found by (`listen` · `esl` · `vlan` · `topic`) |
 | `api.RoutesphereEngine<C>` | statewalk's registry: your supervisor class + your signaling machine + the budget child + your channel |
-| `dependencies.RoutesphereKit` | What the host hands in — by hand, or `RoutesphereKit.fromBootstrap(source, app)` from ONE bootstrap url (R8) |
+| `dependencies.RoutesphereKit` | What the host hands in — by hand, or `RoutesphereKit.fromBootstrap(source, app)` from ONE bootstrap url (R8); `toBuilder()` gives that kit the lane's own sinks before it is used |
 | `api.Deployment` / `api.RootResources` | What prime-context's bootstrap said: the served roots and each root's own resources |
 
 ## 2 · Write an application — one package (R6)
@@ -81,6 +81,14 @@ RoutesphereKit kit = RoutesphereKit.fromBootstrap(BootstrapSources.fromYml(yml, 
 RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdSupervisor(new AdFlow(kit)))
     .signaling(AdPlayback.spec(...)).channel(httpChannel, AdFrames::decode).start();
 ```
+
+The engine's numbers (`engine.stats()`, a `PoolStats`), each counted where it happens (P1-F): `machinesBuilt` is the supervisors
+statewalk's pool built (the base builds no machine; it never passes `size` unless a reset failed); `busy` is a NEW session refused
+because every machine was live (statewalk's `CAPACITY_EXCEEDED`), counted at the lane's channel's inbound and at
+`engine.launch(id, firstFrame)` — `engine.deliver` counts nothing, so a lane that counts its own refusals there keeps doing so;
+`sessions` is the sessions live now, `live` the registry's live CELLS (kept as it was: two per session — its supervisor and its
+signaling machine — three with the budget child). A `PoolStats` made with the ten numbers of 2.0 still builds; its `sessions` is
+`PoolStats.NOT_COUNTED` (-1).
 
 ## 3 · The contract (R2–R4)
 
@@ -141,11 +149,32 @@ prime-context:
   token-env: AD_SPHERE_BOOTSTRAP_TOKEN           # the NAME of the variable, never its value
 ```
 
+**These two lines live at RUN TIME only** (the architect's rule, P1-F): in the box's external `config/application.yml` beside the jar
+(Quarkus reads `config/application.yml` from the process's working directory — the unit's `WorkingDirectory=`), or in the unit's
+environment (`PRIME_CONTEXT_BOOTSTRAP_URL`, `PRIME_CONTEXT_TOKEN_ENV`). **Never inside the jar**: Quarkus's BUILD reads every file in the
+jar, and it runs seed-bootstrap-config's factory too — a url the build can see makes `mvn package` fetch prime-context. Nor in the
+build's own run-time places: no `config/` folder or `.env` in the project's directory, no `PRIME_CONTEXT_*` exported in the shell that
+builds. There is no build-time guard in code: no reliable, documented signal tells a config factory it runs inside the build (what was
+looked at: `seed-bootstrap-config/README.md`).
+
 `RoutesphereKit.fromBootstrap(source, app)` reads prime-context's envelope (§C.1: `config.routesphere` — the roots, the pool, the timers,
 the identification rules, each root's `switch-db`, `kafka`, `redis`, `ledger`, `journal`), and makes per served root its tree (seed-tenant's
 `PrimeContextTrees`), its doors, its ledger (`switch` = seed-switch-ledger's MemLedger port, the default; `orchestrix` for the transition),
 its CDR road (`cdr_<root>` on its own Kafka) and its journal (its own directory). The makers are found on the classpath; a missing one is
-refused in words. The start says, one line per root, every resource it got. The sample envelope and the `tenant_created` message are
+refused in words. The start says, one line per root, every resource it got.
+
+The lane's OWN sinks — its SDR writer, its task store (the ad's `ad_sdr`, its `campaign_task`), a CDR road of its own beside the root's —
+go on that kit before it is used (P1-F):
+
+```java
+RoutesphereKit kit = RoutesphereKit.fromBootstrap(source, "ad-sphere", makers).toBuilder()
+    .sdr(adSdrWriter).tasks((ctx, row) -> campaigns.closed(row))
+    .build();                                     // then the flow, then the engine
+```
+
+`toBuilder()` keeps everything the road made — the trees, the doors, the ledger, the CDR road, the journal, the clock, the zone, the
+settings and the road itself, so the engine on the new kit starts the road and its close closes what the road opened; the new kit's own
+books (slots, counters, the CDR sequence) start fresh. Refused, in words, once an engine runs on the kit. The sample envelope and the `tenant_created` message are
 `src/test/resources/bootstrap/` — pinned byte for byte with prime-context.
 
 The application's OWN keys (everything in `config` beside `routesphere`: `adsphere.*`, `sdr.*`, `quarkus.http.*`, …) reach its
@@ -234,8 +263,18 @@ mvn -o test        # at the reactor's root: the whole suite (never one module al
 (the smallest application), `LabCall` (the smallest signaling machine the 4.0 builder accepts). The four samples (ad, voice, WiFi,
 SMS) and their scenarios live in `seed-sessionflow-samples`.
 
+`testkit.FakeKafka` (P1-F) runs on kafka-clients 3.7.1 (the seed's) and 4.0.0 (Quarkus 3.26.1's — an application's tests on that
+platform can use it): its producer is `MockProducer(boolean, Partitioner, Serializer, Serializer)`, in both — 4.0 removed the
+three-argument one. `FakeKafkaOnKafka4Test` reads FakeKafka's class file for it; the run on both versions is in `docs/agents/P1-F-state.md`.
+The seed's own `KafkaCdrSinkPerRootTest`, `SessionsInTheAirTest` (and seed-tenant's `DoorbellTest`) still build the three-argument one:
+they run on the seed's 3.7.1 only.
+
 ## 9 · History
 
+- 2026-10-24, morning — P1-F, the six gaps the ad-sphere port found, fixed additively: the bootstrap url at RUN time only (no build
+  guard: no documented signal), `RoutesphereKit.toBuilder()` (the lane's own sinks on a kit from the bootstrap), `CdrSinks.all` keeps
+  the root, `machinesBuilt` = the supervisors' pool's own count and `busy` counted at the door (`DoorChannel`, `engine.launch`; never
+  `deliver`), `PoolStats.sessions` beside the cells, `FakeKafka` on kafka-clients 3.7.1 and 4.0.0. State: `docs/agents/P1-F-state.md`.
 - 2026-10-24 — P1-E, the framework round (the owner's R1–R13 of 2026-10-23): `identifyTenant` / `identifyPartner` forced with the base's
   helpers (`Lookups`), the facts' `SessionStart` sample refused at start, one supervisor class per lane (`RoutesphereSupervisor`, the one
   engine door), the builder (`RoutesphereApp`; the SMS sample made with it), the kit from ONE bootstrap url (`fromBootstrap`, the makers on the
