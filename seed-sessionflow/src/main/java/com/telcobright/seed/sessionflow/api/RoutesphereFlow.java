@@ -281,15 +281,47 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —
      * the caller's partner (by its ip or number prefix); the ad — the chosen campaign's advertiser (the candidate names it); the WiFi — the
      * subscriber; the SMS — the bind's account. The helpers find a partner inside the session's tree: {@link #byPartnerId},
-     * {@link #byPartnerName}. Null = nobody: {@code PARTNER_NOT_FOUND} (a free candidate runs with no tier).
+     * {@link #byPartnerName} and, P1-O, through its route: {@link #byRouteCredentials}, {@link #byIp}, {@link #byDomain},
+     * {@link #bySipAccount}, {@link #byPrefix}, {@link #bySystemId}. Null = nobody: {@code PARTNER_NOT_FOUND}, or the cause the helper
+     * recorded ({@code CREDENTIALS_REJECTED}) (a free candidate runs with no tier).
      */
     protected abstract Tier identifyPartner(C ctx, Candidate candidate);
 
     /** (c) helper · The leaf of a partner whose id is known, INSIDE THE SESSION'S OWN TREE; null = no id, or this tree holds no such partner. */
     protected final Tier byPartnerId(C ctx, Integer partnerId) { return kit.lookups().byPartnerId(ctx, partnerId); }
 
-    /** (c) helper · The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share it. */
+    /** (c) helper · The leaf of the ONE partner of the session's own tree with exactly this name; null = none, or two partners share it. */
     protected final Tier byPartnerName(C ctx, String partnerName) { return kit.lookups().byPartnerName(ctx, partnerName); }
+
+    /**
+     * (c) helper · P1-O · The leaf of the route a client authenticates on (user name + password, the SMS lane's {@code route_metadata}); an
+     * unknown user name or a wrong password → null and the session refused {@code CREDENTIALS_REJECTED}. The password is never kept or logged.
+     */
+    protected final Tier byRouteCredentials(C ctx, String username, String password) { return kit.lookups().byRouteCredentials(ctx, username, password); }
+
+    /** (c) helper · P1-O · The same check answering the route itself (its name names the lane's caller); null = refused as above. */
+    protected final RouteEntry routeOfCredentials(C ctx, String username, String password) { return kit.lookups().routeOfCredentials(ctx, username, password); }
+
+    /** (c) helper · P1-O · {@link #byRouteCredentials} under the SMPP bind's name. */
+    protected final Tier bySystemId(C ctx, String systemId, String password) { return kit.lookups().bySystemId(ctx, systemId, password); }
+
+    /** (c) helper · P1-O · The leaf of the route served at this address, as served; null = none. */
+    protected final Tier byIp(C ctx, String ip) { return kit.lookups().byIp(ctx, ip); }
+
+    /** (c) helper · P1-O · The leaf of the route served at {@code ip:port}, else at the bare ip — the port the lane saw, no default. */
+    protected final Tier byIp(C ctx, String ip, int port) { return kit.lookups().byIp(ctx, ip, port); }
+
+    /** (c) helper · P1-O · The leaf of the route served at this domain; null = none. */
+    protected final Tier byDomain(C ctx, String domain) { return kit.lookups().byDomain(ctx, domain); }
+
+    /** (c) helper · P1-O · The leaf of a SIP account's partner; null = none. */
+    protected final Tier bySipAccount(C ctx, String account) { return kit.lookups().bySipAccount(ctx, account); }
+
+    /** (c) helper · P1-O · The leaf of the partner of the longest prefix of the number the tree serves; null = none. */
+    protected final Tier byPrefix(C ctx, String number) { return kit.lookups().byPrefix(ctx, number); }
+
+    /** (c) helper · P1-O · Every route of the leaf's partner in its tier (one partner, many routes). */
+    protected final List<com.telcobright.rtc.domainmodel.mysqlentity.Route> routesOf(Tier leaf) { return kit.lookups().routesOf(leaf); }
 
     /**
      * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}

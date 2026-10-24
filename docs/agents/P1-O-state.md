@@ -34,3 +34,21 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   OneIndexPerSnapshotTest 1/1); each restored with a fresh mtime. Existing test touched: IdentifyPartnerTest (A2: a name is EXACT — its two
   case-blind assertions moved; res_44_7's partner renamed `Twin`, a `twin` added). The whole reactor from the worktree **650/0/0/3**
   (03:29–03:33). Next: item 2 (the helpers in Lookups, Secrets, CREDENTIALS_REJECTED).
+- 2026-10-25 03:59 · **item 2 done** — the helpers in `Lookups` (each a get on the session's installed index; the flow's protected final
+  delegates beside `byPartnerId`): `byRouteCredentials(ctx, user, password)` + `routeOfCredentials` (the matched `RouteEntry`: a lane names
+  its caller by the route — the ad's B6 preprocessing) + `bySystemId` (the SMPP name); an unknown user name, a wrong, missing or hashed-
+  as-password value → null and `ctx.identificationCause = CREDENTIALS_REJECTED` (one cause; `SessionCause.CREDENTIALS_REJECTED` new;
+  `RoutesphereContext.identificationCause` new; the password is not kept, logged or put in a text). `byIp(ctx, ip)` the bare key, `byIp(ctx,
+  ip, port)` ip:port then the bare ip, no :5060 default; `byDomain`; `bySipAccount`; `byPrefix` (one get per prefix length present);
+  `routesOf(leaf)` from `partnerVsRoutes`. `AdmissionChain`: the cause cleared before each candidate's identifyPartner; a null leaf → the
+  recorded cause, else PARTNER_NOT_FOUND. `internal/Secrets` (A4): `{pbkdf2}<it>$<salt>$<hash>` recomputed (PBKDF2WithHmacSHA256, 16-byte
+  salt, 32-byte hash, 210 000 by default; the stored hash's length honoured, a count outside 1…5 000 000 or a part that does not parse
+  verifies nothing), anything else the legacy plaintext by `MessageDigest.isEqual` on UTF-8 bytes; a blank stored value verifies nothing;
+  `Secrets.hash(char[])` for writers. Testkit `routeCredentials(partner, routeName, user, password)` (B5: the hashed form, at
+  TESTKIT_ITERATIONS = 1 000 for speed). Measured here: **PBKDF2 at 210 000 iterations verifies in ~91 ms** (hash 182 ms cold) — every
+  request on a hashed row pays it (open point for the report). Red first by compile (no helpers / Secrets / cause); green: SecretsTest 4
+  (the published PBKDF2-HMAC-SHA256 vectors c=1/2/4096; a value of this form computed with Python's hashlib, non-ASCII password, pinned),
+  RouteLayerHelpersTest 5 (both forms, one cause for every refusal, ip:port first, no :5060 default, SIP, prefix, routesOf, the cause through
+  a dry-run admission, each candidate its own cause, no password in a note). Mutants 5, 5 red (an unknown user name without the cause 2/5,
+  the admission ignoring the cause 2/5, no reset per candidate 1/5, the bare ip first 1/5, a :5060 default 1/5), each restored with a fresh
+  mtime; the plain-equals mutant is not provable (A4: by eye). The whole reactor **660/0/0/3** (03:55–03:58). Next: item 3 (the scans gone).

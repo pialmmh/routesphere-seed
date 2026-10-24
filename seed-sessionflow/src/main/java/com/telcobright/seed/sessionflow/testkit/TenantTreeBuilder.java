@@ -16,6 +16,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.ad.CampaignSla;
 import com.telcobright.rtc.domainmodel.mysqlentity.ad.RouteVsCampaign;
 import com.telcobright.rtc.domainmodel.nonentity.DynamicContext;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
+import com.telcobright.seed.sessionflow.internal.Secrets;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -41,6 +42,9 @@ import java.util.Map;
  * writers store it; {@code legacyRouteCredentials} keeps it in plaintext like the SMS rows), {@code sipAccount}, {@code prefix}.
  */
 public final class TenantTreeBuilder {
+
+    /** The iterations of the hashed passwords {@code routeCredentials} writes: few, for a test's speed (the form and the check are the real ones). */
+    public static final int TESTKIT_ITERATIONS = 1_000;
 
     /** One tenant under construction. */
     public final class TenantSpec {
@@ -161,6 +165,18 @@ public final class TenantTreeBuilder {
                 partnerByRouteKey.put(key, declared(partnerId));
             }
             return this;
+        }
+
+        /**
+         * P1-O · A route a client authenticates on (the architect's B5): the route {@code routeName} of the partner, its
+         * {@code route_metadata} row with {@code extra1} = the user name and {@code extra2} = the password in the HASHED form a route
+         * writer stores ({@code {pbkdf2}…}, {@link Secrets}) — at {@link #TESTKIT_ITERATIONS} iterations for a test's speed (a writer's
+         * {@code Secrets.hash} uses {@link Secrets#DEFAULT_ITERATIONS}; the verifier reads the count from the row).
+         */
+        public TenantSpec routeCredentials(int partnerId, String routeName, String username, String password) {
+            byte[] salt = new byte[Secrets.SALT_BYTES];
+            new java.security.SecureRandom().nextBytes(salt);
+            return credentials(partnerId, routeName, username, Secrets.hash(password.toCharArray(), salt, TESTKIT_ITERATIONS));
         }
 
         /**

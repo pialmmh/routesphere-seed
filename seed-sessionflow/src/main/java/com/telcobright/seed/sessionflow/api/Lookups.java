@@ -1,7 +1,12 @@
 package com.telcobright.seed.sessionflow.api;
 
+import com.telcobright.rtc.domainmodel.mysqlentity.Route;
+import com.telcobright.seed.sessionflow.internal.Secrets;
 import com.telcobright.seed.sessionflow.spi.TenantResolver;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -9,6 +14,12 @@ import java.util.function.Supplier;
  * The base's one-line lookups (R2): the helpers a lane's {@code identifyRootLevelTenant} and {@code identifyPartner} are written with. A root is
  * found by its door against prime-context's identification rules (the kit's resolver); a partner inside the session's OWN tree. Every
  * answer is the thing or null — null is refused by the base ({@code NO_TENANT}, {@code PARTNER_NOT_FOUND}), never a default.
+ *
+ * <p><b>The partner through its route</b> (P1-O; the owner's rule of 2026-10-25: "the client passes a param … matched with the routes key
+ * indexed in the DynamicContext; route → partner"): {@link #byRouteCredentials} (the route's user name + password, the SMS lane's
+ * {@code route_metadata.extra1/extra2}; {@link #bySystemId} under the SMPP name), {@link #byIp} / {@link #byDomain} ({@code route.field5}),
+ * {@link #bySipAccount}, {@link #byPrefix}, {@link #byPartnerId}. Every one is a map get on the index the session's snapshot was installed
+ * with ({@link RootIndex}) — never a walk of a list.
  *
  * <p>A subclass of {@link RoutesphereFlow} calls them as its own final helpers ({@code byListener(ip, port)}); a lane made with
  * {@link RoutesphereApp} gets this object as its lambdas' last argument. One per kit, shared by every session: it keeps nothing.
@@ -48,16 +59,79 @@ public final class Lookups {
     /** The leaf of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = no id, or no such partner there. */
     public Tier byPartnerId(RoutesphereContext ctx, Integer partnerId) {
         if (partnerId == null || ctx.tree == null) return null;
-        EntryPartner entry = ctx.tree.entryOf(partnerId);
-        return entry == null ? null : Tier.entry(entry);
+        return leafOf(ctx.tree.entryOf(partnerId));
     }
 
-    /** The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share the name. */
+    /** The leaf of the ONE partner of the session's own tree with exactly this name (P1-O: exact); null = none, or two partners share it. */
     public Tier byPartnerName(RoutesphereContext ctx, String partnerName) {
         if (partnerName == null || partnerName.isBlank() || ctx.tree == null) return null;
-        EntryPartner entry = ctx.tree.entryNamed(partnerName);
-        return entry == null ? null : Tier.entry(entry);
+        return leafOf(ctx.tree.entryNamed(partnerName));
     }
+
+    /**
+     * The leaf of the route a client authenticates on: its user name ({@code route_metadata.extra1}) and its password, checked against
+     * {@code route_metadata.extra2} ({@link Secrets}: the hashed form recomputed, the legacy plaintext compared in constant time). An unknown
+     * user name, a wrong or missing password — null, and the session's {@code identificationCause} is {@code CREDENTIALS_REJECTED} (one cause
+     * for both: an unknown user name is not told from a wrong password). The password is not kept, logged or put in any text.
+     */
+    public Tier byRouteCredentials(RoutesphereContext ctx, String username, String password) {
+        RouteEntry route = routeOfCredentials(ctx, username, password);
+        return route == null ? null : leafOf(route.entry());
+    }
+
+    /** The same check, answering the route itself (a lane that names its caller by the route: the ad's {@code ad_caller}); null as above. */
+    public RouteEntry routeOfCredentials(RoutesphereContext ctx, String username, String password) {
+        RootIndex index = indexOf(ctx);
+        RouteEntry route = index == null ? null : index.routeOfUsername(username);
+        if (route != null && Secrets.verify(password, route.metadata().getExtra2())) return route;
+        ctx.identificationCause = SessionCause.CREDENTIALS_REJECTED;
+        return null;
+    }
+
+    /** {@link #byRouteCredentials} under the SMPP bind's name: the {@code system_id} is the route's user name. */
+    public Tier bySystemId(RoutesphereContext ctx, String systemId, String password) { return byRouteCredentials(ctx, systemId, password); }
+
+    /** The leaf of the route served at this address, exactly as served (an ip, a domain); null = none. No port is assumed. */
+    public Tier byIp(RoutesphereContext ctx, String ip) { return leafOf(routeKey(ctx, ip)); }
+
+    /** The leaf of the route served at {@code ip:port}, else at the bare {@code ip} (the port the lane saw: no {@code :5060} default). */
+    public Tier byIp(RoutesphereContext ctx, String ip, int port) {
+        if (ip == null) return null;
+        EntryPartner withPort = routeKey(ctx, ip + ":" + port);
+        return leafOf(withPort != null ? withPort : routeKey(ctx, ip));
+    }
+
+    /** The leaf of the route served at this domain ({@code route.field5}); null = none. */
+    public Tier byDomain(RoutesphereContext ctx, String domain) { return leafOf(routeKey(ctx, domain)); }
+
+    /** The leaf of a SIP account's partner ({@code sipAccountWisePartners}); null = none. */
+    public Tier bySipAccount(RoutesphereContext ctx, String account) {
+        RootIndex index = indexOf(ctx);
+        return index == null ? null : leafOf(index.sipAccount(account));
+    }
+
+    /** The leaf of the partner of the longest prefix of {@code number} the tree serves — at most one get per prefix length; null = none. */
+    public Tier byPrefix(RoutesphereContext ctx, String number) {
+        RootIndex index = indexOf(ctx);
+        return index == null ? null : leafOf(index.longestPrefixOf(number));
+    }
+
+    /** Every route of the leaf's partner in its tier ({@code partnerVsRoutes}: one partner, many routes); empty above the leaf, or none. */
+    public List<Route> routesOf(Tier leaf) {
+        if (leaf == null || leaf.partner() == null) return List.of();
+        Map<Integer, List<Route>> byPartner = leaf.tenant().getContext().getPartnerVsRoutes();
+        List<Route> routes = byPartner == null ? null : byPartner.get(leaf.partner().getIdPartner());
+        return routes == null ? List.of() : Collections.unmodifiableList(routes);
+    }
+
+    private static RootIndex indexOf(RoutesphereContext ctx) { return ctx.tree == null ? null : ctx.tree.index(); }
+
+    private static EntryPartner routeKey(RoutesphereContext ctx, String key) {
+        RootIndex index = indexOf(ctx);
+        return index == null ? null : index.routeKey(key);
+    }
+
+    private static Tier leafOf(EntryPartner entry) { return entry == null ? null : Tier.entry(entry); }
 
     private String byDoor(String kind, String match) {
         return match == null || match.isBlank() ? null : byIngress(new Ingress(kind, match));
