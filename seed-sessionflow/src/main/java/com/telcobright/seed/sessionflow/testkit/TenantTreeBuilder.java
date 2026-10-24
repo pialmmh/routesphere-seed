@@ -5,6 +5,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.mysqlentity.RatePlan;
 import com.telcobright.rtc.domainmodel.mysqlentity.Route;
+import com.telcobright.rtc.domainmodel.mysqlentity.RouteMetadata;
 import com.telcobright.rtc.domainmodel.mysqlentity.ad.AdCaller;
 import com.telcobright.rtc.domainmodel.mysqlentity.ad.AdContent;
 import com.telcobright.rtc.domainmodel.mysqlentity.ad.AdRate;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,11 @@ import java.util.Map;
  * <p>Reseller tiers of any depth (P1 §H): {@code root("btcl").reseller(44, "Res44")} declares partner 44 in btcl AND the tier
  * {@code res_44} under it; {@code .reseller(7, "Sub7")} from there declares {@code res_44_7} — three tiers. Two roots (two operators in
  * one JVM, their partner ids overlapping) are two builders: one tree per root.
+ *
+ * <p>P1-O · the route layer as prime-context serves it, so a lane's sample finds its partner the way the switch does — never through a
+ * private map of its own: {@code route(partner, key…)} (a route per key: {@code routeWisePartners}, {@code ipOrDomainWiseRoute}),
+ * {@code routeCredentials(partner, routeName, user, password)} ({@code usernameVsRouteMetaData}, the password stored hashed as the route
+ * writers store it; {@code legacyRouteCredentials} keeps it in plaintext like the SMS rows), {@code sipAccount}, {@code prefix}.
  */
 public final class TenantTreeBuilder {
 
@@ -52,7 +59,13 @@ public final class TenantTreeBuilder {
         final Map<Integer, List<CampaignContent>> members = new LinkedHashMap<>();
         final Map<String, AdContent> contents = new LinkedHashMap<>();
         final Map<Integer, CampaignSla> slas = new LinkedHashMap<>();
-        long rateIds = 0, criterionIds = 0, memberIds = 0, bindingIds = 0;
+        final Map<String, Route> routeByKey = new LinkedHashMap<>();
+        final Map<String, Partner> partnerByRouteKey = new LinkedHashMap<>();
+        final Map<String, RouteMetadata> routeByUsername = new LinkedHashMap<>();
+        final Map<String, Partner> partnerBySipAccount = new LinkedHashMap<>();
+        final Map<String, Partner> partnerByPrefix = new LinkedHashMap<>();
+        long rateIds = 0, criterionIds = 0, memberIds = 0, bindingIds = 0, metadataIds = 0;
+        int routeIds = 90_000;
 
         TenantSpec(String dbName, String parent) { this.dbName = dbName; this.parent = parent; }
 
@@ -136,6 +149,69 @@ public final class TenantTreeBuilder {
             return this;
         }
 
+        /**
+         * P1-O · A route of the partner served at each key — an ip, an {@code ip:port}, a domain ({@code route.field5}) — one route per
+         * key, in {@code routeWisePartners} and {@code ipOrDomainWiseRoute} (and {@code partnerVsRoutes}, {@code idVsRoute}).
+         */
+        public TenantSpec route(int partnerId, String... keys) {
+            for (String key : keys) {
+                Route r = newRoute(partnerId, key);
+                r.setField5(key);
+                routeByKey.put(key, r);
+                partnerByRouteKey.put(key, declared(partnerId));
+            }
+            return this;
+        }
+
+        /**
+         * P1-O · A route a client authenticates on with the user name and the password of its legacy SMS row ({@code route_metadata}:
+         * {@code extra1} the user name, {@code extra2} the password IN PLAINTEXT) — the second form the verifier reads.
+         */
+        public TenantSpec legacyRouteCredentials(int partnerId, String routeName, String username, String plaintextPassword) {
+            return credentials(partnerId, routeName, username, plaintextPassword);
+        }
+
+        /** P1-O · The partner of a SIP account ({@code sipAccountWisePartners}). */
+        public TenantSpec sipAccount(int partnerId, String account) { partnerBySipAccount.put(account, declared(partnerId)); return this; }
+
+        /** P1-O · The partner of a number prefix ({@code prefixWisePartners}). */
+        public TenantSpec prefix(int partnerId, String prefix) { partnerByPrefix.put(prefix, declared(partnerId)); return this; }
+
+        /**
+         * The route's row as prime-context serves it: {@code route_metadata.route} is not on the wire (the index finds the row's route by
+         * the row's id among the tier's routes), the route carries its rows.
+         */
+        TenantSpec credentials(int partnerId, String routeName, String username, String storedPassword) {
+            Route r = newRoute(partnerId, routeName);
+            RouteMetadata row = new RouteMetadata();
+            row.setId((int) ++metadataIds);
+            row.setExtra1(username);
+            row.setExtra2(storedPassword);
+            row.setExtra4("HTTP");
+            HashSet<RouteMetadata> rows = new HashSet<>();
+            rows.add(row);
+            r.setRouteMetaData(rows);
+            routeByUsername.put(username, row);
+            return this;
+        }
+
+        private Route newRoute(int partnerId, String routeName) {
+            declared(partnerId);
+            Route r = new Route();
+            r.setIdroute(++routeIds);
+            r.setRouteName(routeName);
+            r.setSwitchId(1);
+            r.setIdPartner(partnerId);
+            routes.put(r.getIdroute(), r);
+            return r;
+        }
+
+        private Partner declared(int partnerId) {
+            Partner p = partners.get(partnerId);
+            if (p == null) throw new IllegalStateException("partner " + partnerId + " is not declared in " + dbName + " — declare it before its routes");
+            return p;
+        }
+
         public TenantSpec rule(long id, String code, String name, int priority, String... criteria) {
             AdRule r = new AdRule();
             r.setId(id);
@@ -212,9 +288,9 @@ public final class TenantTreeBuilder {
             rules.forEach(r -> byCode.putIfAbsent(r.getCode(), r));
             Map<Integer, List<Route>> partnerVsRoutes = new HashMap<>();
             routes.values().forEach(r -> partnerVsRoutes.computeIfAbsent(r.getIdPartner(), k -> new ArrayList<>()).add(r));
-            return new DynamicContext(Map.of(), partners, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), partnerPlans, plans, Map.of(), List.of(), List.of(),
-                partnerVsRoutes, Map.of(), Map.of(), Map.of(), Map.of(), accounts,
+            return new DynamicContext(Map.of(), partners, routeByKey, partnerByPrefix, Map.of(), Map.of(), partnerByRouteKey, Map.of(), Map.of(),
+                partnerBySipAccount, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), partnerPlans, plans, Map.of(),
+                List.of(), List.of(), partnerVsRoutes, routeByUsername, Map.of(), Map.of(), Map.of(), accounts,
                 routes, routeVsCampaign, byCampaign, rules, byCode, callers, settings, adRates, members, contents, slas);
         }
     }

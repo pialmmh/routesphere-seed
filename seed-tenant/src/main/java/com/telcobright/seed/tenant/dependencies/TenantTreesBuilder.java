@@ -10,6 +10,7 @@ import com.telcobright.seed.context.spi.TenantDirectory;
 import com.telcobright.seed.context.spi.TopicNaming;
 import com.telcobright.seed.tenant.api.TenantTrees;
 import com.telcobright.seed.tenant.internal.PrimeContextTreeSource;
+import com.telcobright.seed.tenant.internal.RootInstall;
 import com.telcobright.seed.tenant.internal.Trees;
 import com.telcobright.seed.tenant.spi.TreeSource;
 
@@ -63,11 +64,12 @@ public final class TenantTreesBuilder {
         Objects.requireNonNull(source, "source(...) or primeContext(...) is required");
         TreeGate beforeShown = gate;
         ContextLoader<Tenant> loader = (tenantId, secrets) -> passed(tenantId, Trees.ready(source.fetch(tenantId)), beforeShown);
-        TenantContextsBuilder<Tenant> b = TenantContexts.<Tenant>builder()
-            .directory(directory).loader(loader).listener(listener).debounceMs(debounceMs).backstop(backstop).kafkaFailFast(kafkaFailFast);
+        RootInstall install = new RootInstall();                         // P1-O: every snapshot installed with its index, at its load
+        TenantContextsBuilder<Tenant> b = TenantContexts.<Tenant>builder().directory(directory).loader(loader).indexer(install)
+            .listener(listener).debounceMs(debounceMs).backstop(backstop).kafkaFailFast(kafkaFailFast);
         if (loadTimeout != null) b.loadTimeout(loadTimeout);
         if (bootstrap != null && !bootstrap.isBlank()) b.doorbell(bootstrap, DOORBELL_BASE, TopicNaming.underscore(), group);
-        return new TenantTrees(b.build());
+        return new TenantTrees(b.build(), install);
     }
 
     /** A loaded tree through the gate, before the cell swaps it in (a throw = a failed load: the last tree stays). */

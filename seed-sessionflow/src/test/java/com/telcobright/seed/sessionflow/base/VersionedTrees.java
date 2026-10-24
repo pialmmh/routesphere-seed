@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.base;
 
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootTree;
+import com.telcobright.seed.sessionflow.api.RootTreeInstaller;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 
 import java.util.Map;
@@ -12,12 +13,16 @@ import java.util.concurrent.ConcurrentHashMap;
 final class VersionedTrees implements TenantLookup {
 
     private final Map<String, RootTree> byRoot = new ConcurrentHashMap<>();
+    private final RootTreeInstaller installer = new RootTreeInstaller();
 
+    /** A load of the root's tree: installed with its index, once (P1-O). */
     VersionedTrees serve(Tenant root) {
         RootTree before = byRoot.get(root.getDbName());
-        byRoot.put(root.getDbName(), RootTree.of(root.getDbName(), before == null ? 1 : before.version() + 1, root));
+        byRoot.put(root.getDbName(), installer.install(root.getDbName(), before == null ? 1 : before.version() + 1, root));
         return this;
     }
+
+    @Override public long rootIndexBuilds() { return installer.rootIndexBuilds(); }
 
     @Override public Optional<RootTree> snapshot(String root) { return Optional.ofNullable(root == null ? null : byRoot.get(root)); }
 

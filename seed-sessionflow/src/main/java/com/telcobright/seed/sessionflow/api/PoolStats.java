@@ -22,9 +22,11 @@ package com.telcobright.seed.sessionflow.api;
  * @param refusedNoRoot requests refused at the door because the lane's rule named no root (null, or the rule failed), since start (P1-K:
  *                      said and counted by {@code RoutesphereEngine.identifyRootLevelTenant}; the ingress answers them in its own
  *                      protocol); {@link #NOT_COUNTED} in a record made with the ten numbers of 2.0 or the eleven of P1-F
+ * @param rootIndexBuilds the root indexes the kit's trees built, since start (P1-O): one per served root per load — never one per
+ *                      session; {@link #NOT_COUNTED} when the trees do not count them, or in a record made with fewer numbers
  */
 public record PoolStats(int size, int live, long machinesBuilt, long launched, long busy, long ended, long cdrPublished, long cdrLost,
-                        long owed, int slotsHeld, int sessions, long refusedNoRoot) {
+                        long owed, int slotsHeld, int sessions, long refusedNoRoot, long rootIndexBuilds) {
 
     /** {@code sessions} of a record made with the ten numbers of 2.0 — and {@code refusedNoRoot} of one made with ten or eleven: not counted. */
     public static final int NOT_COUNTED = -1;
@@ -39,5 +41,11 @@ public record PoolStats(int size, int live, long machinesBuilt, long launched, l
     public PoolStats(int size, int live, long machinesBuilt, long launched, long busy, long ended, long cdrPublished, long cdrLost,
                      long owed, int slotsHeld, int sessions) {
         this(size, live, machinesBuilt, launched, busy, ended, cdrPublished, cdrLost, owed, slotsHeld, sessions, NOT_COUNTED);
+    }
+
+    /** The twelve numbers of P1-K, kept (P1-O): {@code rootIndexBuilds} not counted ({@link #NOT_COUNTED}). */
+    public PoolStats(int size, int live, long machinesBuilt, long launched, long busy, long ended, long cdrPublished, long cdrLost,
+                     long owed, int slotsHeld, int sessions, long refusedNoRoot) {
+        this(size, live, machinesBuilt, launched, busy, ended, cdrPublished, cdrLost, owed, slotsHeld, sessions, refusedNoRoot, NOT_COUNTED);
     }
 }

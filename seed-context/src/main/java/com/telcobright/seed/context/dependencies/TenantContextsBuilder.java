@@ -5,6 +5,7 @@ import com.telcobright.seed.context.internal.TenantContextsImpl;
 import com.telcobright.seed.context.publishes.ContextListener;
 import com.telcobright.seed.context.spi.ContextLoader;
 import com.telcobright.seed.context.spi.SecretResolver;
+import com.telcobright.seed.context.spi.SnapshotIndexer;
 import com.telcobright.seed.context.spi.TenantDirectory;
 import com.telcobright.seed.context.spi.TopicNaming;
 
@@ -25,6 +26,7 @@ public final class TenantContextsBuilder<T> {
     private String kafkaBootstrap, topicBase, kafkaGroupId;
     private TopicNaming naming = TopicNaming.underscore();
     private boolean kafkaFailFast;
+    private SnapshotIndexer<T> indexer = SnapshotIndexer.none();
 
     public TenantContextsBuilder<T> directory(TenantDirectory directory) { this.directory = directory; return this; }
 
@@ -58,10 +60,16 @@ public final class TenantContextsBuilder<T> {
     /** Abort start when Kafka is unreachable, instead of retrying forever in the background. */
     public TenantContextsBuilder<T> kafkaFailFast(boolean failFast) { this.kafkaFailFast = failFast; return this; }
 
+    /**
+     * P1-O · What each snapshot carries beside its context, built ONCE in the step that installs it (the first load and every reload):
+     * a reader takes {@code snapshot.index()} and never walks the context. A throw fails that load; the last good snapshot stays.
+     */
+    public TenantContextsBuilder<T> indexer(SnapshotIndexer<T> indexer) { this.indexer = Objects.requireNonNull(indexer, "indexer"); return this; }
+
     public TenantContexts<T> build() {
         Objects.requireNonNull(directory, "directory(...) is required — a cache never invents its tenants");
         Objects.requireNonNull(loader, "loader(...) is required");
         return new TenantContextsImpl<>(directory, loader, secrets, listener, debounceMs, backstop, loadTimeout,
-            startTimeout, kafkaBootstrap, topicBase, naming, kafkaGroupId, kafkaFailFast);
+            startTimeout, kafkaBootstrap, topicBase, naming, kafkaGroupId, kafkaFailFast, indexer);
     }
 }

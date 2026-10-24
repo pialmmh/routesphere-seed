@@ -109,6 +109,7 @@ public final class LiveTenantTrees implements LiveTrees {
     @Override public Optional<Tenant> tenantByDbName(String rootDbName, String dbName) { return trees.tenantByDbName(rootDbName, dbName); }
     @Override public Optional<Tenant> rootOfCode(String code) { return trees.rootOfCode(code); }
     @Override public Optional<RootTree> snapshot(String root) { return trees.snapshot(root); }
+    @Override public long rootIndexBuilds() { return trees.rootIndexBuilds(); }
 
     @Override public void close() { trees.close(); }
 }

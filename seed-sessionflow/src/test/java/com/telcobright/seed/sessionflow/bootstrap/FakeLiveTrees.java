@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.bootstrap;
 
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootTree;
+import com.telcobright.seed.sessionflow.api.RootTreeInstaller;
 import com.telcobright.seed.sessionflow.spi.LiveTrees;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.spi.TreeGate;
@@ -23,6 +24,8 @@ final class FakeLiveTrees implements LiveTrees {
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
     private volatile TenantLookup lookup = TenantLookup.of();
     private volatile TreeGate gate = TreeGate.OPEN;
+    private final RootTreeInstaller installer = new RootTreeInstaller();
+    private final Map<String, RootTree> installed = new ConcurrentHashMap<>();
 
     FakeLiveTrees(Map<String, Tenant> prime, List<String> roots) {
         this.prime.putAll(prime);
@@ -60,7 +63,16 @@ final class FakeLiveTrees implements LiveTrees {
         rebuild();
     }
 
-    private void rebuild() { lookup = TenantLookup.of(served.stream().map(prime::get).toArray(Tenant[]::new)); }
+    /** P1-O: every served root installed once per serve or reload, with its index — a session never builds one. */
+    private void rebuild() {
+        lookup = TenantLookup.of(served.stream().map(prime::get).toArray(Tenant[]::new));
+        installed.keySet().retainAll(served);
+        for (String root : served) {
+            RootTree last = installed.get(root);
+            int version = versions.getOrDefault(root, 0);
+            if (last == null || last.version() != version || last.tree() != prime.get(root)) installed.put(root, installer.install(root, version, prime.get(root)));
+        }
+    }
 
     @Override public Optional<Tenant> root(String rootDbName) { return lookup.root(rootDbName); }
     @Override public Optional<Tenant> tenantOfPartner(String rootDbName, int partnerId) { return lookup.tenantOfPartner(rootDbName, partnerId); }
@@ -68,7 +80,7 @@ final class FakeLiveTrees implements LiveTrees {
     @Override public Optional<Tenant> rootOfCode(String code) { return lookup.rootOfCode(code); }
 
     @Override
-    public Optional<RootTree> snapshot(String root) {
-        return lookup.snapshot(root).map(t -> RootTree.of(t.root(), versions.getOrDefault(root, 0), t.tree()));
-    }
+    public Optional<RootTree> snapshot(String root) { return root == null ? Optional.empty() : Optional.ofNullable(installed.get(root)); }
+
+    @Override public long rootIndexBuilds() { return installer.rootIndexBuilds(); }
 }
