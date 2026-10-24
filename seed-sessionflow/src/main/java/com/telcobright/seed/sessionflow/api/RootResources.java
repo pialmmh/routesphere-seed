@@ -16,8 +16,10 @@ import java.util.function.Function;
  * @param redisUrl the root's Redis ({@code redis://host:port}); null when none (keys are {@code <root>:<app>:<name>}, R9)
  * @param ledger   the ledger's kind ({@code switch}, the default — R12; {@code orchestrix}, the transition) and its own words
  * @param dir      the root's own directory: the sessions in the air ({@code sessions-in-the-air.jsonl}), the switch ledger's WAL and queue
+ * @param ledgerDb the switch ledger's OWN login ({@code ledger.db}, P1-J): its user and password by reference, its url and schema
+ *                 switch-db's when it says none; null = the ledger connects with switch-db's login, as before
  */
-public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, String redisUrl, Ledger ledger, Path dir) {
+public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, String redisUrl, Ledger ledger, Path dir, SwitchDb ledgerDb) {
 
     public RootResources {
         Objects.requireNonNull(root, "root");
@@ -26,11 +28,41 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
         Objects.requireNonNull(dir, "the root's directory");
     }
 
+    /** The six words of P1-E, kept (P1-J): no login of the ledger's own — the switch ledger connects with switch-db's. */
+    public RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, String redisUrl, Ledger ledger, Path dir) {
+        this(root, switchDb, kafka, redisUrl, ledger, dir, null);
+    }
+
+    /**
+     * P1-J · The login the switch ledger connects with: its own ({@code ledger.db}; the url and schema switch-db's where it says none),
+     * else switch-db's. prime-context grants the app's role and the ledger's role separately (separation of duties at the database).
+     */
+    public SwitchDb ledgerLogin() { return ledgerDb == null ? switchDb : ledgerDb.over(switchDb); }
+
     /**
      * The switch database: a JDBC url, the root's schema, the user, and the password BY REFERENCE ({@code env:<NAME>}) — never a value in
      * the config.
      */
     public record SwitchDb(String url, String schema, String username, String passwordRef) {
+
+        /** P1-J · This login in another's place: the url and the schema of {@code base} where this one says none. */
+        public SwitchDb over(SwitchDb base) {
+            return new SwitchDb(url != null ? url : base == null ? null : base.url(), schema != null ? schema : base == null ? null : base.schema(),
+                username, passwordRef);
+        }
+
+        /**
+         * P1-J · The password from the PROCESS environment only ({@code env:<NAME>}) — never the envelope's {@code secrets} (the secrets
+         * ruling: secreteer's env file); refused in words when the variable is not there.
+         */
+        public String passwordFromTheEnvironment(Function<String, String> environment) {
+            if (passwordRef == null || passwordRef.isBlank()) return null;
+            if (!passwordRef.startsWith("env:")) throw new IllegalStateException("the switch ledger's password-ref '" + passwordRef + "' is not env:<NAME> — a password is never written in the config");
+            String name = passwordRef.substring(4);
+            String value = environment.apply(name);
+            if (value == null || value.isBlank()) throw new IllegalStateException("the switch ledger's password " + name + " is not in the process environment (never read from the bootstrap's secrets)");
+            return value;
+        }
 
         /** The password: {@code env:<NAME>} from the process environment, else from the envelope's {@code secrets}; refused in words when neither has it. */
         public String password(Function<String, String> environment, Map<String, String> secrets) {

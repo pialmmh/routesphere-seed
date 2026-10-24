@@ -98,10 +98,19 @@ public final class DeploymentReader {
         RootResources.SwitchDb switchDb = db.isEmpty() ? null
             : new RootResources.SwitchDb(word(db, "url"), word(db, "schema"), word(db, "username"), word(db, "password-ref"));
         Map<String, Object> ledger = map(block.get("ledger"));
-        String kind = word(ledger, "kind");
+        String kind = word(ledger, "kind") == null ? RootResources.Ledger.SWITCH : word(ledger, "kind");
         return new RootResources(root, switchDb,
             new RootResources.KafkaRoad(bootstrap, (int) number(kafka, "partitions", 1), (short) number(kafka, "replication", 1)),
-            word(map(block.get("redis")), "url"), new RootResources.Ledger(kind == null ? RootResources.Ledger.SWITCH : kind, ledger), Path.of(dir));
+            word(map(block.get("redis")), "url"), new RootResources.Ledger(kind, ledger), Path.of(dir), ledgerLoginOf(at, kind, map(ledger.get("db"))));
+    }
+
+    /** P1-J · {@code ledger.db {user, password-ref[, url, schema]}}: the switch ledger's own login; absent = null (switch-db's, as before). */
+    private static RootResources.SwitchDb ledgerLoginOf(String at, String kind, Map<String, Object> db) {
+        if (db.isEmpty()) return null;
+        if (!RootResources.Ledger.SWITCH.equals(kind)) throw refused(at + ".ledger.db is the switch ledger's own login, and this root's ledger is " + kind);
+        String user = word(db, "user") != null ? word(db, "user") : word(db, "username");
+        if (user == null) throw refused(at + ".ledger.db names no user: the switch ledger's own login connects as a role of its own");
+        return new RootResources.SwitchDb(word(db, "url"), word(db, "schema"), user, word(db, "password-ref"));
     }
 
     private static List<IdentificationRule> rulesOf(Map<String, Object> rs, List<String> roots, String app) {

@@ -241,3 +241,12 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   its tier exists, a ring → "ACCOUNT_NOT_FOUND: account 77 of tier 0 is not held in schema btcl_res_5"; NewAccountsReachTheLedgerTest 2
   green after (it pays; a burst = one merge now + one at the end, the burst's account merged); 6 mutants, 6 red; under an 8-thread CPU
   hog (stopped by PID, load 6→15) 20 runs, 0 red, 40 run. Direct: switch-ledger 65, sessionflow 236, seed-tenant 23. Next: item 2.
+- 2026-10-24 16:26 · **P1-J item 2 done** — G3: the switch ledger's OWN login, additive. `RootResources.ledgerDb` (the 7th word; the six-word
+  constructor kept) + `ledgerLogin()` (its own, url and schema switch-db's where it says none — `SwitchDb.over`; else switch-db's);
+  the reader takes `ledger.db {user, password-ref[, url, schema]}` (`username` read too), refused in words with no user or on a ledger
+  that is not the switch ledger; `SwitchLedgerMaker` connects with `ledgerLogin()`; the ledger's own password from the PROCESS
+  environment only (`SwitchDb.passwordFromTheEnvironment`); switch-db's unchanged (the environment, then the envelope's secrets — P1-E's
+  behaviour, pinned by SwitchLedgerMakerTest; it contradicts G4's house rule: left for the architect). The NEW sample
+  `bootstrap/deployment-with-ledger-login.json` (btcl with a login, link3 without); the pinned samples byte-identical (e1ca4f43…,
+  63f396e2…). Red first (compile); LedgerLoginFromTheBootstrapTest 3, LedgerOwnLoginTest 3 green; 6 mutants, 6 red. Direct: sessionflow
+  239, switch-ledger 68, seed-tenant 23, samples 73. Next: item 3 (docs).
