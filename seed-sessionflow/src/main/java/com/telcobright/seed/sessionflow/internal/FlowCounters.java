@@ -20,6 +20,12 @@ public final class FlowCounters {
      * never {@code deliver}, so a lane that counts its own refusals there is not counted twice.
      */
     public final AtomicLong busy = new AtomicLong();
+    /**
+     * P1-K · Requests refused at the door because the lane's rule named no root — null, or the rule failed (the owner's ruling of
+     * 2026-10-24: rejected, and said). Counted by {@code RoutesphereEngine.identifyRootLevelTenant} ({@code NoRootAtTheDoor}); such a
+     * request never got a session, a machine or a CDR: the ingress answers it in its own protocol.
+     */
+    public final AtomicLong refusedNoRoot = new AtomicLong();
     public final AtomicLong ended = new AtomicLong();
     public final AtomicLong cdrPublished = new AtomicLong();
     /** Calls whose CDR could not be written on any tenant. */

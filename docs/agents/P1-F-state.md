@@ -286,3 +286,16 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   only, the refusal's words; the ledger's own login "like switch-db's") and the sessionflow README's history line. SwitchLedgerMakerTest's
   pin of P1-E's "the environment, then the secrets" moved to the new behaviour IN item 1's commit (2a5a919: the removed method would not
   compile in it): `aPasswordByReference_isReadFromTheEnvironmentOnly_neverWritten_neverRepeated`. Next: item 5, red first.
+- 2026-10-24 17:32 · item 5 DONE (the coordinator's, on the owner's ruling: "if we fail to identify the root level tenant at the ingress
+  points, the request shall be rejected and logs shall be generated") — the seed's door `RoutesphereEngine.identifyRootLevelTenant`: a rule
+  that names no root (null, or it throws) → a WARN line (the app = `flow.name()`, the ingress's kind and value, the session id when the
+  facts carry one, the reason in words; a failed rule's stack), `refusedNoRoot` counted (FlowCounters; PoolStats' 12th number, the ten- and
+  eleven-number constructors kept → NOT_COUNTED), and still null. `internal/NoRootAtTheDoor`: per door a 60 s window (the first refusal in
+  full, the rest counted, ONE summary line at the door's next refusal after the window, no timer thread; at most 1024 doors held apart,
+  then "other doors"); debug on = every refusal said. `engine.saidAtTheDoor()` = the last 64 lines. README: the ingress's two lines and the
+  guard. Red first (the old door: no line, count 0, a throwing rule escaped): NoRootAtTheDoorTest (6) + NoRootAtTheDoorWindowTest (6,
+  ManualClock). The burst: 1000 refusals from 8 threads → 1 line, count 1000; 1000 then the window's end → 3 lines, "… and 999 more",
+  1001; a second window "… and 10 more", 1012. Mutants 13/13 red (the log, the count, the window gone / never closing / its boundary / its
+  count not reset, one window for every door, no bound, rule one, a throwing rule escaping, the old door, the session id, the summary).
+  Under the 8-thread hog (load 12 → 22): the door test 20 runs, the window test 10 runs, 0 red; the hog stopped by PID. Direct:
+  sessionflow 251, seed-tenant 23, samples 73, switch-ledger 70. Next: item 4 (the reactor, a clean copy, the report).
