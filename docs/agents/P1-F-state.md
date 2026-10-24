@@ -221,3 +221,6 @@ its gate 569/0/0/3).
   the root is the lane's rule over the INGRESS (`engine.identifyRootLevelTenant`), NEVER a value the request carries (a body field, a
   header, a query) — a caller that could name the root could bill another operator; `root()` carries only what that rule answered. The
   ad's round (P2c) pins it with a test on its side. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 14:17 · **P1-I DONE** — items 1–4; the head 4650da7 from clean in the worktree **572/0/0/3** (142 s) and on a git-archive clean
+  copy **572/0/0/3** (138 s), two short lock holds 14:12–14:17 (offline, no install); +3 tests; 6 mutants red; the hog runs in item 2's
+  line. The report's P1-I section: `docs/agents/P1-F-report.md`.

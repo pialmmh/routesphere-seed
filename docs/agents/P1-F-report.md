@@ -212,3 +212,34 @@ The seed's other sleeps, read one by one and left:
    tree was served — else its tree stays served without doors or roads until the next try (harmless, but not "nothing").
 2. **One process per root**: a root's switch ledger has ONE writer (STANDALONE); never two ad-sphere instances on one root.
 3. A deployment document must not carry `pending-root` until prime-context's checker accepts it.
+
+## P1-I
+
+The architect's brief (`docs/agents/P1-I-brief.md`): a connect cut by the admission's budget says so; the budget test holds under load;
+the root's source guarded. On this branch, fast-forwarded by the architect to routesphere-flow 97afef3 (the owner's readable shape R14,
+gate 569/0/0/3). Additive; every existing signature kept.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | e35fed7 | A connect that did not complete says which clock cut it (`OrchestrixLedger.noConnectionWithin`). Java's HttpClient applies the request's own timeout (the smaller of the read timeout and the time left) to the connect phase too. So: the admission's budget → "no connection within the N ms the admission had left"; the read timeout, when it is the shorter clock → "within its N ms read timeout"; the configured connect timeout → today's words. Always a `LedgerFault`: nothing was sent, the money is certain (no unsure line). |
+| 2 | 9a91dc4 | The budget test's clocks far apart: the budget 1 s (a loaded local connect finishes inside it), the answer 3 s, its own read timeout 5 s; the words matched for any N; the elapsed between the budget and its own timeout. |
+| 3 | 4650da7 | Docs: `RoutesphereFacts.root()` and the README (§4, the root's source) — the root is the lane's rule over the ingress, NEVER a value the request carries (a body field, a header, a query): a caller that could name the root could bill another operator. |
+
+### Numbers
+
+- **Head 4650da7**: the worktree from clean **572/0/0/3** (142 s, 14:12) and a git-archive clean copy of the head **572/0/0/3** (138 s,
+  14:14), two short lock holds (offline, no install); 97afef3 was 569/0/0/3.
+- **+3 tests, all new**: OrchestrixLedgerConnectTest 3 — red first on a connect that cannot complete (a local port whose accept queue
+  is full: backlog 1, never accepted; the kernel drops the SYN): 2 of 3 red with "no connection within 30000 ms", the architect's finding
+  reproduced at will. **6 mutants, 6 red** (item 1: 5 — one turns the cut connect into a NoAnswer and an unsure line appears; item 2: 1 —
+  the budget not applied). One existing test touched: OrchestrixLedgerTest's budget test (its clocks, its words' match, its bound).
+- **Item 2, under an 8-thread CPU hog** (stopped by PID), OrchestrixLedgerTest 20 runs each: **before** (the 200 ms budget, item 1's
+  code) 0 of 20 red, 240 tests, load 9→18; **after** 0 of 20 red, 240 tests, load 13–17. The cut connect the gates saw (twice, at load
+  ~3.5–6) did not come in these 20 runs; item 1's test makes it on demand, and the new budget (1 s) leaves a loaded connect five times
+  the time the old one did.
+
+### For P2 / the owner
+
+- Nothing to change in ad-sphere for P1-I; its round (P2c) pins the root's source with a test on its side.
