@@ -338,3 +338,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   nested maps and lists walked; `RootResources` and `Deployment` print through them. Red first: NoWrittenPasswordRefIsPrintedTest (3; the
   three records printed the written refs). Mutants 5/5 red. Direct: sessionflow 272, switch-ledger 70, seed-tenant 23, samples 73.
   Next: item 4 (docs, the reactor, a clean copy, the report).
+- 2026-10-24 18:26 · item 4, docs — the sessionflow README: the ingress section (the machine's start road said through the same sayer; "No
+  request writes a log line of its own": `api.LogText`, the escapes, 200 / 1000 characters, a lane's own use), the class table, the
+  `refusedNoRoot` words, the bootstrap section (no record prints a written password-ref), the history line. Next: the reactor, a clean copy.
