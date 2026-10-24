@@ -20,8 +20,8 @@ import java.math.BigDecimal;
  * is reverted by the next call settle … since the account's expiry is derived from its parent purchase, moving the link is what makes a
  * topup's longer validity real"). Behind a switch's recharge road; the WiFi does not call it at go-live.
  *
- * <p>{@link #debit} (2026-10-24, the WiFi's clock time, F10) is its mirror: a positive delta TAKEN off the live balance under the same lock,
- * floored at zero — the minutes a time purchase's clock ran with no session holding its windows.
+ * <p>{@link #capAt} (2026-10-24, the WiFi's clock time, F10) is its mirror: the live balance capped at a ceiling under the same lock, never
+ * raised, never below zero — the minutes a time purchase's clock ran with no session holding its windows.
  */
 public final class Credit {
 
@@ -56,27 +56,28 @@ public final class Credit {
     }
 
     /**
-     * Take {@code delta} (positive) off the account's live balance, under its lock, NEVER below zero; the WAL carries it to the database. A
-     * move outside any session: the WiFi's clock time (F10, the owner 2026-10-24 — "time based accounting shall be done through packageaccount
-     * entity, the consumed amount shall be reflected in the package accounts"): the minutes a purchase's clock ran while no session held its
-     * windows. It holds the SAME per-account lock as the reserve, the settle and the credit, so it is race-free against a session settling. An
-     * account already at zero is not written again (before = after = its balance).
+     * The account's live balance CAPPED at {@code ceiling}, under its lock: a balance above the ceiling moves DOWN to it (never below zero), a
+     * balance at or under it is left alone — a cap never raises an account. A move outside any session: the WiFi's clock time (F10, the owner
+     * 2026-10-24 — "time based accounting shall be done through packageaccount entity, the consumed amount shall be reflected in the package
+     * accounts"): the ceiling is the minutes left until the purchase's end, so the account reflects the time its clock ran while no session
+     * held its windows. The SAME per-account lock as the reserve, the settle and the credit; the amount is decided UNDER the lock, so two
+     * callers bringing one account to one ceiling take the time once (the second finds nothing above it). The WAL carries it to the database.
      *
-     * @throws IllegalArgumentException a delta of zero or less, or an account the schema does not hold
+     * @throws IllegalArgumentException a ceiling that is null, or an account the schema does not hold
      * @throws com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault the ledger did not answer, or the lock was not free in time
      */
-    public Credited debit(String dbName, long accountId, BigDecimal delta, String reference) {
-        if (delta == null || delta.signum() <= 0) throw new IllegalArgumentException("a debit is positive: " + delta + " (" + reference + ")");
+    public Credited capAt(String dbName, long accountId, BigDecimal ceiling, String reference) {
+        if (ceiling == null) throw new IllegalArgumentException("a cap names its ceiling (" + reference + ")");
+        BigDecimal floor = ceiling.signum() < 0 ? BigDecimal.ZERO : ceiling;
         try (AccountLocks.Held held = locks.hold(dbName, accountId)) {
             PackageAccount live = heldAccount(dbName, accountId);
             BigDecimal before = Books.balanceOf(live);
-            if (before.signum() <= 0) {
-                log.info("DEBIT {} | account {} of {}: already at {} {}, nothing to take", reference, accountId, dbName, before, live.getUom());
+            if (before.compareTo(floor) <= 0) {
+                log.debug("CAP {} | account {} of {}: {} {} is at or under the ceiling {}, left alone", reference, accountId, dbName, before, live.getUom(), floor);
                 return new Credited(accountId, before, before, live.getIdpackagePurchase());
             }
-            BigDecimal taken = delta.min(before);
-            PackageAccount updated = books.moveBalance(dbName, live, before.subtract(taken), taken.negate());
-            log.info("DEBIT {} | account {} of {}: -{} {} → {}", reference, accountId, dbName, taken, live.getUom(), updated.getBalanceAfter());
+            PackageAccount updated = books.moveBalance(dbName, live, floor, floor.subtract(before));
+            log.info("CAP {} | account {} of {}: {} → {} {} (−{})", reference, accountId, dbName, before, updated.getBalanceAfter(), live.getUom(), before.subtract(floor));
             return new Credited(accountId, before, updated.getBalanceAfter(), updated.getIdpackagePurchase());
         }
     }

@@ -95,63 +95,70 @@ class CreditTest {
         assertThat(lab.dbBalance("res_2", 11)).isEqualByComparingTo("100");
     }
 
-    // ── the debit (F10, the WiFi's clock time) ──
+    // ── the cap (F10, the WiFi's clock time) ──
 
     @Test
-    void aDebitTakesTheDeltaOffTheLiveBalance_mySqlSeesIt() {
-        Credit.Credited taken = ledger.credit().debit("res_2", 11, new BigDecimal("30"), "clock-1");
+    void aCapMovesAHigherBalanceDownToTheCeiling_mySqlSeesIt() {
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("70"), "clock-1");
 
-        assertThat(taken.before()).isEqualByComparingTo("100");
-        assertThat(taken.after()).isEqualByComparingTo("70");
+        assertThat(capped.before()).isEqualByComparingTo("100");
+        assertThat(capped.after()).isEqualByComparingTo("70");
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("70");
         LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).compareTo(new BigDecimal("70")) == 0);
     }
 
     @Test
-    void aDebitNeverTakesTheBalanceBelowZero_andAnEmptyAccountIsLeftAlone() {
-        Credit.Credited first = ledger.credit().debit("res_2", 11, new BigDecimal("150"), "clock-2");
-        assertThat(first.after()).as("floored at zero, never negative").isEqualByComparingTo("0");
+    void aCapNeverRaisesTheBalance_andTheSecondCapToTheSameCeilingTakesNothing() {
+        Credit.Credited above = ledger.credit().capAt("res_2", 11, new BigDecimal("250"), "clock-2");
+        assertThat(above.after()).as("a ceiling above the balance leaves it alone").isEqualByComparingTo("100");
 
-        Credit.Credited again = ledger.credit().debit("res_2", 11, new BigDecimal("5"), "clock-3");
-        assertThat(again.before()).isEqualByComparingTo("0");
-        assertThat(again.after()).isEqualByComparingTo("0");
+        ledger.credit().capAt("res_2", 11, new BigDecimal("60"), "clock-3");
+        Credit.Credited again = ledger.credit().capAt("res_2", 11, new BigDecimal("60"), "clock-4");
+        assertThat(again.before()).isEqualByComparingTo("60");
+        assertThat(again.after()).as("the time is taken once").isEqualByComparingTo("60");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("60");
+    }
+
+    @Test
+    void aCeilingBelowZero_takesTheAccountToZero_neverBelow() {
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("-5"), "clock-5");
+        assertThat(capped.after()).isEqualByComparingTo("0");
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("0");
         LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).signum() == 0);
     }
 
     @Test
-    void aDebitWhileAReserveIsOpen_takesTheFreeBalance_andTheSettleStillReturnsTheRest() {
+    void aCapWhileAReserveIsOpen_capsTheFreeBalance_andTheSettleStillReturnsTheRest() {
         LevelAdmission level = tier();
         Reservation held = ledger.port().reserve(level, new BigDecimal("10"), "c-9#L0").orElseThrow();
         level.setDebitReference("c-9#L0");
         level.setReservedAmount(held.reserved());
 
-        Credit.Credited taken = ledger.credit().debit("res_2", 11, new BigDecimal("20"), "clock-4");
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("70"), "clock-6");
 
-        assertThat(taken.before()).isEqualByComparingTo("90");
-        assertThat(taken.after()).isEqualByComparingTo("70");
+        assertThat(capped.before()).isEqualByComparingTo("90");
+        assertThat(capped.after()).isEqualByComparingTo("70");
         TierSettlement done = ledger.port().settle(level, new BigDecimal("4"));
         assertThat(done.balanceAfter()).as("70 + the 6 the settle returns").isEqualByComparingTo("76");
     }
 
     @Test
-    void theDebitWaitsForTheAccountsLock_theOnePortsVerbsHold() throws Exception {
+    void theCapWaitsForTheAccountsLock_theOnePortsVerbsHold() throws Exception {
         AccountLocks locks = AccountLocks.of(lab.ledger(), 2000);
-        CompletableFuture<BigDecimal> taken;
+        CompletableFuture<BigDecimal> capped;
         try (AccountLocks.Held held = locks.hold("res_2", 11)) {
-            taken = CompletableFuture.supplyAsync(() -> ledger.credit().debit("res_2", 11, new BigDecimal("5"), "clock-5").after());
+            capped = CompletableFuture.supplyAsync(() -> ledger.credit().capAt("res_2", 11, new BigDecimal("95"), "clock-7").after());
             Thread.sleep(300);
-            assertThat(taken.isDone()).as("the debit waits while a verb holds the account").isFalse();
+            assertThat(capped.isDone()).as("the cap waits while a verb holds the account").isFalse();
             assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
         }
-        assertThat(taken.get(5, TimeUnit.SECONDS)).isEqualByComparingTo("95");
+        assertThat(capped.get(5, TimeUnit.SECONDS)).isEqualByComparingTo("95");
     }
 
     @Test
-    void aNonPositiveDebit_andAnUnknownAccount_areRefusedInWords() {
-        assertThatThrownBy(() -> ledger.credit().debit("res_2", 11, BigDecimal.ZERO, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("positive");
-        assertThatThrownBy(() -> ledger.credit().debit("res_2", 11, new BigDecimal("-1"), "x")).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> ledger.credit().debit("res_2", 99, BigDecimal.ONE, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not held in schema res_2");
+    void aCapWithNoCeiling_andAnUnknownAccount_areRefusedInWords() {
+        assertThatThrownBy(() -> ledger.credit().capAt("res_2", 11, null, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ceiling");
+        assertThatThrownBy(() -> ledger.credit().capAt("res_2", 99, BigDecimal.ONE, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not held in schema res_2");
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
     }
 
