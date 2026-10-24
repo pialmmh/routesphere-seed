@@ -210,3 +210,10 @@ its gate 569/0/0/3).
   drops the SYN): OrchestrixLedgerConnectTest red 2 of 3, both "no connection within 30000 ms" (the architect's finding reproduced);
   3 green after; 5 mutants, 5 red (one turns the cut connect into a NoAnswer: an unsure line appears). seed-sessionflow direct green.
   Next: item 2.
+- 2026-10-24 14:11 · **P1-I item 2 done** — the budget test's clocks far apart: the budget 1 s (`BUDGET_MS`: a loaded local connect finishes
+  inside it), the answer 3 s (`SLOW_ANSWER_MS`), its own read timeout 5 s; the words matched as "within the <n> ms the admission had left"
+  (a loaded box can leave 999 of 1000); the elapsed bound between the budget and its own timeout (1 s − 50 ms … 4 s); one hand to the
+  server (the repeat had no time). Under an 8-thread CPU hog (stopped by PID), OrchestrixLedgerTest 20 runs each: BEFORE (the 200 ms
+  budget, item 1's code) **0 of 20 red**, 240 run, load 9→18 — the cut connect the architect's gates saw twice did not come in these 20
+  (item 1's test reproduces it at will); AFTER **0 of 20 red**, 240 run, load 13–17. A mutant (the budget not applied: its own read
+  timeout only) red. Next: item 3.

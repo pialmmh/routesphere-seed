@@ -62,6 +62,8 @@ class OrchestrixLedgerTest {
      * fires it), the read timeout (1 s — a quick answer stays under it), the slow answer (3 s — a late client timer still fires first).
      */
     static final long CONNECT_TIMEOUT_MS = 30_000, READ_TIMEOUT_MS = 1_000, SLOW_ANSWER_MS = 3_000;
+    /** P1-I 2 · The admission's budget in the budget test: long enough for a loaded local connect, shorter than the slow answer. */
+    static final long BUDGET_MS = 1_000;
     final Function<String, String> env = Map.of("PORTAL_API_TOKEN", "t0ken-not-a-secret")::get;
 
     @BeforeEach
@@ -219,13 +221,14 @@ class OrchestrixLedgerTest {
     @Test
     void aReserveNeverWaitsLongerThanTheAdmissionHasLeft_evenWhenItsOwnTimeoutIsLonger() {
         LedgerPort patient = ledger(5000);                                          // its own timeout would wait 5 s
-        slowCalls.set(1);
+        slowCalls.set(1);                                                           // the answer comes at SLOW_ANSWER_MS (3 s)
         long startedMs = System.currentTimeMillis();
 
-        assertThatThrownBy(() -> patient.reserve(level("9001"), new BigDecimal("0.50"), "ad-11#L0", 200))
-            .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("200 ms the admission had left");
+        // P1-I 2 · the clocks far apart: the budget (1 s) — a loaded local connect finishes inside it —, the answer (3 s), its own 5 s
+        assertThatThrownBy(() -> patient.reserve(level("9001"), new BigDecimal("0.50"), "ad-11#L0", BUDGET_MS))
+            .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageMatching("(?s).*within the \\d+ ms the admission had left.*");
 
-        assertThat(System.currentTimeMillis() - startedMs).as("given up at the 200 ms it was given, not at its own 5 s").isLessThan(4_800);
+        assertThat(System.currentTimeMillis() - startedMs).as("given up at the 1 s it was given, not at its own 5 s").isBetween(BUDGET_MS - 50, 4_000L);
         assertThat(charges()).as("no time was left for the repeat").hasSize(1);
     }
 
