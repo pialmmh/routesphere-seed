@@ -79,8 +79,9 @@ public final class LiveTenantTrees implements LiveTrees {
         }
     }
 
-    /** P1-G · A root whose tree could not be loaded leaves the directory again: nothing of it stays served, the next serve loads it. */
-    private void unserve(String root) {
+    /** P1-G · A root whose tree could not be loaded — P1-H, or whose roads could not be made — leaves the directory again: nothing of it stays served. */
+    @Override
+    public void unserve(String root) {
         served.remove(root);
         trees.refreshDirectory();
     }

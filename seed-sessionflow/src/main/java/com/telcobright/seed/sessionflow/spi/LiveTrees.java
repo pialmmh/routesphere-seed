@@ -19,6 +19,12 @@ public interface LiveTrees extends TenantLookup, AutoCloseable {
      */
     void serve(String root);
 
+    /**
+     * P1-H · Take a served root out again — its roads could not all be made: nothing of it stays served (not in {@link #roots()}, no tree),
+     * so the next serve loads it. Default: nothing (trees that cannot take a root out); a lane's own trees implement it.
+     */
+    default void unserve(String root) { }
+
     /** Load one served root's tree again (a tier was added under it): the next session takes the new snapshot. */
     void reload(String root);
 

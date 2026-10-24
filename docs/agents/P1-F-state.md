@@ -150,3 +150,21 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
 - 2026-10-24 07:14 · **P1-G DONE** — items 1–7; the head 0c26518 from clean in the worktree **557/0/0/3** (131 s) and on a git-archive clean
   copy **557/0/0/3** (128 s), one lock hold 07:09–07:13 (offline, no install); +22 tests, all new; 35 mutants, 35 red. The report's P1-G
   section: `docs/agents/P1-F-report.md`.
+
+## P1-H
+
+The coordinator's round (its message, 2026-10-24 ~07:16): a root's roads all-or-nothing (P1-G's open point 2, rated a money risk) and
+two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
+
+- 2026-10-24 07:19 · START — from 9d97760 (557/0/0/3 at its code head 0c26518). Running: P1-H 1.
+- 2026-10-24 07:36 · **P1-H item 1 done** — a root's roads are all-or-nothing. `serveItsRoads`: the ledger, the CDR road and the journal
+  (each written down in `internal/RootRoadsMade` as opened), the topics, then the doors, the deployment LAST; any failure closes what
+  THIS try opened — the ledger first (out of PerRootLedger, closed), then the CDR road (out, never closed: its producer is shared; a
+  producer this try made for a Kafka no other root uses IS closed), then the journal —, takes the tree's serve back (`LiveTrees.unserve`,
+  new default doing nothing; seed-tenant's trees and FakeLiveTrees take the root out) and returns the reason; the root goes pending.
+  The guard: no second ledger for a root while one is open (`refuseASecondLedger`, said in an ERROR): a ledger whose close failed is
+  kept as still open and closed first at the next try. The start too: a start refused half-way closes what it opened. Red first:
+  RootsRoadsAllOrNothingTest red as the architect said — TWO open ledgers on the timer's road, the journal's exception thrown out of
+  onTenantCreated on the event's road; 5 green after (the refused-start test written with the fix, its red shown by its mutant); 8
+  mutants, 8 red; direct: seed-sessionflow 226, samples 73, seed-tenant 23, switch-ledger 63. Not covered by a test: the journal's undo
+  after a later step (the topics, the doors) fails — no step after the journal fails in the fakes. Next: P1-H 2.

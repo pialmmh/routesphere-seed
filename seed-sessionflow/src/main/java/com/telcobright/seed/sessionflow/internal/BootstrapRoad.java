@@ -11,6 +11,7 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.TopicProvisioner;
 import com.telcobright.seed.sessionflow.spi.BootstrapSource;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
+import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.LiveTrees;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.producer.Producer;
@@ -49,6 +50,8 @@ public final class BootstrapRoad implements AutoCloseable {
     private volatile Function<String, List<String>> laneTopics = root -> List.of();
     private final Set<String> seen = ConcurrentHashMap.newKeySet();
     private final PendingRoots pending;
+    /** P1-H · A root's ledger whose close failed: no second ledger is opened for that root until it closes. */
+    private final Map<String, AutoCloseable> notClosed = new ConcurrentHashMap<>();
     private TenantCreatedListener listener;
 
     private BootstrapRoad(BootstrapSource source, KitMakers makers, Deployment deployment) {
@@ -66,9 +69,19 @@ public final class BootstrapRoad implements AutoCloseable {
     /** The bootstrap read for {@code app}, every served root's resources made; refused in words when the envelope says too little. */
     public static BootstrapRoad open(BootstrapSource source, String app, KitMakers makers) {
         BootstrapRoad road = new BootstrapRoad(source, makers, Deployment.of(source.envelope(), app));
-        road.deployment.roots().forEach(root -> road.makeTheRootsRoads(road.deployment, root));
+        road.makeEveryServedRootsRoads();
         log.info("[{}] the bootstrap of {} ({}): {}", app, road.deployment.tenant(), source.where(), road.describe());
         return road;
+    }
+
+    /** P1-H · The start: every served root's roads, or none — a start refused half-way closes what it opened, then says why. */
+    private void makeEveryServedRootsRoads() {
+        try {
+            for (String root : deployment.roots()) makeTheRootsRoads(deployment, root, new RootRoadsMade(rootDbOf(root)));
+        } catch (RuntimeException refused) {
+            close();
+            throw refused;
+        }
     }
 
     /** The kit of this road: the trees, the doors, the ledger, the CDR road and the journal of every served root. */
@@ -109,8 +122,10 @@ public final class BootstrapRoad implements AutoCloseable {
         return topics;
     }
 
-    private void ensureTheTopicsOf(String root) {
-        RootResources.KafkaRoad kafka = deployment.root(root).orElseThrow().kafka();
+    private void ensureTheTopicsOf(String root) { ensureTheTopicsOf(deployment, root); }
+
+    private void ensureTheTopicsOf(Deployment d, String root) {
+        RootResources.KafkaRoad kafka = d.root(root).orElseThrow().kafka();
         TopicProvisioner.ensure(adminOf(kafka.bootstrap()), topicsOf(root), kafka.partitions(), kafka.replication(), kafka.bootstrap());
     }
 
@@ -150,15 +165,31 @@ public final class BootstrapRoad implements AutoCloseable {
         if (!next.roots().contains(root)) return "not listed for " + next.app() + " yet (its roots " + next.roots() + ")";
         try { trees.serve(root); }
         catch (RuntimeException e) { return "prime-context does not serve its tree yet: " + e.getMessage(); }
-        serveItsRoads(next, root, why);
+        return serveItsRoads(next, root, why);
+    }
+
+    /**
+     * P1-H · A root's roads, all or nothing: its ledger, CDR road and journal, its topics, then its doors and the deployment — in that order,
+     * the deployment last. A failure on the way closes what THIS try made (its ledger first, then its CDR road and journal), takes the
+     * tree's serve back and leaves the deployment and the doors as they were; the root goes pending (the caller). Null = served.
+     */
+    private String serveItsRoads(Deployment next, String root, String why) {
+        RootRoadsMade made = new RootRoadsMade(rootDbOf(root));
+        try {
+            makeTheRootsRoads(next, root, made);
+            ensureTheTopicsOf(next, root);
+            rules.replace(next.rules());
+            deployment = next;
+        } catch (RuntimeException e) {
+            closeAgain(made);
+            trees.unserve(root);
+            return "its roads could not all be made (" + e.getMessage() + ") — what this try opened is closed again";
+        }
+        sayItIsServed(next, root, why);
         return null;
     }
 
-    private void serveItsRoads(Deployment next, String root, String why) {
-        makeTheRootsRoads(next, root);
-        deployment = next;
-        rules.replace(next.rules());
-        ensureTheTopicsOf(root);
+    private void sayItIsServed(Deployment next, String root, String why) {
         String line = "[" + next.app() + "] the root " + root + " is served from now on (" + why + "): " + describe(next.root(root).orElseThrow());
         log.info(line);
         if (pending.roots().contains(root)) pending.note(line);
@@ -194,15 +225,79 @@ public final class BootstrapRoad implements AutoCloseable {
 
     // ── one root's roads ──
 
-    private void makeTheRootsRoads(Deployment d, String root) {
+    /** One root's ledger, CDR road and journal, each written down in {@code made} as it is opened — never a second ledger beside an open one. */
+    private void makeTheRootsRoads(Deployment d, String root, RootRoadsMade made) {
         RootResources r = d.root(root).orElseThrow();
-        String rootDb = rootDbOf(root);
+        refuseASecondLedger(made.rootDb);
         LedgerMaker.Context context = new LedgerMaker.Context(d, trees, makers.clock(), makers.environment());
         RootTree builtWith = trees.snapshot(root).orElse(null);
-        ledger.add(rootDb, makers.ledger(r.ledger().kind()).make(r, context));
-        if (builtWith != null) tiersFirst.builtOver(rootDb, builtWith.tree());
-        cdr.add(rootDb, new KafkaCdrSink(producerOf(r.kafka().bootstrap()), Topics.platform(CDR, rootDb), null));
-        journal.add(rootDb, makers.journalOf(r.dir()));
+        made.ledger = makers.ledger(r.ledger().kind()).make(r, context);
+        ledger.add(made.rootDb, made.ledger);
+        if (builtWith != null) tiersFirst.builtOver(made.rootDb, builtWith.tree());
+        makeItsCdrRoad(r, made);
+        made.journal = makers.journalOf(r.dir());
+        journal.add(made.rootDb, made.journal);
+    }
+
+    private void makeItsCdrRoad(RootResources r, RootRoadsMade made) {
+        String bootstrap = r.kafka().bootstrap();
+        if (!producers.containsKey(bootstrap)) made.producerOf = bootstrap;
+        cdr.add(made.rootDb, new KafkaCdrSink(producerOf(bootstrap), Topics.platform(CDR, made.rootDb), null));
+        made.cdrRoad = true;
+    }
+
+    /**
+     * P1-H · Never two ledgers for one root: two MemLedgers over one switch database and one directory would be two write-behind consumers
+     * for the same money. A ledger left open by a failed close is closed first; while it cannot be, or while the root has one, none is opened.
+     */
+    private void refuseASecondLedger(String rootDb) {
+        closeWhatAFailedCloseLeftOpen(rootDb);
+        if (ledger.of(rootDb).isEmpty() && !notClosed.containsKey(rootDb)) return;
+        String why = "the root " + rootDb + " has a ledger open already: a second one over its switch database and directory would be a second"
+            + " write-behind consumer for the same money — none opened";
+        log.error("[{}] {}", deployment.app(), why);
+        throw new IllegalStateException(why);
+    }
+
+    private void closeWhatAFailedCloseLeftOpen(String rootDb) {
+        AutoCloseable left = notClosed.get(rootDb);
+        if (left == null) return;
+        try {
+            left.close();
+            notClosed.remove(rootDb);
+        } catch (Exception e) {
+            log.warn("[{}] the ledger of {} left open by a failed close still does not close: {}", deployment.app(), rootDb, e.toString());
+        }
+    }
+
+    /** P1-H · What a failed try made for a root, closed again: its ledger first, then its CDR road (and the producer it made), then its journal. */
+    private void closeAgain(RootRoadsMade made) {
+        if (made.ledger != null) closeTheLedger(made.rootDb, ledger.remove(made.rootDb));
+        if (made.cdrRoad) cdr.remove(made.rootDb);
+        if (made.producerOf != null) closeQuietly(producers.remove(made.producerOf), "the CDR producer of " + made.producerOf);
+        if (made.journal != null) {
+            journal.remove(made.rootDb);
+            closeQuietly(made.journal::close, "the journal of " + made.rootDb);
+        }
+    }
+
+    private void closeTheLedger(String rootDb, LedgerPort opened) {
+        if (!(opened instanceof AutoCloseable closing)) return;
+        try {
+            closing.close();
+        } catch (Exception e) {
+            notClosed.put(rootDb, closing);
+            log.error("[{}] the ledger of {} did not close ({}): no second ledger is opened for {} until it does", deployment.app(), rootDb, e.toString(), rootDb);
+        }
+    }
+
+    private void closeQuietly(AutoCloseable part, String what) {
+        if (part == null) return;
+        try {
+            part.close();
+        } catch (Exception e) {
+            log.warn("[{}] {} did not close cleanly: {}", deployment.app(), what, e.toString());
+        }
     }
 
     private Producer<String, String> producerOf(String bootstrap) {

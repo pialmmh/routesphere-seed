@@ -52,6 +52,14 @@ final class FakeLiveTrees implements LiveTrees {
 
     @Override public void gateEachNewTree(TreeGate gate) { this.gate = gate; }
 
+    /** P1-H: a root whose roads could not be made, taken out again. */
+    @Override
+    public synchronized void unserve(String root) {
+        if (!served.remove(root)) return;
+        calls.add("unserve " + root);
+        rebuild();
+    }
+
     private void rebuild() { lookup = TenantLookup.of(served.stream().map(prime::get).toArray(Tenant[]::new)); }
 
     @Override public Optional<Tenant> root(String rootDbName) { return lookup.root(rootDbName); }

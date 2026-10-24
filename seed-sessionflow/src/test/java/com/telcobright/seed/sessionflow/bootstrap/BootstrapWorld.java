@@ -91,6 +91,11 @@ final class BootstrapWorld {
         }).clock(clock).build();
     }
 
+    /** P1-H · The world's makers with a switch ledger and a journal maker of the test's own (a journal that cannot be opened). */
+    KitMakers makers(LedgerMaker switchLedger, java.util.function.Function<Path, com.telcobright.seed.sessionflow.spi.SessionJournal> journals) {
+        return makersBuilder(switchLedger).journals(dir -> { journalDirs.add(dir); return journals.apply(dir); }).build();
+    }
+
     private KitMakers.Builder makersBuilder(LedgerMaker switchLedger) {
         return KitMakers.builder()
             .trees((deployment, src) -> trees = new FakeLiveTrees(prime, deployment.roots()))
