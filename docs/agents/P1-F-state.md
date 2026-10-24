@@ -332,3 +332,9 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   double count: an ingress that follows the two lines refuses at the door, launches nothing (launched 0, no context), the count 1. The
   window test names the app per call (its own P1-K test, touched). Mutants 7/7 red. Direct: sessionflow 269, switch-ledger 70, seed-tenant
   23, samples 73. Next: item 3.
+- 2026-10-24 18:26 · item 3 DONE — a written password-ref is never printed: `SwitchDb.toString` prints a ref that is not `env:<NAME>` as
+  `RootResources.HIDDEN_REF` ("<not an env: reference — hidden>"), an `env:` one as it is; the ledger's own words held the raw
+  `ledger.db` block too (the reader hands the whole ledger map to `Ledger`) → `Ledger.toString` hides every `password-ref` in its words,
+  nested maps and lists walked; `RootResources` and `Deployment` print through them. Red first: NoWrittenPasswordRefIsPrintedTest (3; the
+  three records printed the written refs). Mutants 5/5 red. Direct: sessionflow 272, switch-ledger 70, seed-tenant 23, samples 73.
+  Next: item 4 (docs, the reactor, a clean copy, the report).

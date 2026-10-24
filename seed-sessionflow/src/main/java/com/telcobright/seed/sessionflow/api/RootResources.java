@@ -1,8 +1,11 @@
 package com.telcobright.seed.sessionflow.api;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -39,6 +42,29 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
      */
     public SwitchDb ledgerLogin() { return ledgerDb == null ? switchDb : ledgerDb.over(switchDb); }
 
+    /** P1-L · How a {@code password-ref} that is not {@code env:<NAME>} is printed: it may be a password written by mistake. */
+    public static final String HIDDEN_REF = "<not an env: reference — hidden>";
+    private static final Set<String> PASSWORD_REF_KEYS = Set.of("password-ref", "passwordRef");
+
+    /** P1-L · A {@code password-ref} as a log may print it: {@code env:<NAME>} (or none) as it is, anything else {@value #HIDDEN_REF}. */
+    static String shownRef(Object ref) {
+        if (ref == null) return "null";
+        String text = String.valueOf(ref);
+        return text.isBlank() || text.startsWith("env:") ? text : HIDDEN_REF;
+    }
+
+    /** P1-L · Words as a log may print them: every {@code password-ref} in them, nested maps and lists too, as {@link #shownRef} says it. */
+    static Object shownWords(Object value, String key) {
+        if (key != null && PASSWORD_REF_KEYS.contains(key)) return shownRef(value);
+        if (value instanceof Map<?, ?> words) {
+            Map<Object, Object> shown = new LinkedHashMap<>();
+            words.forEach((k, v) -> shown.put(k, shownWords(v, String.valueOf(k))));
+            return shown;
+        }
+        if (value instanceof List<?> items) return items.stream().map(v -> shownWords(v, null)).toList();
+        return value;
+    }
+
     /**
      * The switch database: a JDBC url, the root's schema, the user, and the password BY REFERENCE ({@code env:<NAME>}) — never a value in
      * the config.
@@ -49,6 +75,12 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
         public SwitchDb over(SwitchDb base) {
             return new SwitchDb(url != null ? url : base == null ? null : base.url(), schema != null ? schema : base == null ? null : base.schema(),
                 username, passwordRef);
+        }
+
+        /** P1-L · The login as a log may print it: a {@code password-ref} that is not {@code env:<NAME>} is {@value RootResources#HIDDEN_REF}. */
+        @Override
+        public String toString() {
+            return "SwitchDb[url=" + url + ", schema=" + schema + ", username=" + username + ", passwordRef=" + shownRef(passwordRef) + "]";
         }
 
         /**
@@ -79,5 +111,9 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
 
         /** One of the ledger's own words, or null. */
         public String word(String key) { Object v = words.get(key); return v == null ? null : String.valueOf(v); }
+
+        /** P1-L · The ledger as a log may print it: a {@code password-ref} in its words (its {@code db} block) that is not {@code env:<NAME>} hidden. */
+        @Override
+        public String toString() { return "Ledger[kind=" + kind + ", words=" + shownWords(words, null) + "]"; }
     }
 }
