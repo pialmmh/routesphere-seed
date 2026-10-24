@@ -114,3 +114,9 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   LATER than the pin: the brief's "by a high-water mark" holds from 0f04624 on, for the accounts; the reserve table stays whole). Only after
   the tier's schema loaded. Red first: ParentRowsOfANewTierTest's parent row red (null in the cache after tierAdded); 2 green; 4 mutants, 4
   red; switch-ledger 63/0/0/0 direct. Next: item 4.
+- 2026-10-24 06:50 · **P1-G item 4 done** — prime-context's naming table copied BYTE-IDENTICAL (`git show 8f8d922:src/test/resources/
+  bootstrap/naming-cases.tsv` → seed-naming `src/test/resources/bootstrap/naming-cases.tsv`, sha256 3dfb24f2414f593fd98b…fab, the brief's);
+  `NamingCasesTest`: the table's sha256 pinned (a changed byte is red) and `TenantNames` held to all 23 cases (tierDb · parentOf · isTierOf,
+  with the seed root btcl and without one) — **every case answered as prime-context's RootNaming: no red to report**. Red first (the table
+  missing); 2 green; 4 mutants, 4 red (the seed's loose rule off, a leading zero allowed, the parent by the first underscore, one byte of
+  the table changed); seed-naming 12/0/0/0 direct. Next: item 5.
