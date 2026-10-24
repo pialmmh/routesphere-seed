@@ -82,7 +82,7 @@ public final class OrchestrixLedger implements LedgerPort {
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(settings.connectTimeoutMs())).build();
         this.returns = new ReturnRoad(settings, http, this::requestOf, owed, pace);
         log.info("ledger: orchestrix {} tenant {} profile {} (bearer from {}; connect {} ms, read {} ms); a reserve that must go back is asked of the return road {} times, and what it does not give back is journaled in {}",
-            settings.baseUrl(), settings.tenant(), settings.profile(), settings.tokenVar(), settings.connectTimeoutMs(), settings.readTimeoutMs(), pace.tries(), owed.file());
+            LogText.maskPassword(settings.baseUrl()), settings.tenant(), settings.profile(), settings.tokenVar(), settings.connectTimeoutMs(), settings.readTimeoutMs(), pace.tries(), owed.file());
         returns.resumeOpen();
     }
 
@@ -215,14 +215,14 @@ public final class OrchestrixLedger implements LedgerPort {
                 throw new LedgerFault(noConnectionWithin(waitMs, leftMs), e);           // nothing was sent: the money is certain
             } catch (HttpTimeoutException e) {
                 long left = leftOf(withinMs, startedNs);
-                if (attempt > 1) throw new NoAnswer("the ledger timed out twice on " + url + " (ref " + reference + ")", e);
-                if (left <= 0) throw new NoAnswer("the ledger did not answer within the " + waitMs + " ms the admission had left on " + url + " (ref " + reference + ")", e);
-                log.warn("ledger: {} did not answer within {} ms (ref {}) — repeating the same reference once, {} left", url, waitMs, LogText.clean(reference),
+                if (attempt > 1) throw new NoAnswer("the ledger timed out twice on " + LogText.maskPassword(url) + " (ref " + reference + ")", e);
+                if (left <= 0) throw new NoAnswer("the ledger did not answer within the " + waitMs + " ms the admission had left on " + LogText.maskPassword(url) + " (ref " + reference + ")", e);
+                log.warn("ledger: {} did not answer within {} ms (ref {}) — repeating the same reference once, {} left", LogText.maskPassword(url), waitMs, LogText.clean(reference),
                     left == Long.MAX_VALUE ? "no limit" : left + " ms");
             } catch (ConnectException | SSLHandshakeException e) {
-                throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": " + e.getMessage(), e);
+                throw new LedgerFault("the ledger is unreachable at " + LogText.maskPassword(settings.baseUrl()) + ": " + e.getMessage(), e);
             } catch (IOException e) {
-                throw new NoAnswer("the ledger call failed on " + url + " (ref " + reference + "): " + e.getMessage(), e);
+                throw new NoAnswer("the ledger call failed on " + LogText.maskPassword(url) + " (ref " + reference + "): " + e.getMessage(), e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new NoAnswer("interrupted while calling the ledger (ref " + reference + ")", e);

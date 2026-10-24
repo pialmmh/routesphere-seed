@@ -25,4 +25,7 @@ public final class LogText {
 
     /** A failure for the log's stack, every text in its chain cleaned — {@link com.telcobright.seed.logtext.LogText#cleaned}. */
     public static Throwable cleaned(Throwable failure) { return com.telcobright.seed.logtext.LogText.cleaned(failure); }
+
+    /** P1-M · A url as a log may print it, a password inside it masked — {@link com.telcobright.seed.logtext.LogText#maskPassword}. */
+    public static String maskPassword(String url) { return com.telcobright.seed.logtext.LogText.maskPassword(url); }
 }

@@ -1,5 +1,8 @@
 package com.telcobright.seed.logtext;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * P1-L / P1-M · The ONE place where a value the seed logs from a request is made fit for a log line — at the seed's BOTTOM (seed-logtext,
  * no dependency of its own), so every module reaches it: seed-campaign sits below seed-sessionflow, whose {@code api.LogText} delegates here. A session id is built from what the request
@@ -19,6 +22,43 @@ public final class LogText {
     private static final int MOST_CAUSES = 8;
 
     private LogText() {}
+
+    /** P1-M · How a password inside a url is printed. */
+    public static final String MASK = "***";
+
+    /** P1-M · A parameter whose NAME says a password (password, passwd, pwd, secret — inside a longer name too), case-blind, in a query or after ';'. */
+    private static final Pattern PASSWORD_PARAMETER = Pattern.compile("(?i)([?&;])([^=&;#?]*(?:password|passwd|pwd|secret)[^=&;#?]*)=([^&;#]*)");
+
+    /**
+     * P1-M · A url as a log may print it: the password of its userinfo ({@code redis://:secret@host}, {@code redis://user:secret@host},
+     * {@code jdbc:mysql://user:secret@host}) and the value of every parameter whose name says a password, passwd, pwd or secret — in the
+     * query ({@code ?password=…}, {@code &pwd=…}) or after a ';' ({@code ;password=…}), case-blind — are written {@value #MASK}; the rest
+     * as it is. ONLY for printing: the url used to connect is the one written. Null for null.
+     */
+    public static String maskPassword(String url) {
+        if (url == null) return null;
+        return PASSWORD_PARAMETER.matcher(maskTheUserinfoPassword(url)).replaceAll("$1$2=" + Matcher.quoteReplacement(MASK));
+    }
+
+    /** The userinfo's password: from the first ':' after "//" to the authority's last '@'; a userinfo without ':' has none. */
+    private static String maskTheUserinfoPassword(String url) {
+        int scheme = url.indexOf("://");
+        if (scheme < 0) return url;
+        int from = scheme + 3, to = endOfTheAuthority(url, from);
+        int at = url.lastIndexOf('@', to - 1);
+        if (at < from) return url;
+        int colon = url.indexOf(':', from);
+        if (colon < 0 || colon > at) return url;
+        return url.substring(0, colon + 1) + MASK + url.substring(at);
+    }
+
+    private static int endOfTheAuthority(String url, int from) {
+        for (int i = from; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '/' || c == '?' || c == '#' || c == ';') return i;
+        }
+        return url.length();
+    }
 
     /** The value as ONE line can say it: control characters escaped, at most {@value #CAP} characters. */
     public static String clean(Object value) { return clean(String.valueOf(value), CAP); }

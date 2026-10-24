@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.dependencies;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -38,4 +39,11 @@ public record LedgerSettings(String baseUrl, String tokenVar, String tenant, Str
     }
 
     public String roads() { return baseUrl + "/api/v1/prepaid/" + profile; }
+
+    /** P1-M · The ledger's settings as a log may print them: a password inside its base url masked (the calls use the url as written). */
+    @Override
+    public String toString() {
+        return "LedgerSettings[baseUrl=" + LogText.maskPassword(baseUrl) + ", tokenVar=" + tokenVar + ", tenant=" + tenant + ", profile=" + profile
+            + ", connectTimeoutMs=" + connectTimeoutMs + ", readTimeoutMs=" + readTimeoutMs + ", by=" + by + "]";
+    }
 }

@@ -363,3 +363,14 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   (2) + NoForgedStoreLogLinesTest (2) — a task id with "\\n" forged a line, a journal line's U+2028 and ESC went raw. Mutants 6/6 red;
   the lost-change, the stop and the writer-fault lines have no test of their own (said). Direct: logtext 8, campaign 76, sessionflow 265,
   switch-ledger 70, seed-tenant 23, samples 73. Next: item 2.
+- 2026-10-24 19:51 · item 2 DONE — a password inside a url is never printed: ONE helper, `LogText.maskPassword(url)` (seed-logtext; the
+  api delegate passes it on): the userinfo's password (`redis://:s@h`, `redis://u:s@h`, `jdbc:mysql://u:s@h`) and the value of every
+  parameter whose NAME says password / passwd / pwd / secret (inside a longer name too: sslpassword, client_secret, keyStorePassword) in a
+  query or after ';', case-blind, as `***`. Where the seed prints a url: the start line (`BootstrapRoad.describe` — every root's switch-db
+  and redis url — and the bootstrap's `where()`: `HttpBootstrapSource.where()` and `BootstrapSource`'s default; the bootstrap-config
+  source's name and the bootstrap's refusals take `where()`), the records' text (`SwitchDb`, `RootResources` — its own toString now —,
+  the ledger's words, `LedgerSettings`; `Deployment` through them), the orchestrix ledger's start line, its retry line and its three
+  refusals, ReturnRoad's no-return-road line. The url used to CONNECT is untouched (`origin()` stays raw: seed-tenant's trees connect by
+  it). Kafka bootstraps are host:port lists (no password form): printed as they are. Red first: MaskPasswordTest (6, one per form) +
+  NoPasswordInAUrlIsPrintedTest (4). Mutants 15/15 red (one spec fixed before its run). Direct: logtext 14, campaign 76, sessionflow 269,
+  switch-ledger 70, seed-tenant 23, samples 73. Next: item 3.

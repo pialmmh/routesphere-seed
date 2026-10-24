@@ -42,6 +42,13 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
      */
     public SwitchDb ledgerLogin() { return ledgerDb == null ? switchDb : ledgerDb.over(switchDb); }
 
+    /** P1-M · The root's resources as a log may print them: a password inside its redis url masked (its logins and ledger print their own). */
+    @Override
+    public String toString() {
+        return "RootResources[root=" + root + ", switchDb=" + switchDb + ", kafka=" + kafka + ", redisUrl=" + LogText.maskPassword(redisUrl) + ", ledger=" + ledger
+            + ", dir=" + dir + ", ledgerDb=" + ledgerDb + "]";
+    }
+
     /** P1-L · How a {@code password-ref} that is not {@code env:<NAME>} is printed: it may be a password written by mistake. */
     public static final String HIDDEN_REF = "<not an env: reference — hidden>";
     private static final Set<String> PASSWORD_REF_KEYS = Set.of("password-ref", "passwordRef");
@@ -56,6 +63,7 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
     /** P1-L · Words as a log may print them: every {@code password-ref} in them, nested maps and lists too, as {@link #shownRef} says it. */
     static Object shownWords(Object value, String key) {
         if (key != null && PASSWORD_REF_KEYS.contains(key)) return shownRef(value);
+        if (value instanceof String text) return LogText.maskPassword(text);                // P1-M: a url among the words (an orchestrix ledger's)
         if (value instanceof Map<?, ?> words) {
             Map<Object, Object> shown = new LinkedHashMap<>();
             words.forEach((k, v) -> shown.put(k, shownWords(v, String.valueOf(k))));
@@ -80,7 +88,7 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
         /** P1-L · The login as a log may print it: a {@code password-ref} that is not {@code env:<NAME>} is {@value RootResources#HIDDEN_REF}. */
         @Override
         public String toString() {
-            return "SwitchDb[url=" + url + ", schema=" + schema + ", username=" + username + ", passwordRef=" + shownRef(passwordRef) + "]";
+            return "SwitchDb[url=" + LogText.maskPassword(url) + ", schema=" + schema + ", username=" + username + ", passwordRef=" + shownRef(passwordRef) + "]";
         }
 
         /**

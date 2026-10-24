@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.naming.api.Topics;
 import com.telcobright.seed.sessionflow.api.Deployment;
@@ -318,8 +319,8 @@ public final class BootstrapRoad implements AutoCloseable {
 
     private String describe(RootResources r) {
         String tree = trees.snapshot(r.root()).map(t -> "tree v" + t.version()).orElse("NO TREE");
-        String db = r.switchDb() == null ? "" : " on " + r.switchDb().url() + " schema " + r.switchDb().schema();
+        String db = r.switchDb() == null ? "" : " on " + LogText.maskPassword(r.switchDb().url()) + " schema " + r.switchDb().schema();
         return r.root() + ": " + tree + ", doors " + deployment.rulesOf(r.root()) + ", ledger " + r.ledger().kind() + db + ", CDR " + Topics.platform(CDR, r.root())
-            + " on " + r.kafka().bootstrap() + ", redis " + r.redisUrl() + ", dir " + r.dir();
+            + " on " + r.kafka().bootstrap() + ", redis " + LogText.maskPassword(r.redisUrl()) + ", dir " + r.dir();
     }
 }

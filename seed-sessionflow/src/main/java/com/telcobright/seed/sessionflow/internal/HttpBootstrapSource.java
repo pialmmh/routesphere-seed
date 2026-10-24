@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.telcobright.seed.sessionflow.spi.BootstrapSource;
@@ -51,7 +52,8 @@ public final class HttpBootstrapSource implements BootstrapSource {
 
     @Override public String origin() { return url.getScheme() + "://" + url.getRawAuthority(); }
 
-    @Override public String where() { return url.toString(); }
+    /** P1-M · Where the envelope comes from, as a log may print it: a password in its url masked (the client asks the url as written). */
+    @Override public String where() { return LogText.maskPassword(url.toString()); }
 
     private HttpResponse<String> send() {
         HttpRequest.Builder request = HttpRequest.newBuilder(url).timeout(timeout).header("Accept", "application/json").header("Authorization", "Bearer " + token()).GET();
