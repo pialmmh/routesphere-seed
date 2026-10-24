@@ -127,3 +127,11 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   prefix-as-a-tier `res_44` passes, as prime-context's RootNaming takes it) refused at the read in words naming the key. Red first (compile:
   no 2-word withSeedRoot / seedPrefix()); SeedPrefixTest 3, SeedPrefixFromTheBootstrapTest 3 green; 5 mutants, 5 red; direct: seed-naming
   15, seed-sessionflow 221, seed-tenant 23, switch-ledger 63, samples 73, bootstrap-config 8 (0 failed). Next: item 6 (the late config values).
+- 2026-10-24 07:01 · **P1-G item 7 done (before item 6, whose Quarkus proof waits on the shared lock — P2's item12-check holds it; each item
+  stands alone)** — the sessionflow README's bootstrap section, "Live tenants made safe": a `kind: root` message comes BEFORE the root is
+  served (item 1's pending roots, its keys, its thread); a tree never shows a tier its ledger was not handed (item 2's gate; a lane's OWN
+  LiveTrees must take it and call it before its swap — ad-sphere's AdTrees); the seed prefix (item 5) and the naming table (item 4); the
+  deployment's tenant is the operator's, never `platform` (PC-0022 §9.7); the rules' ONE home `config.routesphere.identification.rules`
+  (§9.5); `tenant_created`'s apps sorted, sent after the provisioning's commits; a root added live needs a listener the process already
+  has (P2 gap 9, a window step); the pinned samples byte-identical — checked myself: deployment.json e1ca4f43a016ce4f, tenant-created.json
+  63f396e263457824, both equal to prime-context 8f8d922's. Docs only. Next: item 6 (the probe waits for the lock).
