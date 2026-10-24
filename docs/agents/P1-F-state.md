@@ -70,3 +70,24 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   **535/0/0/3** (136 s), one lock hold 06:08–06:13 (offline, no install); base 723f160 518/0/0/3; +17 tests, all new, none touched or
   deleted; 37 mutants, 37 red. Report: `docs/agents/P1-F-report.md` — the P1-F report head is the commit that adds it. Next: P1-G (the
   architect's brief arrived 06:1x), on this branch, under a `## P1-G` heading below.
+
+## P1-G
+
+The architect's brief: `docs/agents/P1-G-brief.md` (a copy of ~/arch-drafts/launch/P1-G-seed-live-tenants-brief.md). On the same
+branch after P1-F's report head 0d170db (the architect gates and merges that commit; P1-G goes on beside it). Items 1 → 7 in order.
+
+- 2026-10-24 06:23 · START — from 0d170db (535/0/0/3 at its code head 66ec564). Read: PC-0022-done.md §4, §5, §9, §10 (framework-bootstrap
+  8f8d922, by git show), P2-state.md gaps 7–10. Running: item 1 (a root not served yet is never half-served: pending + retried).
+- 2026-10-24 06:38 · **P1-G item 1 done** — a root not served yet is never half-served. seed-tenant's `LiveTenantTrees.serve` undoes a
+  failed serve (out of the directory again, the directory refreshed: no cell left to load it unserved; `LiveTrees.serve`'s javadoc says
+  a lane's own trees undo the same). The road's `serveTheNewRoot` → `tryToServe(root)`: the bootstrap read again, the tree loaded, then
+  the roads (made with the NEW deployment before it is switched), the doors, the topics; not yet → the root goes PENDING
+  (`internal/PendingRoots`: one daemon thread `<app>-pending-roots` per road, made at the first pending root, stopped by the road's
+  close) — said once (WARN, "not listed for <app> yet (its roots …)" or "prime-context does not serve its tree yet: <answer>"), tried every
+  `config.routesphere.pending-root.retry-sec` (default 30), served → said once (INFO), given up after `pending-root.give-up-min`
+  (default 120: "a restart, or a new tenant_created, serves it"); a later word tries at once (its identity leaves `seen`, as before).
+  `api/PendingRootPace`, `Deployment.pendingRoot` (the 12-word constructor kept), `road.pendingRoots()` / `road.said()`. Red first:
+  ServeOrNothingTest 2/2 red (link3 left in roots() with no tree; the next serve returned at once), PendingRootTest red on behaviour (the
+  tree's refusal thrown out of the event; a not-listed root never tried again); green: ServeOrNothingTest 2, PendingRootTest 4; 11
+  mutants, 11 red; direct: seed-sessionflow 214, seed-tenant 21, switch-ledger 61, samples 73 (all 0 failed). Test helper touched:
+  BootstrapWorld (+ makers(Clock)). Next: item 2.

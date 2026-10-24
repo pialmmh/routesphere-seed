@@ -47,6 +47,7 @@ public final class BootstrapRoad implements AutoCloseable {
     private final Map<String, Admin> admins = new ConcurrentHashMap<>();
     private volatile Function<String, List<String>> laneTopics = root -> List.of();
     private final Set<String> seen = ConcurrentHashMap.newKeySet();
+    private final PendingRoots pending;
     private TenantCreatedListener listener;
 
     private BootstrapRoad(BootstrapSource source, KitMakers makers, Deployment deployment) {
@@ -56,12 +57,13 @@ public final class BootstrapRoad implements AutoCloseable {
         this.trees = makers.trees().make(deployment, source);
         this.rules = new LiveRules(deployment.rules());
         this.ledger = new PerRootLedger(this::rootOf);
+        this.pending = new PendingRoots(deployment.app(), deployment.pendingRoot(), makers.clock(), root -> tryToServe(root, "tried again, it was pending"));
     }
 
     /** The bootstrap read for {@code app}, every served root's resources made; refused in words when the envelope says too little. */
     public static BootstrapRoad open(BootstrapSource source, String app, KitMakers makers) {
         BootstrapRoad road = new BootstrapRoad(source, makers, Deployment.of(source.envelope(), app));
-        road.deployment.roots().forEach(road::makeTheRootsRoads);
+        road.deployment.roots().forEach(root -> road.makeTheRootsRoads(road.deployment, root));
         log.info("[{}] the bootstrap of {} ({}): {}", app, road.deployment.tenant(), source.where(), road.describe());
         return road;
     }
@@ -116,7 +118,9 @@ public final class BootstrapRoad implements AutoCloseable {
     /**
      * prime-context created a tenant (§C.2): a new ROOT this application serves → the bootstrap read again, the root's tree, doors, ledger,
      * CDR road, journal and topics made, served from now on (no restart); a new reseller TIER of a served root → that root's tree reloaded.
-     * The same event twice is one; an event of another application, or a tier of a root not served, is nothing.
+     * The same event twice is one; an event of another application, or a tier of a root not served, is nothing. P1-G: a root that cannot be
+     * served yet — not listed for this application yet, or its tree not served by prime-context yet (the message comes BEFORE the root is
+     * served) — is never half-served: it goes PENDING and is tried again ({@link PendingRoots}); a later word tries it again at once.
      */
     public void onTenantCreated(TenantCreated event) {
         if (!event.names(deployment.app()) || !seen.add(event.identity())) return;
@@ -125,21 +129,44 @@ public final class BootstrapRoad implements AutoCloseable {
     }
 
     private synchronized void serveTheNewRoot(TenantCreated event) {
-        if (deployment.roots().contains(event.root())) return;
-        Deployment next = Deployment.of(source.envelope(), deployment.app());
-        if (!next.roots().contains(event.root())) { forgetItUntilTheBootstrapServesIt(event, next); return; }
-        trees.serve(event.root());
-        deployment = next;
-        makeTheRootsRoads(event.root());
-        rules.replace(next.rules());
-        ensureTheTopicsOf(event.root());
-        log.info("[{}] the root {} is served from now on (tenant_created at {}): {}", next.app(), event.root(), event.at(), describe(next.root(event.root()).orElseThrow()));
+        String notYet = tryToServe(event.root(), "tenant_created at " + event.at());
+        if (notYet == null) return;
+        seen.remove(event.identity());                                    // a later word tries it again at once
+        pending.pend(event.root(), notYet);
     }
 
-    private void forgetItUntilTheBootstrapServesIt(TenantCreated event, Deployment next) {
-        seen.remove(event.identity());
-        log.warn("[{}] tenant_created names the root {}, but the bootstrap does not serve it to {} yet (roots {}): not served", next.app(), event.root(), next.app(), next.roots());
+    /**
+     * One try to serve a root (a word, or the pending roots' timer): the bootstrap read again, the root's tree loaded, then its roads, its
+     * doors and its topics. Null = served now (or before); otherwise why not yet, in words — and nothing of the root is served.
+     */
+    private synchronized String tryToServe(String root, String why) {
+        if (deployment.roots().contains(root)) { pending.served(root); return null; }
+        Deployment next;
+        try { next = Deployment.of(source.envelope(), deployment.app()); }
+        catch (RuntimeException e) { return "the bootstrap could not be read again: " + e.getMessage(); }
+        if (!next.roots().contains(root)) return "not listed for " + next.app() + " yet (its roots " + next.roots() + ")";
+        try { trees.serve(root); }
+        catch (RuntimeException e) { return "prime-context does not serve its tree yet: " + e.getMessage(); }
+        serveItsRoads(next, root, why);
+        return null;
     }
+
+    private void serveItsRoads(Deployment next, String root, String why) {
+        makeTheRootsRoads(next, root);
+        deployment = next;
+        rules.replace(next.rules());
+        ensureTheTopicsOf(root);
+        String line = "[" + next.app() + "] the root " + root + " is served from now on (" + why + "): " + describe(next.root(root).orElseThrow());
+        log.info(line);
+        if (pending.roots().contains(root)) pending.note(line);
+        pending.served(root);
+    }
+
+    /** The roots announced that cannot be served yet, tried again (P1-G). */
+    public Set<String> pendingRoots() { return pending.roots(); }
+
+    /** What the road said of its pending roots — once each: pending (why), served, given up (P1-G; the operations' view). */
+    public List<String> said() { return pending.said(); }
 
     /** A new tier of a served root: its root's ledger loads the tier first, then the tree shows it to the next session (item 13). */
     private void reloadTheRootOf(TenantCreated event) {
@@ -152,6 +179,7 @@ public final class BootstrapRoad implements AutoCloseable {
     /** The engine's close: the listener, the admins, every root's CDR road, journal and ledger, the producers, the trees. */
     @Override
     public void close() {
+        pending.close();
         if (listener != null) listener.close();
         admins.values().forEach(Admin::close);
         ledger.close();
@@ -163,10 +191,10 @@ public final class BootstrapRoad implements AutoCloseable {
 
     // ── one root's roads ──
 
-    private void makeTheRootsRoads(String root) {
-        RootResources r = deployment.root(root).orElseThrow();
+    private void makeTheRootsRoads(Deployment d, String root) {
+        RootResources r = d.root(root).orElseThrow();
         String rootDb = rootDbOf(root);
-        LedgerMaker.Context context = new LedgerMaker.Context(deployment, trees, makers.clock(), makers.environment());
+        LedgerMaker.Context context = new LedgerMaker.Context(d, trees, makers.clock(), makers.environment());
         ledger.add(rootDb, makers.ledger(r.ledger().kind()).make(r, context));
         cdr.add(rootDb, new KafkaCdrSink(producerOf(r.kafka().bootstrap()), Topics.platform(CDR, rootDb), null));
         journal.add(rootDb, makers.journalOf(r.dir()));

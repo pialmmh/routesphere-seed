@@ -15,7 +15,9 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * seed-tenant's trees as the kit's live trees (R10): the served roots are a directory this class holds — a root added live joins it, the
- * trees load it, and the kit serves it; a tier added under a root reloads that root. A root whose tree cannot be loaded is refused in words.
+ * trees load it, and the kit serves it; a tier added under a root reloads that root. A root whose tree cannot be loaded is refused in words
+ * — and, P1-G, leaves nothing served: it is taken out of the directory again (prime-context's tree road answers 404 ROOT_NOT_SERVED for a
+ * root it announced but does not serve yet), so the next serve loads it.
  */
 public final class LiveTenantTrees implements LiveTrees {
 
@@ -27,6 +29,7 @@ public final class LiveTenantTrees implements LiveTrees {
         public Served(Collection<String> roots) { this.roots = new LinkedHashSet<>(roots); }
         public synchronized Set<String> active() { return Set.copyOf(roots); }
         synchronized boolean add(String root) { return roots.add(root); }
+        synchronized boolean remove(String root) { return roots.remove(root); }
     }
 
     private final TenantTrees trees;
@@ -49,8 +52,19 @@ public final class LiveTenantTrees implements LiveTrees {
     @Override
     public void serve(String root) {
         if (!served.add(root)) return;
+        try {
+            trees.refreshDirectory();
+            reload(root);
+        } catch (RuntimeException notServedYet) {
+            unserve(root);
+            throw notServedYet;
+        }
+    }
+
+    /** P1-G · A root whose tree could not be loaded leaves the directory again: nothing of it stays served, the next serve loads it. */
+    private void unserve(String root) {
+        served.remove(root);
         trees.refreshDirectory();
-        reload(root);
     }
 
     @Override

@@ -26,16 +26,25 @@ import java.util.Optional;
  * @param seedRoot       the root whose reseller tiers keep the legacy {@code res_<id>} names ({@code config.routesphere.naming.seed-root}); null = none
  * @param secrets        the envelope's secrets (a password by reference reads them after the environment)
  * @param etag           the envelope's version
+ * @param pendingRoot    how a root not served yet is tried again ({@code config.routesphere.pending-root}; P1-G)
  */
 public record Deployment(String tenant, String app, String env, List<String> roots, RoutesphereSettings settings, ZoneId zone,
                          List<IdentificationRule> rules, Map<String, RootResources> resources, String platformKafka, String seedRoot,
-                         Map<String, String> secrets, String etag) {
+                         Map<String, String> secrets, String etag, PendingRootPace pendingRoot) {
 
     public Deployment {
         roots = List.copyOf(roots);
         rules = List.copyOf(rules);
         resources = Map.copyOf(resources);
         secrets = secrets == null ? Map.of() : Map.copyOf(secrets);
+        pendingRoot = pendingRoot == null ? PendingRootPace.DEFAULT : pendingRoot;
+    }
+
+    /** The twelve words of P1-E, kept (P1-G): a root not served yet is tried at {@link PendingRootPace#DEFAULT}. */
+    public Deployment(String tenant, String app, String env, List<String> roots, RoutesphereSettings settings, ZoneId zone,
+                      List<IdentificationRule> rules, Map<String, RootResources> resources, String platformKafka, String seedRoot,
+                      Map<String, String> secrets, String etag) {
+        this(tenant, app, env, roots, settings, zone, rules, resources, platformKafka, seedRoot, secrets, etag, PendingRootPace.DEFAULT);
     }
 
     /** The deployment of {@code app} in this envelope; refused in words when the envelope serves another application or says too little. */

@@ -1,6 +1,7 @@
 package com.telcobright.seed.sessionflow.internal;
 
 import com.telcobright.seed.sessionflow.api.Deployment;
+import com.telcobright.seed.sessionflow.api.PendingRootPace;
 import com.telcobright.seed.sessionflow.api.IdentificationRule;
 import com.telcobright.seed.sessionflow.api.RootResources;
 import com.telcobright.seed.sessionflow.dependencies.IdentificationRules;
@@ -41,7 +42,13 @@ public final class DeploymentReader {
         Map<String, RootResources> resources = resourcesOf(rs, roots, served);
         return new Deployment(word(map(envelope.get("tenant")), "code"), served, word(envelope, "env"), roots, settingsOf(rs), zoneOf(rs),
             rulesOf(rs, roots, served), resources, platformKafkaOf(rs, resources, roots), word(map(rs.get("naming")), "seed-root"),
-            secretsOf(envelope), word(envelope, "etag"));
+            secretsOf(envelope), word(envelope, "etag"), pendingRootOf(rs));
+    }
+
+    /** P1-G · {@code pending-root: {retry-sec, give-up-min}} — 30 s and 120 min when not said. */
+    private static PendingRootPace pendingRootOf(Map<String, Object> rs) {
+        Map<String, Object> pace = map(rs.get("pending-root"));
+        return new PendingRootPace(number(pace, "retry-sec", PendingRootPace.DEFAULT.retrySec()), number(pace, "give-up-min", PendingRootPace.DEFAULT.giveUpMin()));
     }
 
     private static List<String> rootsOf(Map<String, Object> rs, String app) {

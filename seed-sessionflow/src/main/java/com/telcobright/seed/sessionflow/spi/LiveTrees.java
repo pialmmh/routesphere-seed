@@ -12,7 +12,11 @@ public interface LiveTrees extends TenantLookup, AutoCloseable {
     /** The roots served now. */
     Set<String> roots();
 
-    /** Serve one more root: its tree is loaded now (a root that cannot be loaded is refused in words). Serving a served root is nothing. */
+    /**
+     * Serve one more root: its tree is loaded now (a root that cannot be loaded is refused in words). Serving a served root is nothing.
+     * P1-G: a serve that fails leaves NOTHING served — the root is not in {@link #roots()} and has no tree — so the next serve loads it
+     * (prime-context announces a root BEFORE it serves its tree: 404 ROOT_NOT_SERVED until then). A lane's own LiveTrees undoes the same.
+     */
     void serve(String root);
 
     /** Load one served root's tree again (a tier was added under it): the next session takes the new snapshot. */
