@@ -282,3 +282,7 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   NoSecretFromTheBootstrapTest (1). Mutants 3/3 red (the values said, the override taken away, the names dropped — this one SURVIVED first:
   "AD_SWITCH_DB_PASSWORD" is also the sample's password-ref; the test now names AD_REPORTS_DB_PASSWORD, named nowhere else). Direct:
   sessionflow 240, switch-ledger 70. Next: item 3 (docs), then item 5 (the coordinator's: the door refuses without a root, in words).
+- 2026-10-24 17:12 · item 3 DONE — docs: the switch-ledger README (on a kit from the bootstrap: the password from the process environment
+  only, the refusal's words; the ledger's own login "like switch-db's") and the sessionflow README's history line. SwitchLedgerMakerTest's
+  pin of P1-E's "the environment, then the secrets" moved to the new behaviour IN item 1's commit (2a5a919: the removed method would not
+  compile in it): `aPasswordByReference_isReadFromTheEnvironmentOnly_neverWritten_neverRepeated`. Next: item 5, red first.

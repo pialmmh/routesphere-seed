@@ -322,6 +322,11 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, evening — P1-K (the owner's ruling of 16:51, "Environment only", re-affirming his rule of 2026-09-24): a password comes
+  from the process environment only — switch-db's no longer falls back to the bootstrap envelope's `secrets` (`SwitchDb.password(env,
+  secrets)` removed; `passwordFromTheEnvironment` for both logins; a refusal names the variable, never a value, nor a written
+  `password-ref`); `Deployment.secrets()` deprecated (read by nobody) and a `Deployment`'s text names the secrets, never their values.
+  State: `docs/agents/P1-F-state.md`.
 - 2026-10-24, afternoon — P1-J (ad-sphere P2c's end-to-end run against prime-context 8f8d922): every reload of a root's tree merges its
   new rows into its switch ledger (`LedgerPort.treeReloaded`, coalesced: at most one merge per `ledger.merge-spacing-sec`, default 5 s) —
   an account written after its tier exists pays at the next ring; the switch ledger's OWN login `ledger.db` (optional; the app's and the
