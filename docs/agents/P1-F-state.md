@@ -404,3 +404,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   campaign 76, sessionflow 269, switch-ledger 70, seed-tenant 23, samples 73. Next: item 2 (docs), then the gates when the lock is free.
 - 2026-10-24 20:32 · item 2, docs — the sessionflow README's maskPassword paragraph (the principle, the three forms, where the userinfo
   ends, the accepted over-mask and the '?'/'#' limit) and its history line. Next: the gates when the lock is free, then the report.
+- 2026-10-24 21:17 · **P1-N DONE** — items 1–2; the head a7d209a from clean in the worktree **640/0/0/3** (180 s) and on a git-archive clean
+  copy **640/0/0/3** (155 s), two short holds 21:09–21:12 and 21:14–21:17, queued behind the UI rig (offline, no install); +5 tests;
+  7 mutants red. The report's P1-N section: `docs/agents/P1-F-report.md`.

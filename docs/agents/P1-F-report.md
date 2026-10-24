@@ -501,3 +501,41 @@ routesphere-flow cb236c9 (his merge of P1-L). Additive: `api.LogText` keeps its 
 
 1. A build of ad-sphere against this seed needs `seed-logtext` beside the other seed jars.
 2. ad-sphere can mask its own printed urls with `api.LogText.maskPassword`, and clean its MAC lines with `api.LogText.clean`.
+
+## P1-N
+
+The architect's brief (`docs/agents/P1-N-brief.md`), written after his probe of P1-M's `LogText.maskPassword`, which he compiled alone.
+Three url forms printed their password raw. On this branch, fast-forwarded by the architect to routesphere-flow a05f028 (his merge of
+P1-M). The principle: an over-mask beats a leak. A line may lose a user name, but must never show a password.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | 32eab42 | The rule in seed-logtext's `maskPassword`. The userinfo runs to the LAST '@' before the first '?' or '#', so a password may carry ';' or '/' unencoded. A userinfo without ':' is masked whole (`redis://***@h`, `https://***@h`). A `(name=value)` block whose name says a password is masked like a parameter (`(password=***)`). An empty userinfo stays as it is. |
+| 2 | a7d209a | Docs: the sessionflow README's maskPassword paragraph (the principle, the three forms, where the userinfo ends, the accepted over-mask and the '?'/'#' limit) and the history line. |
+
+### Numbers
+
+- **Head a7d209a**: the worktree from clean **640/0/0/3** (180 s, 21:09) and a git-archive clean copy of the head **640/0/0/3** (155 s,
+  21:14), two short holds (21:09–21:12, 21:14–21:17) queued behind the PC agent's UI rig and another agent's hold, never breaking them;
+  offline, no install; a05f028 was 635/0/0/3.
+- **+5 tests in MaskPasswordTest**:
+  - a userinfo without ':' (Lettuce's password, a bare token, a user name alone);
+  - a userinfo password carrying ';' or '/';
+  - the `(name=value)` blocks (case-blind, longer names);
+  - the brief's "must stay" rows (an '@' in the query, `[::1]`, `u:p@[::1]`, `redis://:p@ss@host`, `u:p%40ss@h`, an empty userinfo);
+  - the accepted over-mask, pinned.
+- **Red first**: the three forms and the over-mask were red on a05f028. The "must stay" rows and every other P1-M test were green, and stayed green.
+- **7 mutants, 7 red**: the lone userinfo kept; ';' ending the userinfo search; '/' ending it; the '(' form skipped; the search running past '?'; the first '@' instead of the last; an empty userinfo masked.
+
+### Decisions
+
+1. **One P1-M row moved.** P1-M pinned `redis://ad_sphere@10.10.188.2:6379/0` as "no password, printed as it is". Under the brief's rule 2 it is now `redis://***@10.10.188.2:6379/0`, so the user name alone is lost from the line. I moved that row to the new test and kept every other P1-M row unchanged.
+2. **An empty userinfo stays.** `redis://@h` has nothing to hide, so it is printed as written.
+3. **Over-masks are accepted.** An '@' in a path, or in a ';' property before any '?', over-masks. For example, `https://portal.test/users/a@b/x` becomes `https://***@b/x`. This is said in the javadoc and pinned in a test.
+4. **The '?' and '#' limit is accepted.** An unencoded '?' or '#' inside a password still ends the search, because every parser breaks there. No code for it, as the brief says.
+
+### Open points
+
+None new. Variation selectors and the other libraries' own lines stay as you ruled after P1-M.
