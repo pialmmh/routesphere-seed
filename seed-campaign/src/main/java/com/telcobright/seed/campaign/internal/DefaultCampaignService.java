@@ -1,5 +1,6 @@
 package com.telcobright.seed.campaign.internal;
 
+import com.telcobright.seed.logtext.LogText;
 import com.telcobright.seed.campaign.api.Campaign;
 import com.telcobright.seed.campaign.api.CampaignCounters;
 import com.telcobright.seed.campaign.api.CampaignService;
@@ -203,7 +204,7 @@ public final class DefaultCampaignService implements CampaignService {
         try {
             write.run();
         } catch (RuntimeException e) {
-            log.error("campaign store failed at {} for task {} (campaign {}): {}", step, task.uniqueId(), task.campaignId(), e.toString());
+            log.error("campaign store failed at {} for task {} (campaign {}): {}", step, LogText.clean(task.uniqueId()), task.campaignId(), LogText.failureText(e));
         }
     }
 }

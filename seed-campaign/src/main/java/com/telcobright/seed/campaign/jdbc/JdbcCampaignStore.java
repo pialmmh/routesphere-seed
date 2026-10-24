@@ -1,5 +1,6 @@
 package com.telcobright.seed.campaign.jdbc;
 
+import com.telcobright.seed.logtext.LogText;
 import com.telcobright.seed.campaign.api.Campaign;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
@@ -257,7 +258,7 @@ public final class JdbcCampaignStore implements CampaignStore {
         if (text == null || text.length() <= width) return text;
         long soFar = cuts.incrementAndGet();
         if (soFar == 1 || soFar % 1000 == 0) {
-            log.warn("campaign_task.{}: a text of {} characters was cut to the column's {} (task {}; {} cut so far)", column, text.length(), width, t.uniqueId(), soFar);
+            log.warn("campaign_task.{}: a text of {} characters was cut to the column's {} (task {}; {} cut so far)", column, text.length(), width, LogText.clean(t.uniqueId()), soFar);
         }
         int end = Character.isHighSurrogate(text.charAt(width - 1)) ? width - 1 : width;
         return text.substring(0, end);

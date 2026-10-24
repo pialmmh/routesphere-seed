@@ -344,3 +344,44 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 18:53 · **P1-L DONE** — items 1–4; the head 060b500 from clean in the worktree **615/0/0/3** (162 s) and on a git-archive clean
   copy **615/0/0/3** (155 s), two short lock holds 18:36–18:39 and 18:50–18:52 (offline, no install); +20 tests; 25 mutants red. The
   report's P1-L section: `docs/agents/P1-F-report.md`.
+
+## P1-M
+
+- 2026-10-24 19:14 · START — p1-follow at routesphere-flow cb236c9 (the architect's merge of P1-L, fast-forwarded by him); the brief
+  `docs/agents/P1-M-brief.md`. The plan: a NEW bottom module `seed-logtext` (one class, `com.telcobright.seed.logtext.LogText`, no
+  dependency of its own) that seed-campaign and seed-sessionflow depend on; `api.LogText` a thin delegate (its signature kept); then
+  seed-campaign's 5 lines. A password inside a url masked by ONE helper (`maskPassword`) wherever the seed prints a url — the start line
+  (`BootstrapRoad.describe`, the bootstrap's `where()`), the records' text (SwitchDb, RootResources, Ledger's words, LedgerSettings), the
+  orchestrix lines and messages; `origin()` stays raw (seed-tenant CONNECTS with it). The whole Unicode Cf category escaped. Next: item 1.
+- 2026-10-24 19:28 · item 1 DONE — a NEW bottom module `seed-logtext` (one class `com.telcobright.seed.logtext.LogText` + its tests, no
+  dependency of its own; in the root pom right after the BOM, in the BOM; seed-campaign and seed-sessionflow depend on it). The cleaner
+  moved there whole (its 8 tests with it); `api.LogText` is a thin delegate (its name, package and signatures kept — a lane's import
+  stands; its own test checks the same answers). seed-campaign's lines cleaned — the 5 of P1-L's list (DefaultCampaignService's failed
+  step, JdbcCampaignStore's cut, QueuedCampaignStore's lost and refused changes, ChangeJournal's unreadable line) and 3 found on the way
+  (QueuedCampaignStore's failed batch and the stop's last failure — the store's words quote the task id — and the writer's own fault, its
+  stack cleaned); a change's text at the 1000 cap (the lost change's line may be its only record). Red first: NoForgedCampaignLogLinesTest
+  (2) + NoForgedStoreLogLinesTest (2) — a task id with "\\n" forged a line, a journal line's U+2028 and ESC went raw. Mutants 6/6 red;
+  the lost-change, the stop and the writer-fault lines have no test of their own (said). Direct: logtext 8, campaign 76, sessionflow 265,
+  switch-ledger 70, seed-tenant 23, samples 73. Next: item 2.
+- 2026-10-24 19:51 · item 2 DONE — a password inside a url is never printed: ONE helper, `LogText.maskPassword(url)` (seed-logtext; the
+  api delegate passes it on): the userinfo's password (`redis://:s@h`, `redis://u:s@h`, `jdbc:mysql://u:s@h`) and the value of every
+  parameter whose NAME says password / passwd / pwd / secret (inside a longer name too: sslpassword, client_secret, keyStorePassword) in a
+  query or after ';', case-blind, as `***`. Where the seed prints a url: the start line (`BootstrapRoad.describe` — every root's switch-db
+  and redis url — and the bootstrap's `where()`: `HttpBootstrapSource.where()` and `BootstrapSource`'s default; the bootstrap-config
+  source's name and the bootstrap's refusals take `where()`), the records' text (`SwitchDb`, `RootResources` — its own toString now —,
+  the ledger's words, `LedgerSettings`; `Deployment` through them), the orchestrix ledger's start line, its retry line and its three
+  refusals, ReturnRoad's no-return-road line. The url used to CONNECT is untouched (`origin()` stays raw: seed-tenant's trees connect by
+  it). Kafka bootstraps are host:port lists (no password form): printed as they are. Red first: MaskPasswordTest (6, one per form) +
+  NoPasswordInAUrlIsPrintedTest (4). Mutants 15/15 red (one spec fixed before its run). Direct: logtext 14, campaign 76, sessionflow 269,
+  switch-ledger 70, seed-tenant 23, samples 73. Next: item 3.
+- 2026-10-24 19:59 · item 3 DONE — invisible characters escaped: the WHOLE Unicode format category Cf (`Character.getType == FORMAT`), not
+  only the brief's list — the JDK keeps the category current; it holds every character the brief names and also what hides text the same
+  way (the TAG characters U+E0001 / U+E0020–U+E007F, which can carry an invisible text; U+2061–U+2064; U+FFF9–U+FFFB; U+180E; the soft
+  hyphen). A character above U+FFFF is written as its two UTF-16 escapes (12 characters, never cut in half); the fast path reads code
+  points. The cost, said: ZWNJ / ZWJ in Bengali or in an emoji sequence, and a soft hyphen, show as escapes in a log line. Red first:
+  InvisibleCharactersTest (5; 4 red, letters and emoji stay). Mutants 5/5 red (incl. "only the named list"). Next: item 4.
+- 2026-10-24 20:00 · item 4, docs — the root README (the new module `seed-logtext`), the sessionflow README's ingress section (the cleaner in
+  seed-logtext, the Cf escapes, "No password inside a url is printed"), its class table and history line. Next: the reactor, a clean copy.
+- 2026-10-24 20:08 · **P1-M DONE** — items 1–4; the head 778531f from clean in the worktree **635/0/0/3** (264 s) and on a git-archive clean
+  copy **635/0/0/3** (231 s), two lock holds back to back 20:00–20:08 (offline, no install); +20 tests (8 moved); 26 mutants red. The
+  report's P1-M section: `docs/agents/P1-F-report.md`.

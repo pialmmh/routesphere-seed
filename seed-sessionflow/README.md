@@ -26,7 +26,7 @@ the application                            its forced answers ■ + the hooks it
 | `api.RoutesphereEngine<C>` | statewalk's registry: your supervisor class + your signaling machine + the budget child + your channel |
 | `dependencies.RoutesphereKit` | What the host hands in — by hand, or `RoutesphereKit.fromBootstrap(source, app)` from ONE bootstrap url (R8); `toBuilder()` gives that kit the lane's own sinks before it is used |
 | `api.Deployment` / `api.RootResources` | What prime-context's bootstrap said: the served roots and each root's own resources |
-| `api.LogText` | The ONE cleaner of a value a request carries, before it goes into a log line (P1-L): control characters escaped, 200 characters |
+| `api.LogText` | The ONE cleaner of what goes into a log line (P1-L, P1-M): a request's value escaped and capped, a url's password masked — a delegate of seed-logtext's |
 
 ## 2 · Write an application — one package (R6)
 
@@ -108,12 +108,23 @@ that follows the two lines never launches a session without a root, so nothing i
 
 **No request writes a log line of its own** (P1-L): the ad's session id is built from the request's MAC (`ad-<tenant>-<mac>-<ms>-<n>`), a
 reserve's reference from the session id, a lane's failure may quote the request — a CR/LF in any of them would forge a line. Every value
-of that kind the seed logs goes through ONE cleaner, `api.LogText`: `clean(value)` writes every control character as a visible escape (C0
-— CR, LF, TAB, … —, DEL, C1, and U+2028 / U+2029: `\n`, `\r`, `\t`, the others `\uXXXX`) and keeps at most **200 characters** ("…" when
-cut, never inside an escape or a character); `failureText(words)` the same at **1000** for a failure's text; `cleaned(throwable)` the same
-stack with every text in its chain cleaned. The door says its door, the session id and a failed rule's words and stack through it; so do
-the seed's lines that take a session id, a call id, a reference, a lane's cause or a ledger's words (sessionflow and seed-switch-ledger).
-A lane logging a request's value uses it too: `log.warn("… {}", LogText.clean(request.mac()))`.
+of that kind the seed logs goes through ONE cleaner — since P1-M in the seed's bottom module **seed-logtext**
+(`com.telcobright.seed.logtext.LogText`, no dependency of its own, so seed-campaign reaches it too); `api.LogText` is its thin delegate
+(a lane's import stands). `clean(value)` writes every control character as a visible escape (C0 — CR, LF, TAB, … —, DEL, C1, and U+2028 /
+U+2029: `\n`, `\r`, `\t`, the others `\uXXXX`) and, since P1-M, every Unicode FORMAT character (the whole Cf category: the bidi controls,
+the marks, the zero-width characters, the TAG characters — what reorders or hides what a terminal shows; one above U+FFFF as its two
+escapes), and keeps at most **200 characters** ("…" when cut, never inside an escape or a character); `failureText(words)` the same at
+**1000** for a failure's text or a long text a line carries whole; `cleaned(throwable)` the same stack with every text in its chain
+cleaned. The door says its door, the session id and a failed rule's words and stack through it; so do the seed's lines that take a
+session id, a call id, a reference, a task id, a lane's cause or a store's or a ledger's words (sessionflow, seed-switch-ledger,
+seed-campaign). A lane logging a request's value uses it too: `log.warn("… {}", LogText.clean(request.mac()))`.
+
+**No password inside a url is printed** (P1-M): `LogText.maskPassword(url)` writes the userinfo's password (`redis://:***@host`,
+`redis://user:***@host`, `jdbc:mysql://user:***@host`) and the value of every parameter whose name says password, passwd, pwd or secret
+(`?password=***`, `&pwd=***`, `;password=***`, case-blind, inside a longer name too) as `***`, the rest as it is — wherever the seed
+prints a url: the start line (every root's switch-db and redis url, the bootstrap's `where()`), the records' text (`SwitchDb`,
+`RootResources`, the ledger's words, `LedgerSettings`, `Deployment`), the orchestrix ledger's lines and refusals. Only for printing: the url
+used to connect is the one written (`BootstrapSource.origin()` stays raw — seed-tenant's trees connect by it).
 
 The engine's numbers (`engine.stats()`, a `PoolStats`), each counted where it happens (P1-F): `machinesBuilt` is the supervisors
 statewalk's pool built (the base builds no machine; it never passes `size` unless a reset failed); `busy` is a NEW session refused
@@ -359,6 +370,10 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, evening (3) — P1-M (from P1-L's open points): the log cleaner moved to the seed's bottom module `seed-logtext`
+  (`api.LogText` its delegate) so seed-campaign's lines are cleaned too; a password inside a url is masked wherever the seed prints one
+  (`maskPassword`: the userinfo's, any password/pwd/secret parameter; the url used to connect untouched); the whole Unicode format category
+  escaped (bidi controls, marks, zero-width and TAG characters). State: `docs/agents/P1-F-state.md`.
 - 2026-10-24, evening (2) — P1-L (the architect's review of P1-K's door): no value a request carries writes a log line of its own — ONE
   cleaner, `api.LogText` (control characters escaped, 200 characters, a failure's text 1000, its stack cleaned), through which the door and
   the seed's lines that take a session id, a reference or a lane's words say them; the machine's `NO_TENANT` start road is said through

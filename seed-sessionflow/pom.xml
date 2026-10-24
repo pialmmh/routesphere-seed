@@ -51,6 +51,12 @@
             <artifactId>seed-campaign</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- P1-M: the ONE cleaner of what goes into a log line (a request's value, a url's password), the seed's bottom module -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-logtext</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- R9: the platform topics (cdr_<root>, config_event_loader_<root>, tenant_created) and an application's own -->
         <dependency>
             <groupId>com.telcobright</groupId>

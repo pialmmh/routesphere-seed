@@ -433,3 +433,71 @@ Each takes a session id or call id, a reference built from one, a lane's cause, 
 
 1. ad-sphere's own lines that log the MAC or the session id should use `LogText.clean`. Better still, ad-sphere's ingress should check the MAC's shape at the door (hex and colons). Then no control character ever reaches a session id.
 2. `PoolStats.refusedNoRoot` now also counts the sessions the machine refused NO_TENANT at their start. A lane that follows the two lines sees no change.
+
+## P1-M
+
+The architect's brief (`docs/agents/P1-M-brief.md`), built from P1-L's open points. It covers three things: one cleaner that reaches
+seed-campaign, no password inside a url printed, and invisible characters escaped. On this branch, fast-forwarded by the architect to
+routesphere-flow cb236c9 (his merge of P1-L). Additive: `api.LogText` keeps its signatures.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | 8ecc312 | A NEW bottom module, `seed-logtext`: one class, `com.telcobright.seed.logtext.LogText`, with its tests and no dependency of its own. It is in the root pom right after the BOM, and in the BOM; seed-campaign and seed-sessionflow depend on it. The cleaner moved there whole, and `api.LogText` is a thin delegate. Eight seed-campaign lines are cleaned: the five from P1-L's list and three found on the way. |
+| 2 | 5168f14 | No password inside a url is printed: ONE helper, `LogText.maskPassword`, used wherever the seed prints a url. The url used to connect is untouched. |
+| 3 | f2e0c7d | The whole Unicode format category (Cf) is escaped. A character above U+FFFF is written as its two UTF-16 escapes. |
+| 4 | 778531f | Docs: the root README (the new module), and the sessionflow README's ingress section, class table and history line. |
+
+### Numbers
+
+- **Head 778531f**: the worktree from clean **635/0/0/3** (264 s, 20:00) and a git-archive clean copy of the head **635/0/0/3** (231 s,
+  20:04), two holds back to back 20:00–20:08 (offline, no install; the box at load ~15); cb236c9 was 615/0/0/3.
+- **20 new tests**: MaskPasswordTest 6, InvisibleCharactersTest 5 (seed-logtext); NoPasswordInAUrlIsPrintedTest 4 and the api delegate's
+  LogTextTest 1 (sessionflow); NoForgedCampaignLogLinesTest 2 and NoForgedStoreLogLinesTest 2 (seed-campaign). P1-L's 8 cleaner tests
+  moved to seed-logtext unchanged.
+- **Red first**:
+  - item 1: a task id with "\n" forged a line in DefaultCampaignService's failed step, JdbcCampaignStore's cut and QueuedCampaignStore's refused change, and a journal line's U+2028 and ESC went raw;
+  - item 2: a stub that returned the url as written failed 5 of the 6 per-form tests and all 4 site tests;
+  - item 3: 4 of 5 failed (letters, marks of a script and emoji stay as written, by design).
+- **26 mutants, 26 red**:
+  - item 1, 6: the delegate answering raw, and five campaign lines left raw;
+  - item 2, 15: the userinfo, the parameters, case, ';', exact names only; the start line's redis and switch-db urls; `where()` and its default; `origin()` masked (the connect road); RootResources, SwitchDb, the ledger's words, LedgerSettings, the orchestrix start line. One spec failed to match the file and was fixed before its run; it was then red.
+  - item 3, 5: Cf passing, the fast path reading chars, a supplementary escape's width, a supplementary written as one escape, and "only the brief's named characters".
+
+### The campaign lines cleaned (item 1)
+
+- `DefaultCampaignService`: the failed store step (the task id, the store's words).
+- `JdbcCampaignStore`: the text cut to its column (the task id).
+- `QueuedCampaignStore`:
+  - the lost change and the refused change (the change's text and the store's words, at the 1000 cap);
+  - the failed batch and the stop's last failure (the store's words quote the task id);
+  - the writer's own fault (its stack cleaned).
+- `ChangeJournal`: the unreadable line.
+- The last three of these have no test of their own (a full queue with an unwritable journal; a stop with changes left; a writer fault). Their calls are the same as the tested ones.
+
+### Where the seed prints a url (item 2)
+
+- The start line: `BootstrapRoad.describe` (every root's switch-db and redis url) and the bootstrap's `where()` (`HttpBootstrapSource.where()`, `BootstrapSource`'s default). The bootstrap-config source's name and `HttpBootstrapSource`'s four refusals take `where()`.
+- The records' text: `SwitchDb`, `RootResources` (its own toString now), the ledger's words, `LedgerSettings`, and `Deployment` through them.
+- The orchestrix ledger's start line, its retry line and its three refusals, and the return road's no-return-road line.
+- Not passed through: the Kafka bootstraps (`host:port` lists, which have no password form) and the doorbell's `host:port`.
+
+### Decisions
+
+1. **The bottom module.** It is `seed-logtext`, class `com.telcobright.seed.logtext.LogText`. `api.LogText` delegates every method, `maskPassword` included. sessionflow and switch-ledger keep importing `api.LogText`, so no churn.
+2. **A NEW artifact.** Whatever carries the seed's jars to a consumer (a private m2, the bed's base) must carry `seed-logtext-2.0.0-SNAPSHOT` too, because seed-campaign and seed-sessionflow depend on it.
+3. **A change's text uses the 1000 cap.** The lost change's line may be its only record.
+4. **`maskPassword` is broad on names.** It masks any parameter whose name CONTAINS password, passwd, pwd or secret (sslpassword, client_secret, keyStorePassword), not only the three exact names. A userinfo with no ':' is printed as written.
+5. **The whole Cf category is escaped.** The reason: the JDK keeps it current; it holds the brief's list and also what hides text the same way (the TAG characters, the invisible operators, the interlinear annotations, U+180E). The cost: ZWNJ/ZWJ in Bengali or in an emoji sequence, and a soft hyphen, show as escapes in a log line.
+
+### Open points
+
+- A userinfo that is only a user may be a bare token (`https://<token>@host`). It is printed as written.
+- Variation selectors (U+FE00–U+FE0F, U+E0100–U+E01EF; category Mn) are not escaped. They neither reorder a line nor break it, but they can carry hidden bits.
+- statewalk's and mem-ledger's own log lines belong to other libraries and are outside the seed.
+
+### For P2
+
+1. A build of ad-sphere against this seed needs `seed-logtext` beside the other seed jars.
+2. ad-sphere can mask its own printed urls with `api.LogText.maskPassword`, and clean its MAC lines with `api.LogText.clean`.

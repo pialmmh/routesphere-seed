@@ -1,5 +1,6 @@
 package com.telcobright.seed.campaign.writer;
 
+import com.telcobright.seed.logtext.LogText;
 import com.telcobright.seed.campaign.api.Campaign;
 import com.telcobright.seed.campaign.api.CampaignTask;
 import com.telcobright.seed.campaign.spi.CampaignStore;
@@ -175,7 +176,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
             long soFar = lost.incrementAndGet();
             if (soFar == 1 || soFar % 1000 == 0) {
                 log.error("campaign store {}: a change could NOT be kept — the journal {} cannot be written and the queue is full; {} lost so far. The change: {}",
-                    name, journal.file(), soFar, change);
+                    name, journal.file(), soFar, LogText.failureText(change));
             }
         } finally {
             telling.unlock();
@@ -288,7 +289,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
                 }
             }
         } catch (RuntimeException e) {
-            log.error("campaign store {}: its writer stopped on a fault of its own — what is told from now on waits in the queue and the journal and is written at the next start", name, e);
+            log.error("campaign store {}: its writer stopped on a fault of its own — what is told from now on waits in the queue and the journal and is written at the next start", name, LogText.cleaned(e));
         }
     }
 
@@ -429,7 +430,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         }
         if (soFar <= 10 || soFar % 100 == 0) {
             log.error("campaign store {}: the store refuses this change by its own rules ({} tries, alone): {} — put aside in {}, not written again by itself ({} so far). The change: {}",
-                name, settings.triesBeforeRejected(), why, journal.rejectedFile(), soFar, change);
+                name, settings.triesBeforeRejected(), LogText.failureText(why), journal.rejectedFile(), soFar, LogText.failureText(change));
         }
     }
 
@@ -439,7 +440,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
         if (stopping) return;                                        // a stop that cut a write short: the stop says what it kept, once
         failingSince = System.currentTimeMillis();
         log.error("campaign store {}: a batch of {} change(s) could not be written: {} — it is written again every {}–{} ms until the store takes it; no task waits"
-            + " ({} more wait in the queue, every one in {})", name, changes, lastFailure, settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
+            + " ({} more wait in the queue, every one in {})", name, changes, LogText.failureText(lastFailure), settings.retryFirstMs(), settings.retryCapMs(), queue.size(), journal.file());
     }
 
     /** The words of the failure's first cause: what the database or the pool said, not this library's sentence around it. */
@@ -579,7 +580,7 @@ public final class QueuedCampaignStore implements CampaignStore, AutoCloseable {
             if (left <= 0) { journal.emptied(); log.info("campaign store {}: stopped; every change is in the store", name); return; }
             journal.applied(linesAppliedUpTo(writtenThrough));
             log.warn("campaign store {}: {} change(s) were not in the store when the process stopped{}: they are in {} after its applied mark and are written at the next start",
-                name, left, lastFailure == null ? "" : " (" + lastFailure + ")", journal.file());
+                name, left, lastFailure == null ? "" : " (" + LogText.failureText(lastFailure) + ")", journal.file());
         } catch (RuntimeException e) {
             log.error("campaign store {}: the journal's mark could not be written at the stop ({}): the next start writes its lines from the mark it has", name, journal.file(), e.toString());
         } finally {

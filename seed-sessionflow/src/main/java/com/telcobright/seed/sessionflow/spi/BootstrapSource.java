@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.spi;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import java.util.Map;
 
 /**
@@ -18,7 +19,7 @@ public interface BootstrapSource {
     String origin();
 
     /** Where the envelope comes from, for a log line — never the token. */
-    default String where() { return origin(); }
+    default String where() { return LogText.maskPassword(origin()); }
 
     /** prime-context did not answer, or answered with no envelope. */
     final class BootstrapUnavailable extends RuntimeException {

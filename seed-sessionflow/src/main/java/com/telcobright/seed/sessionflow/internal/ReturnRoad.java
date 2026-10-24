@@ -178,7 +178,7 @@ final class ReturnRoad {
             }
             case NO_ROAD -> {
                 if (saidNoRoad.compareAndSet(false, true)) {
-                    log.warn("ledger: orchestrix at {} has no return road ({}): what must go back is journaled as owed, as before", settings.baseUrl(), LogText.failureText(answer.words()));
+                    log.warn("ledger: orchestrix at {} has no return road ({}): what must go back is journaled as owed, as before", LogText.maskPassword(settings.baseUrl()), LogText.failureText(answer.words()));
                 }
                 journal.owe(e, "the ledger has no return road — " + said);
             }

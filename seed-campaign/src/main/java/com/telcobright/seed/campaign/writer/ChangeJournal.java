@@ -1,5 +1,6 @@
 package com.telcobright.seed.campaign.writer;
 
+import com.telcobright.seed.logtext.LogText;
 import com.telcobright.seed.campaign.spi.StoreChange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -198,8 +199,8 @@ final class ChangeJournal {
                     try {
                         batch.add(codec.read(line));
                     } catch (RuntimeException notAChange) {
-                        if (!saidUnreadable) log.warn("the journal {}: line {} is not a change and is passed over ({}): {}", file, read, notAChange.getMessage(),
-                            line.length() > 160 ? line.substring(0, 160) + "…" : line);
+                        if (!saidUnreadable) log.warn("the journal {}: line {} is not a change and is passed over ({}): {}", file, read,
+                            LogText.failureText(notAChange.getMessage()), LogText.clean(line));
                         saidUnreadable = true;
                     }
                 }
