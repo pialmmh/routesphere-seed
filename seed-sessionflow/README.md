@@ -187,6 +187,14 @@ so the application's yml is the two lines above and nothing else. See `seed-boot
 visible": from RUNTIME_INIT on (P1-G, proven on Quarkus 3.26.1); a bean Quarkus REST builds at STATIC_INIT (one a resource or filter
 injects by its type) sees the jar's own values — reach it through `Instance<…>`.
 
+**No secret from the bootstrap** (P1-K — the owner's ruling of 2026-10-24, "Environment only", re-affirming his rule of 2026-09-24): the
+seed reads NO secret from prime-context's envelope. A password by reference (`password-ref: env:<NAME>` — switch-db's, and the switch
+ledger's own `ledger.db`) is read from the PROCESS environment only, which the box's environment file fills (the secreteer: SOPS + age →
+`/etc/secreteer/<tenant>/<app>.env` → the unit's `EnvironmentFile=`). A variable not in the environment refuses the root's start in words
+naming the variable and the login, never a value; a `password-ref` that is not `env:<NAME>` is refused without repeating its text. The
+envelope's `secrets` are still parsed into `Deployment.secrets()` — deprecated, read by nobody, kept for the record's signature — and a
+`Deployment`'s text names them, never their values. Before P1-K, switch-db's password fell back to the envelope's `secrets`.
+
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree
 reloaded — and, first, THAT root's ledger loads the tier (`LedgerPort.tierAdded(tierDb)`: the switch ledger loads the one schema between

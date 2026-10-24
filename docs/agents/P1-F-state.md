@@ -275,3 +275,10 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   SwitchLedgerMakerTest's pin moved (P1-E's "the environment, then the secrets" → the environment only; the echo red). Passwords in tests
   are generated (UUID). Mutants 3/3 red (the fallback put back, the variable not named, the ref repeated). Direct: switch-ledger 70,
   sessionflow 239. Next: item 2.
+- 2026-10-24 17:11 · item 2 DONE — the seed reads no secret from the bootstrap, said in `Deployment`'s javadoc and the README's bootstrap
+  section (§4.2: the environment file, the secreteer). `Deployment.secrets()` is read by nobody after item 1 (grep; javac -Xlint:deprecation
+  on sessionflow and switch-ledger main: no use) → deprecated, the signature kept, the reader still parses. A `Deployment`'s text said the
+  secrets' VALUES (the record's own toString): now their names only (an override; every other part as before). Red first:
+  NoSecretFromTheBootstrapTest (1). Mutants 3/3 red (the values said, the override taken away, the names dropped — this one SURVIVED first:
+  "AD_SWITCH_DB_PASSWORD" is also the sample's password-ref; the test now names AD_REPORTS_DB_PASSWORD, named nowhere else). Direct:
+  sessionflow 240, switch-ledger 70. Next: item 3 (docs), then item 5 (the coordinator's: the door refuses without a root, in words).
