@@ -66,3 +66,7 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   seed-sessionflow 210/0/0/0 direct. Not touched (named in the README): the seed's own KafkaCdrSinkPerRootTest, SessionsInTheAirTest and
   seed-tenant's DoorbellTest still build the three-argument MockProducer — they run on the seed's 3.7.1 only (left out of the 4.0
   compile above). Next: the whole reactor in the worktree, then a git-archive clean copy of the head (one lock hold).
+- 2026-10-24 06:15 · **P1-F DONE** — the head 66ec564 from clean in the worktree **535/0/0/3** (153 s) and on a git-archive clean copy
+  **535/0/0/3** (136 s), one lock hold 06:08–06:13 (offline, no install); base 723f160 518/0/0/3; +17 tests, all new, none touched or
+  deleted; 37 mutants, 37 red. Report: `docs/agents/P1-F-report.md` — the P1-F report head is the commit that adds it. Next: P1-G (the
+  architect's brief arrived 06:1x), on this branch, under a `## P1-G` heading below.
