@@ -179,7 +179,9 @@ books (slots, counters, the CDR sequence) start fresh. Refused, in words, once a
 
 The application's OWN keys (everything in `config` beside `routesphere`: `adsphere.*`, `sdr.*`, `quarkus.http.*`, …) reach its
 MicroProfile / SmallRye Config through **seed-bootstrap-config** (a `ConfigSourceFactory` at ordinal 275, the same road, never a secret) —
-so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md`.
+so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md` — and its "When the values are
+visible": from RUNTIME_INIT on (P1-G, proven on Quarkus 3.26.1); a bean Quarkus REST builds at STATIC_INIT (one a resource or filter
+injects by its type) sees the jar's own values — reach it through `Instance<…>`.
 
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree

@@ -135,3 +135,15 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   (§9.5); `tenant_created`'s apps sorted, sent after the provisioning's commits; a root added live needs a listener the process already
   has (P2 gap 9, a window step); the pinned samples byte-identical — checked myself: deployment.json e1ca4f43a016ce4f, tenant-created.json
   63f396e263457824, both equal to prime-context 8f8d922's. Docs only. Next: item 6 (the probe waits for the lock).
+- 2026-10-24 07:09 · **P1-G item 6 done** — WHY item 12's values come late, PROVEN on Quarkus 3.26.1 offline (a probe app, kept as
+  `docs/agents/P1-G-quarkus-probe/`: a ConfigSourceFactory registered as ours is — META-INF/services, no @StaticInitSafe — serving
+  probe.value; the jar says from-the-jar; @QuarkusTest 1/0 and the packaged jar, same answers): the factory is asked ONCE, at
+  RUNTIME_INIT, never for the static-init config (ConfigGenerationBuildStep: the static builder takes only @StaticInitSafe factories; the
+  run-time config is RuntimeConfigSetupBuildStep's first RUNTIME_INIT task, Config.createRunTimeConfig()). Seen: a plain @Startup bean and
+  an @Observes StartupEvent reader → from-the-factory @RUNTIME_INIT; a @Startup bean a REST resource and a @ServerRequestFilter inject by
+  its type → from-the-jar @STATIC_INIT (Quarkus REST builds them at static init), still from-the-jar at a later request; the same reached
+  through Instance<> → from-the-factory @RUNTIME_INIT. DECISION: no code change — the factory stays not @StaticInitSafe (an HTTP fetch at
+  a native image's BUILD, two asks per start); the rule and the proof in seed-bootstrap-config/README.md "When the values are visible",
+  a pointer in the sessionflow README. For P2: reach AdSphereRuntime through Instance<> from its filters and resources (then configOver
+  can go), or keep configOver. Ports used by the probe: 127.0.0.1:7795/7796, the jar stopped by PID. Next: the whole reactor + the clean
+  copy, the report's P1-G section.
