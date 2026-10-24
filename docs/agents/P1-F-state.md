@@ -382,3 +382,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   InvisibleCharactersTest (5; 4 red, letters and emoji stay). Mutants 5/5 red (incl. "only the named list"). Next: item 4.
 - 2026-10-24 20:00 · item 4, docs — the root README (the new module `seed-logtext`), the sessionflow README's ingress section (the cleaner in
   seed-logtext, the Cf escapes, "No password inside a url is printed"), its class table and history line. Next: the reactor, a clean copy.
+- 2026-10-24 20:08 · **P1-M DONE** — items 1–4; the head 778531f from clean in the worktree **635/0/0/3** (264 s) and on a git-archive clean
+  copy **635/0/0/3** (231 s), two lock holds back to back 20:00–20:08 (offline, no install); +20 tests (8 moved); 26 mutants red. The
+  report's P1-M section: `docs/agents/P1-F-report.md`.
