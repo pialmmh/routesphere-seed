@@ -402,3 +402,5 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   `redis://ad_sphere@h` moved to the new rule (the user name alone is lost — the brief's rule 2). Mutants 7/7 red (the lone userinfo kept,
   ';' or '/' ending the search, the '(' form skipped, the search past '?', the first '@', an empty userinfo masked). Direct: logtext 24,
   campaign 76, sessionflow 269, switch-ledger 70, seed-tenant 23, samples 73. Next: item 2 (docs), then the gates when the lock is free.
+- 2026-10-24 20:32 · item 2, docs — the sessionflow README's maskPassword paragraph (the principle, the three forms, where the userinfo
+  ends, the accepted over-mask and the '?'/'#' limit) and its history line. Next: the gates when the lock is free, then the report.
