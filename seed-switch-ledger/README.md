@@ -88,6 +88,16 @@ is MySQL's `SHOW DATABASES LIKE '<prefix>%'` — a PostgreSQL switch database ke
 new database under the prefix, not the one tier the event names. When the pin moves to a mem-ledger build that has `addDatabase`, the
 reflection becomes a plain call.
 
+**Then the rows beside the tier** (P1-G, P2 gap 8): a reseller's provisioning also makes the tier's OWN account at its PARENT (a
+`packageaccount` row in the parent's schema); `addDatabase(tier)` does not see it, so the parent answered ACCOUNT_NOT_FOUND. After the
+tier's schema, the port calls mem-ledger's `reloadNewEntities()` (on the pinned jar's API — a plain call), still holding its gate alone: every
+row the cache lacks is merged, add-only, in every schema of the root (`internal.NewRowsOfATier`, `ParentRowsOfANewTierTest`). A RESERVE row
+it would bring back is a ghost — a settled reserve whose row the write-behind has not deleted yet (the port is the only writer of its root's
+reserves) — and is taken out again at once (left in, the orphan reaper would give its money back a second time). Its cost, once per tier
+created live: the pinned mem-ledger (2026-10-07) reads both tables of every tier schema of the root WHOLE; from mem-ledger 0f04624 on
+(2026-10-11, P2's fba1346 includes it), the accounts above each schema's high-water mark and the reserve table whole. Only after the
+tier's schema loaded: a tier that did not load merges nothing.
+
 **What P2 must prove on its PostgreSQL lab** (this box has no database server: here the proof is MemLedger on H2 for the gate, the once rule
 and the close, a stand-in for `addDatabase`):
 

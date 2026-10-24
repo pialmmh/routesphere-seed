@@ -105,3 +105,12 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   no hand; a refusing ledger did not keep the tree) — 4 green after; GateBeforeTheSwapTest by compile — 2 green; 11 mutants, 11 red;
   direct: seed-sessionflow 218, seed-tenant 23, switch-ledger 61, samples 73. Test helper touched: FakeLiveTrees (the gate on serve and
   reload). Next: item 3.
+- 2026-10-24 06:48 · **P1-G item 3 done** — after a live tier's schema loads, `OwnedMemLedgerPort` merges the rows beside it — its own
+  account at its PARENT (P2 gap 8) — by mem-ledger's `reloadNewEntities()` (on the pinned jar's API, a plain call; `internal/NewRowsOfATier`),
+  under the same write gate; a reserve row the reload would bring back is a ghost (a settled reserve the write-behind has not deleted yet;
+  STANDALONE: the port is the only writer) and is taken out at once — FOUND while reading the pinned bytecode (`mergeNewEntities` =
+  putIfAbsent of a whole-table read): left in, the orphan reaper would give its money back twice. Cost (said in the class and the README):
+  the pinned jar (2026-10-07) reads both tables of every tier schema WHOLE (no high-water mark — that is mem-ledger 0f04624, 2026-10-11,
+  LATER than the pin: the brief's "by a high-water mark" holds from 0f04624 on, for the accounts; the reserve table stays whole). Only after
+  the tier's schema loaded. Red first: ParentRowsOfANewTierTest's parent row red (null in the cache after tierAdded); 2 green; 4 mutants, 4
+  red; switch-ledger 63/0/0/0 direct. Next: item 4.

@@ -20,7 +20,8 @@ import java.util.function.Supplier;
 /**
  * The switch ledger's port over a MemLedger the {@code SwitchLedgerMaker} opened for one root. Every verb is the port's, run through a gate:
  * a verb holds it shared, a NEW TIER's load holds it alone — so a tier created live (R10, item 13) is loaded between the root's money
- * moves, never under a session's reserve. The same tier twice is one load; a tier the ledger was built over is none. Closing the port shuts
+ * moves, never under a session's reserve. The same tier twice is one load; a tier the ledger was built over is none. P1-G: after the
+ * tier's schema, the rows it brought beside it (its own account at its parent) are merged too ({@code NewRowsOfATier}). Closing the port shuts
  * the MemLedger down (its WAL consumer stops) — the bootstrap road closes it with the engine.
  */
 public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCloseable {
@@ -81,6 +82,18 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
             log.info("the switch ledger loaded the tier schema {} live (between the root's money moves)", tierDb);
         } catch (RuntimeException e) {
             log.error("the switch ledger did NOT load the tier schema {} live: {}", tierDb, e.getMessage());
+            return;
+        }
+        mergeTheRowsBeside(tierDb);
+    }
+
+    /** P1-G · The tier's rows outside its own schema — its own account at its parent — merged too, no settled reserve brought back. */
+    private void mergeTheRowsBeside(String tierDb) {
+        try {
+            int rows = NewRowsOfATier.merge(memLedger);
+            log.info("the switch ledger merged {} new row(s) beside the tier {} (its own account at its parent among them)", rows, tierDb);
+        } catch (RuntimeException e) {
+            log.error("the switch ledger did NOT merge the new rows beside the tier {} — its account at its parent stays unknown until the next start: {}", tierDb, e.getMessage());
         }
     }
 
