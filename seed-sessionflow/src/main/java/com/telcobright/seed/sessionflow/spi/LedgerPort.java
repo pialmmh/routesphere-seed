@@ -63,6 +63,13 @@ public interface LedgerPort {
     default void tierAdded(String tierDb) { }
 
     /**
+     * After {@link #tierAdded}: are the tier's books loaded? A ledger that keeps books per tier and SAID its load failed (never thrown)
+     * answers false, so the kit's gate hands the tier again on the next tree (the next doorbell ring, reload or event) instead of leaving
+     * its money refused until a restart. Default: true (a ledger that keeps no books per tier has nothing to load).
+     */
+    default boolean tierLoaded(String tierDb) { return true; }
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */

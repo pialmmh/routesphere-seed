@@ -75,6 +75,9 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
         }
     }
 
+    /** The tier's schema is in the MemLedger — built over at the start, or loaded live; false after a load that was said, so the gate hands it again. */
+    @Override public boolean tierLoaded(String tierDb) { return tierDb != null && tiers.contains(tierDb); }
+
     private void loadAlone(String tierDb) {
         try {
             loader.test(tierDb);

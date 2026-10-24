@@ -13,8 +13,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * every tier the tree holds that its root's ledger was not built over and was not handed yet is handed to that ledger FIRST
  * ({@code LedgerPort.tierAdded}), once (the event and the ring together: one hand). A ledger that throws keeps the tree from being shown
  * (the last tree stays, the next load tries again); a ledger that says its own failure (the switch ledger without {@code addDatabase})
- * lets the tree be shown, the tier's money refused until it loads. A root whose roads are not made yet passes: no session reaches it, and
- * its ledger is built over the tree it is made with.
+ * lets the tree be shown, the tier's money refused until it loads — and that tier is handed AGAIN on the next tree (the next ring, reload or
+ * event), because the ledger answers {@code tierLoaded} false; a restart is not needed. A root whose roads are not made yet passes: no
+ * session reaches it, and its ledger is built over the tree it is made with.
  */
 public final class TiersFirst implements TreeGate {
 
@@ -40,7 +41,7 @@ public final class TiersFirst implements TreeGate {
     public synchronized void hand(String rootDb, String tierDb) {
         if (tierDb == null || handed.contains(key(rootDb, tierDb))) return;
         ledger.tierAdded(rootDb, tierDb);
-        handed.add(key(rootDb, tierDb));
+        if (ledger.tierLoaded(rootDb, tierDb)) handed.add(key(rootDb, tierDb));       // a load the ledger SAID failed is handed again next time
     }
 
     /** The tiers a root's ledger was built over (its roads made with this tree): the gate never hands them. */

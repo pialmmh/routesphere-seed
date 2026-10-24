@@ -209,7 +209,7 @@ listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR roa
   and the event together are one hand. seed-tenant's trees pass every loaded tree through it (the ring, a reload, the backstop). **A lane's
   OWN LiveTrees** (ad-sphere's `AdTrees`) must take the gate (`gateEachNewTree`) and call `gate.pass(root, newTree)` before it swaps its
   own snapshot; the default does nothing. A ledger that throws keeps the new tree from being shown; the switch ledger says its own failure
-  and the tree is shown, the tier's money refused until it loads.
+  and the tree is shown, the tier's money refused until it loads, and the gate hands that tier again on the next tree (`LedgerPort.tierLoaded` false: no restart needed).
 - **The seed root's prefix is the bootstrap's word**: `config.routesphere.naming: {seed-root, seed-prefix}` (the envelope's one addition,
   PC-0022 §9.1) — `res_` when no prefix is said; a value that is not a name prefix is refused at the read. The naming rule is held to
   prime-context's own table (`seed-naming`'s `bootstrap/naming-cases.tsv`, byte-identical, 23 cases).

@@ -62,6 +62,12 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
         if (ledger != null && tierDb != null) ledger.tierAdded(tierDb);
     }
 
+    /** Are the tier's books loaded on its root's ledger? A root without a ledger here: true (nothing to load, nothing to hand again). */
+    public boolean tierLoaded(String root, String tierDb) {
+        LedgerPort ledger = root == null ? null : byRoot.get(root);
+        return ledger == null || tierDb == null || ledger.tierLoaded(tierDb);
+    }
+
     /** The engine's close: every root's ledger that holds something open (a switch ledger's MemLedger) is closed; a failure is said, the rest go on. */
     @Override
     public void close() {

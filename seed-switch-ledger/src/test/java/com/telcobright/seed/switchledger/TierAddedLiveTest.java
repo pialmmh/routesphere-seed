@@ -127,6 +127,8 @@ class TierAddedLiveTest {
         owned.tierAdded("btcl_res_9");
         owned.tierAdded("btcl_res_9");
         assertThat(loads).containsExactly("btcl_res_9", "btcl_res_9");
+        assertThat(owned.tierLoaded("btcl_res_9")).as("a load that was said failed: the gate hands it again").isFalse();
+        assertThat(owned.tierLoaded("btcl")).as("built over at the start").isTrue();
         owned.close();
     }
 
