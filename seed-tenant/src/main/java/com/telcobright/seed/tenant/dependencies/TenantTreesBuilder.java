@@ -1,5 +1,6 @@
 package com.telcobright.seed.tenant.dependencies;
 
+import com.telcobright.seed.sessionflow.spi.TreeGate;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.context.api.TenantContexts;
 import com.telcobright.seed.context.dependencies.TenantContextsBuilder;
@@ -30,6 +31,7 @@ public final class TenantTreesBuilder {
     private Duration loadTimeout;
     private String bootstrap, group;
     private boolean kafkaFailFast;
+    private TreeGate gate = TreeGate.OPEN;
 
     /** The tenants this process serves — never a guess (a cache never invents its tenants). */
     public TenantTreesBuilder directory(TenantDirectory v) { directory = v; return this; }
@@ -53,14 +55,24 @@ public final class TenantTreesBuilder {
     /** Abort the start when Kafka is unreachable, instead of retrying in the background. */
     public TenantTreesBuilder kafkaFailFast(boolean v) { kafkaFailFast = v; return this; }
 
+    /** P1-G · The step every NEW tree takes before it is swapped in — whatever loads it; a gate that throws keeps the last tree. */
+    public TenantTreesBuilder gate(TreeGate v) { gate = Objects.requireNonNull(v, "gate"); return this; }
+
     public TenantTrees build() {
         Objects.requireNonNull(directory, "directory(...) is required — a cache never invents its tenants");
         Objects.requireNonNull(source, "source(...) or primeContext(...) is required");
-        ContextLoader<Tenant> loader = (tenantId, secrets) -> Trees.ready(source.fetch(tenantId));
+        TreeGate beforeShown = gate;
+        ContextLoader<Tenant> loader = (tenantId, secrets) -> passed(tenantId, Trees.ready(source.fetch(tenantId)), beforeShown);
         TenantContextsBuilder<Tenant> b = TenantContexts.<Tenant>builder()
             .directory(directory).loader(loader).listener(listener).debounceMs(debounceMs).backstop(backstop).kafkaFailFast(kafkaFailFast);
         if (loadTimeout != null) b.loadTimeout(loadTimeout);
         if (bootstrap != null && !bootstrap.isBlank()) b.doorbell(bootstrap, DOORBELL_BASE, TopicNaming.underscore(), group);
         return new TenantTrees(b.build());
+    }
+
+    /** A loaded tree through the gate, before the cell swaps it in (a throw = a failed load: the last tree stays). */
+    private static Tenant passed(String tenantId, Tenant tree, TreeGate gate) {
+        gate.pass(tenantId, tree);
+        return tree;
     }
 }

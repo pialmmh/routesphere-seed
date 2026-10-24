@@ -91,3 +91,17 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   tree's refusal thrown out of the event; a not-listed root never tried again); green: ServeOrNothingTest 2, PendingRootTest 4; 11
   mutants, 11 red; direct: seed-sessionflow 214, seed-tenant 21, switch-ledger 61, samples 73 (all 0 failed). Test helper touched:
   BootstrapWorld (+ makers(Clock)). Next: item 2.
+- 2026-10-24 06:45 · **P1-G item 2 done** — a root's tree never shows a tier its ledger was not handed. `spi/TreeGate` (the step a NEW tree
+  takes before a session can see it) and `LiveTrees.gateEachNewTree(gate)` (a default that does nothing — a lane's own trees call the gate
+  before their own swap); the road gives its gate at its open: `internal/TiersFirst` hands every tier of the new tree its ledger was not
+  built over to that root's ledger FIRST (`tierAdded`), once — the event's road comes through the same `hand`, so the ring and the event
+  together are ONE hand; the event still hands a tier the ledger was built over (its "nothing", the P1-E test kept unchanged); a ledger
+  that throws keeps the new tree from being shown (the last stays, the next load tries again); a root with no ledger yet passes (its ledger
+  is built over the tree it is made with: `builtOver`). seed-tenant: `TenantTreesBuilder.gate` — the loader passes every loaded tree
+  through it before the cell swaps it in (the doorbell's ring, a reload, the backstop); `TreeGateHolder` (the road's gate, given after
+  the trees are made); `LiveTenantTrees.gateEachNewTree`. DECISION: a ledger that SAYS its own failure (the switch ledger on the pinned
+  mem-ledger, no addDatabase) lets the tree be shown, the tier's money refused until it loads — freezing the whole root's tree for one
+  unloadable tier would stop every other change of that root. Red first: TiersBeforeTreesTest red on behaviour (a ring showed the tier,
+  no hand; a refusing ledger did not keep the tree) — 4 green after; GateBeforeTheSwapTest by compile — 2 green; 11 mutants, 11 red;
+  direct: seed-sessionflow 218, seed-tenant 23, switch-ledger 61, samples 73. Test helper touched: FakeLiveTrees (the gate on serve and
+  reload). Next: item 3.

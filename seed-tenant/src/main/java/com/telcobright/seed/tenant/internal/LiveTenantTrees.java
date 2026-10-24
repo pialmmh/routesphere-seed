@@ -3,7 +3,11 @@ package com.telcobright.seed.tenant.internal;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.LiveTrees;
+import com.telcobright.seed.sessionflow.spi.TreeGate;
 import com.telcobright.seed.tenant.api.TenantTrees;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -21,6 +25,8 @@ import java.util.concurrent.TimeoutException;
  */
 public final class LiveTenantTrees implements LiveTrees {
 
+    private static final Logger log = LoggerFactory.getLogger(LiveTenantTrees.class);
+
     static final long LOAD_WAIT_SEC = 30;
 
     /** The roots served: the trees' directory, grown when a root is added. */
@@ -34,17 +40,29 @@ public final class LiveTenantTrees implements LiveTrees {
 
     private final TenantTrees trees;
     private final Served served;
+    private final TreeGateHolder gate;
 
-    private LiveTenantTrees(TenantTrees trees, Served served) {
+    private LiveTenantTrees(TenantTrees trees, Served served, TreeGateHolder gate) {
         this.trees = trees;
         this.served = served;
+        this.gate = gate;
     }
 
-    /** The trees started — every served root loaded — or refused naming the roots that could not be. */
-    public static LiveTenantTrees started(TenantTrees trees, Served served) {
-        LiveTenantTrees live = new LiveTenantTrees(trees.start(), served);
+    /** The trees started — every served root loaded — or refused naming the roots that could not be. Trees built with no gate: never gated. */
+    public static LiveTenantTrees started(TenantTrees trees, Served served) { return started(trees, served, null); }
+
+    /** P1-G · The same, the trees built with {@code gate} ({@code TenantTreesBuilder.gate}): the road's gate reaches every load through it. */
+    public static LiveTenantTrees started(TenantTrees trees, Served served, TreeGateHolder gate) {
+        LiveTenantTrees live = new LiveTenantTrees(trees.start(), served, gate);
         for (String root : served.active()) live.refuseUnloaded(root);
         return live;
+    }
+
+    /** P1-G · The road's gate on every new tree, before it is swapped in (the doorbell's ring, a reload, a root served). */
+    @Override
+    public void gateEachNewTree(TreeGate gate) {
+        if (this.gate == null) { log.warn("these trees were built with no gate holder (TenantTreesBuilder.gate): a new tree is shown without the kit's step"); return; }
+        this.gate.give(gate);
     }
 
     @Override public Set<String> roots() { return served.active(); }

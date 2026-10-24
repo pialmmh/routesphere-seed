@@ -42,6 +42,7 @@ public final class BootstrapRoad implements AutoCloseable {
     private final LiveRules rules;
     private final PerRootCdrSink cdr = new PerRootCdrSink();
     private final PerRootLedger ledger;
+    private final TiersFirst tiersFirst;
     private final PerRootJournal journal = new PerRootJournal();
     private final Map<String, Producer<String, String>> producers = new ConcurrentHashMap<>();
     private final Map<String, Admin> admins = new ConcurrentHashMap<>();
@@ -57,6 +58,8 @@ public final class BootstrapRoad implements AutoCloseable {
         this.trees = makers.trees().make(deployment, source);
         this.rules = new LiveRules(deployment.rules());
         this.ledger = new PerRootLedger(this::rootOf);
+        this.tiersFirst = new TiersFirst(ledger);
+        trees.gateEachNewTree(tiersFirst);                                  // P1-G: a new tree's tiers into their root's ledger first
         this.pending = new PendingRoots(deployment.app(), deployment.pendingRoot(), makers.clock(), root -> tryToServe(root, "tried again, it was pending"));
     }
 
@@ -171,7 +174,7 @@ public final class BootstrapRoad implements AutoCloseable {
     /** A new tier of a served root: its root's ledger loads the tier first, then the tree shows it to the next session (item 13). */
     private void reloadTheRootOf(TenantCreated event) {
         if (!deployment.roots().contains(event.root())) return;
-        ledger.tierAdded(rootDbOf(event.root()), event.tierDb());
+        tiersFirst.hand(rootDbOf(event.root()), event.tierDb());
         trees.reload(event.root());
         log.info("[{}] the tier {} under {} is in the ledger and the tree from now on (its root reloaded)", deployment.app(), event.tierDb(), event.root());
     }
@@ -195,7 +198,9 @@ public final class BootstrapRoad implements AutoCloseable {
         RootResources r = d.root(root).orElseThrow();
         String rootDb = rootDbOf(root);
         LedgerMaker.Context context = new LedgerMaker.Context(d, trees, makers.clock(), makers.environment());
+        RootTree builtWith = trees.snapshot(root).orElse(null);
         ledger.add(rootDb, makers.ledger(r.ledger().kind()).make(r, context));
+        if (builtWith != null) tiersFirst.builtOver(rootDb, builtWith.tree());
         cdr.add(rootDb, new KafkaCdrSink(producerOf(r.kafka().bootstrap()), Topics.platform(CDR, rootDb), null));
         journal.add(rootDb, makers.journalOf(r.dir()));
     }
