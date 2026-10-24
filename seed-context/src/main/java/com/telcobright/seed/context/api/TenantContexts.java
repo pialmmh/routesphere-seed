@@ -28,6 +28,13 @@ public interface TenantContexts<T> extends AutoCloseable {
 
     static <T> TenantContextsBuilder<T> builder() { return new TenantContextsBuilder<>(); }
 
+    /**
+     * The exact topic names this instance's doorbell listens on, one per active tenant ({@code naming.topic(base, tenant)}),
+     * sorted; filled at {@code start()} and on every directory change, whether or not a consumer is open (a blank bootstrap
+     * keeps the names and opens nothing). Empty before {@code start()}.
+     */
+    java.util.List<String> doorbellTopics();
+
     /** Load every active tenant (in parallel, failures isolated), then open the doorbell and the backstop. */
     TenantContexts<T> start();
 

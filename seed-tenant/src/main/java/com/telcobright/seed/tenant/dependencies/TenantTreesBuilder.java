@@ -29,6 +29,7 @@ public final class TenantTreesBuilder {
     private Duration backstop = Duration.ofMinutes(5);
     private Duration loadTimeout;
     private String bootstrap, group;
+    private String doorbellBase = DOORBELL_BASE;
     private boolean kafkaFailFast;
 
     /** The tenants this process serves — never a guess (a cache never invents its tenants). */
@@ -47,8 +48,19 @@ public final class TenantTreesBuilder {
     public TenantTreesBuilder backstop(Duration v) { backstop = v; return this; }
     public TenantTreesBuilder loadTimeout(Duration v) { loadTimeout = v; return this; }
 
-    /** The Kafka doorbell: one consumer on {@code config_event_loader_<tenant>} for every served tenant; a blank bootstrap = no doorbell. */
+    /** The Kafka doorbell: one consumer on {@code <doorbellBase>_<tenant>} for every served tenant; a blank bootstrap = no doorbell. */
     public TenantTreesBuilder doorbell(String bootstrap, String group) { this.bootstrap = bootstrap; this.group = group; return this; }
+
+    /**
+     * The doorbell's topic base for BOTH sides — what this instance listens on and what its {@code Doorbell} rings on
+     * ({@code <base>_<tenant>}); default {@link #DOORBELL_BASE}. A product that must not share the platform's doorbell with
+     * another config plane on the same cluster names its own base here (the WiFi BSS on production: {@code wifi_prime_doorbell},
+     * because {@code config_event_loader_btcl} there is the contact center's). Blank is refused by name.
+     */
+    public TenantTreesBuilder doorbellBase(String base) {
+        if (base == null || base.isBlank()) throw new IllegalArgumentException("doorbellBase(...) must name a topic base — blank would listen on nothing and ring nowhere");
+        this.doorbellBase = base; return this;
+    }
 
     /** Abort the start when Kafka is unreachable, instead of retrying in the background. */
     public TenantTreesBuilder kafkaFailFast(boolean v) { kafkaFailFast = v; return this; }
@@ -60,7 +72,8 @@ public final class TenantTreesBuilder {
         TenantContextsBuilder<Tenant> b = TenantContexts.<Tenant>builder()
             .directory(directory).loader(loader).listener(listener).debounceMs(debounceMs).backstop(backstop).kafkaFailFast(kafkaFailFast);
         if (loadTimeout != null) b.loadTimeout(loadTimeout);
-        if (bootstrap != null && !bootstrap.isBlank()) b.doorbell(bootstrap, DOORBELL_BASE, TopicNaming.underscore(), group);
-        return new TenantTrees(b.build());
+        b.doorbellTopics(doorbellBase, TopicNaming.underscore());                       // the names, broker or not (readable)
+        if (bootstrap != null && !bootstrap.isBlank()) b.doorbell(bootstrap, doorbellBase, TopicNaming.underscore(), group);
+        return new TenantTrees(b.build(), doorbellBase);
     }
 }

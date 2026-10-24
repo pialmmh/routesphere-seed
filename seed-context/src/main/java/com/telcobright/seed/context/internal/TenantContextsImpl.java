@@ -199,6 +199,8 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
 
     private List<String> topics() { return new ArrayList<>(new TreeMap<>(tenantByTopic).keySet()); }
 
+    @Override public List<String> doorbellTopics() { return topics(); }
+
     private void ringByTopic(String topic) {
         String tenantId = tenantByTopic.get(topic);
         if (tenantId == null) { log.warn("doorbell on topic {} names no tenant of this instance — ignored, counted", topic); return; }

@@ -53,7 +53,7 @@ public final class KafkaDoorbell implements Doorbell {
     public boolean ring(String tenantId, String what) {
         trees.ring(tenantId, service + ":" + what);
         if (producer == null) return false;
-        String topic = naming.topic(TenantTreesBuilder.DOORBELL_BASE, tenantId);
+        String topic = trees.doorbellTopic(tenantId);          // the trees' one base: what this instance listens on is what it rings on
         String json = "{\"tenantId\":\"" + tenantId + "\",\"source\":\"" + service + "\",\"what\":\"" + what + "\",\"at\":\"" + Instant.now() + "\"}";
         try {
             producer.send(new ProducerRecord<>(topic, tenantId, json), (md, ex) -> {

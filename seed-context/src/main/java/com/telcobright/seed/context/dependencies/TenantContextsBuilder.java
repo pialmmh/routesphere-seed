@@ -55,6 +55,16 @@ public final class TenantContextsBuilder<T> {
         return this;
     }
 
+    /**
+     * The doorbell's topic NAMES without a broker: {@code naming.topic(base, tenant)} per active tenant, readable through
+     * {@link TenantContexts#doorbellTopics()} after {@code start()} — so a product (and its test) can see which topics this
+     * instance listens on even where no consumer is opened. {@link #doorbell} sets the same two fields plus the broker.
+     */
+    public TenantContextsBuilder<T> doorbellTopics(String base, TopicNaming naming) {
+        this.topicBase = base; this.naming = naming;
+        return this;
+    }
+
     /** Abort start when Kafka is unreachable, instead of retrying forever in the background. */
     public TenantContextsBuilder<T> kafkaFailFast(boolean failFast) { this.kafkaFailFast = failFast; return this; }
 

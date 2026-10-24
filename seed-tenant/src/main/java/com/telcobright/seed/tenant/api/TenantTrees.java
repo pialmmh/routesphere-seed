@@ -45,12 +45,27 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(TenantTrees.class);
 
     private final TenantContexts<Tenant> contexts;
+    private final String doorbellBase;
     private final Map<String, PartnerTiers> partnerTiers = new ConcurrentHashMap<>();
     private final AtomicLong walks = new AtomicLong();
 
-    public TenantTrees(TenantContexts<Tenant> contexts) { this.contexts = contexts; }
+    public TenantTrees(TenantContexts<Tenant> contexts) { this(contexts, TenantTreesBuilder.DOORBELL_BASE); }
+
+    /** {@code doorbellBase} = the one base both sides use: {@link #doorbellTopic} for the ringer, the listener's names via the contexts. */
+    public TenantTrees(TenantContexts<Tenant> contexts, String doorbellBase) {
+        this.contexts = contexts;
+        this.doorbellBase = java.util.Objects.requireNonNull(doorbellBase, "doorbellBase");
+    }
 
     public static TenantTreesBuilder builder() { return new TenantTreesBuilder(); }
+
+    /** The topic a ring for {@code tenantId} goes on: {@code <doorbellBase>_<tenantId>} (the seed's underscore naming). */
+    public String doorbellTopic(String tenantId) {
+        return com.telcobright.seed.context.spi.TopicNaming.underscore().topic(doorbellBase, tenantId);
+    }
+
+    /** The topics this instance LISTENS on (one per served tenant), as the contexts subscribe them — filled from {@code start()}. */
+    public List<String> doorbellTopics() { return contexts.doorbellTopics(); }
 
     /** Load every served tenant, open the doorbell and the backstop. */
     public TenantTrees start() { contexts.start(); return this; }
