@@ -259,3 +259,19 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 16:32 · **P1-J DONE** — items 1–4; the head cc7e90b from clean in the worktree **580/0/0/3** (148 s) and on a git-archive clean
   copy **580/0/0/3** (148 s), two short lock holds 16:26–16:31 (offline, no install); +8 tests; 12 mutants red; the merge tests 20 runs
   under the hog green. The report's P1-J section: `docs/agents/P1-F-report.md`.
+
+## P1-K
+
+- 2026-10-24 16:58 · START — p1-follow at routesphere-flow c17ffaa (the architect's merge of P1-J, fast-forwarded by him); the brief
+  `docs/agents/P1-K-brief.md` (the owner's ruling of 16:51, "Environment only": a password from the process environment only). The one
+  road from the envelope's `secrets` to a credential in main code: `SwitchLedgerMaker.passwordOf` (`login.password(environment,
+  deployment.secrets())`); its record method `SwitchDb.password(env, secrets)` has no caller outside the seed's own test (ad-sphere
+  p2-adflow 514d37a read: none) and no public signature needs it — it goes. Next: item 1, red first.
+- 2026-10-24 17:06 · item 1 DONE — switch-db's password from the PROCESS environment only: `SwitchLedgerMaker.passwordOf` reads
+  `SwitchDb.passwordFromTheEnvironment` for both logins (the ledger's own, P1-J, and switch-db's); `SwitchDb.password(env, secrets)` removed
+  (no caller left; none in ad-sphere p2-adflow; no public signature needs it). The refusal names the variable and the login, never a value;
+  a password-ref that is not `env:<NAME>` is refused WITHOUT repeating its text (it may be a password — it was echoed before). Red first:
+  PasswordFromTheEnvironmentOnlyTest (2; a password only in the envelope's secrets connected — "Expecting code to raise a throwable") and
+  SwitchLedgerMakerTest's pin moved (P1-E's "the environment, then the secrets" → the environment only; the echo red). Passwords in tests
+  are generated (UUID). Mutants 3/3 red (the fallback put back, the variable not named, the ref repeated). Direct: switch-ledger 70,
+  sessionflow 239. Next: item 2.

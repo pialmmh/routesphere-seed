@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,14 +81,21 @@ class SwitchLedgerMakerTest {
             .hasMessageContaining("the root 'btcl' has no tree");
     }
 
+    /**
+     * P1-K · the pin moved (the owner's ruling of 2026-10-24, "Environment only"): P1-E's "the environment, then the bootstrap's secrets" is
+     * gone — a password by reference is read from the process environment ONLY; a missing variable is refused naming it, and a password-ref
+     * that is not {@code env:<NAME>} is refused without repeating its text (it may be a password). The passwords are generated.
+     */
     @Test
-    void aPasswordByReference_isReadFromTheEnvironmentThenTheSecrets_neverWritten() {
+    void aPasswordByReference_isReadFromTheEnvironmentOnly_neverWritten_neverRepeated() {
+        String password = "pw-" + UUID.randomUUID();
         RootResources.SwitchDb db = new RootResources.SwitchDb(lab.url(), "btcl", "sa", "env:AD_SWITCH_DB_PASSWORD");
-        assertThat(db.password(name -> "from-env", Map.of("AD_SWITCH_DB_PASSWORD", "from-secrets"))).isEqualTo("from-env");
-        assertThat(db.password(name -> null, Map.of("AD_SWITCH_DB_PASSWORD", "from-secrets"))).isEqualTo("from-secrets");
-        assertThatThrownBy(() -> db.password(name -> null, Map.of())).hasMessageContaining("AD_SWITCH_DB_PASSWORD is in neither");
-        assertThatThrownBy(() -> new RootResources.SwitchDb(lab.url(), "btcl", "sa", "s3cret").password(name -> null, Map.of()))
-            .hasMessageContaining("is not env:<NAME>");
+        assertThat(db.passwordFromTheEnvironment(name -> name.equals("AD_SWITCH_DB_PASSWORD") ? password : null)).isEqualTo(password);
+        assertThatThrownBy(() -> db.passwordFromTheEnvironment(name -> null))
+            .hasMessageContaining("AD_SWITCH_DB_PASSWORD").hasMessageContaining("not in the process environment");
+        String written = "pw-" + UUID.randomUUID();
+        assertThatThrownBy(() -> new RootResources.SwitchDb(lab.url(), "btcl", "sa", written).passwordFromTheEnvironment(name -> null))
+            .hasMessageContaining("is not env:<NAME>").hasMessageNotContaining(written);
     }
 
     @Test
