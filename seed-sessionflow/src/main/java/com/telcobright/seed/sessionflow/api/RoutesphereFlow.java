@@ -681,7 +681,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         try {
             kit.journal().noted(sessionId, kit.clock().millis(), answeredAtMs, billedSec);
         } catch (RuntimeException e) {
-            log.warn("[{}] {} | the journal did not take what was learned of the session: {}", name(), sessionId, e.toString());
+            log.warn("[{}] {} | the journal did not take what was learned of the session: {}", name(), LogText.clean(sessionId), LogText.failureText(e));
         }
     }
 
@@ -798,13 +798,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         long micros = (System.nanoTime() - startedAt) / 1_000;
         Object shown = result == null ? "ok" : result;
         ctx.history.note(name(), stepName + " → " + shown + " (" + micros + " µs)");
-        if (debug) log.info("[{}] {} | {} | {} | {} µs", name(), ctx.sessionId(), stepName, shown, micros);
+        if (debug) log.info("[{}] {} | {} | {} | {} µs", name(), LogText.clean(ctx.sessionId()), stepName, LogText.clean(shown), micros);
         return result;
     }
 
     final String internalError(C ctx, String where, RuntimeException e) {
         ctx.history.note(name(), where + " threw: " + e);
-        log.error("[{}] {} | {} threw — refused with INTERNAL_ERROR", name(), ctx.sessionId(), where, e);
+        log.error("[{}] {} | {} threw — refused with INTERNAL_ERROR", name(), LogText.clean(ctx.sessionId()), where, LogText.cleaned(e));
         return SessionCause.INTERNAL_ERROR;
     }
 
@@ -814,7 +814,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
             return body.get();
         } catch (RuntimeException e) {
             ctx.history.note(name(), stepName + " threw: " + e);
-            log.error("[{}] {} | {} threw", name(), ctx.sessionId(), stepName, e);
+            log.error("[{}] {} | {} threw", name(), LogText.clean(ctx.sessionId()), stepName, LogText.cleaned(e));
             return whenItThrows;
         }
     }

@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -91,7 +92,7 @@ public final class OwedJournal {
     /** Write down that the reserve could not be given back: an officer credits it. */
     public synchronized void owe(Entry e, String why) {
         log.error("OWED: {} {} of the reserve {} (tier {} {}, partner {}, account {}) could not be given back by the ledger: {} — written to {}",
-            e.amount(), e.uom(), e.reference(), e.tier(), e.tenant(), e.partnerId(), e.account(), why, file);
+            e.amount(), e.uom(), LogText.clean(e.reference()), e.tier(), e.tenant(), e.partnerId(), e.account(), LogText.failureText(why), file);
         append(lineOf(OWED, e, why));
     }
 
@@ -101,7 +102,7 @@ public final class OwedJournal {
      */
     public synchronized void unsure(LevelAdmission level, String reference, BigDecimal amount, String why) {
         log.error("UNSURE: the reserve {} of {} (tier {} {}, partner {}) got no answer from the ledger: {} — it MAY have been taken; look the reference up at the ledger. Written to {}",
-            reference, amount, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), why, file);
+            LogText.clean(reference), amount, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), LogText.failureText(why), file);
         append(lineOf(UNSURE, Entry.of(level, reference, amount), why));
     }
 
@@ -137,7 +138,7 @@ public final class OwedJournal {
         try {
             return JSON.readTree(text);
         } catch (IOException e) {
-            log.warn("owed journal {}: a line that is not JSON is skipped: {}", file, text.length() > 120 ? text.substring(0, 120) + "…" : text);
+            log.warn("owed journal {}: a line that is not JSON is skipped: {}", file, LogText.clean(text));
             return null;
         }
     }

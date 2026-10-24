@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,7 +69,7 @@ public final class ChannelSlots {
         for (String callId : partnerByCall.keySet()) {
             if (callIsLive.test(callId)) { suspects.remove(callId); continue; }
             if (!suspects.add(callId)) {
-                log.warn("[SLOT-RECONCILER] call {} is gone and still held a channel slot of {} — given back", callId, partnerByCall.get(callId));
+                log.warn("[SLOT-RECONCILER] call {} is gone and still held a channel slot of {} — given back", LogText.clean(callId), partnerByCall.get(callId));
                 release(callId);
                 healed++;
             }

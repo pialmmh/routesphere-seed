@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.telcobright.seed.sessionflow.dependencies.LedgerSettings;
@@ -116,7 +117,9 @@ final class ReturnRoad {
         if (!askable(entry, why)) return new Answer(Outcome.REFUSED, null, "the partner has no accounting partner");
         Answer answer = ask(entry);
         switch (answer.outcome()) {
-            case RETURNED, NOT_CHARGED -> log.debug("ledger: the reserve {} went back at once ({})", entry.reference(), answer.words());
+            case RETURNED, NOT_CHARGED -> {
+                if (log.isDebugEnabled()) log.debug("ledger: the reserve {} went back at once ({})", LogText.clean(entry.reference()), LogText.failureText(answer.words()));
+            }
             case ASK_AGAIN -> {
                 journal.note(OwedJournal.RETURNING, entry, why + " — " + answer.words() + ": asked again");
                 hand(new Task(entry, 1, false, false), pace.firstWaitMs());
@@ -151,7 +154,7 @@ final class ReturnRoad {
             }
         } catch (RuntimeException e) {
             log.error("ledger: the return of {} failed in the worker — its line in {} stays open and is asked again at the next start: {}",
-                task.entry().reference(), journal.file(), e.toString());
+                LogText.clean(task.entry().reference()), journal.file(), LogText.failureText(e));
         }
     }
 
@@ -161,21 +164,21 @@ final class ReturnRoad {
         String said = why == null ? answer.words() : why + " — " + answer.words();
         switch (answer.outcome()) {
             case RETURNED -> {
-                log.info("ledger: the reserve {} ({} {}) went back to partner {} of {}", e.reference(), e.amount(), e.uom(), e.partnerId(), e.tenant());
+                log.info("ledger: the reserve {} ({} {}) went back to partner {} of {}", LogText.clean(e.reference()), e.amount(), e.uom(), e.partnerId(), e.tenant());
                 journal.note(OwedJournal.RETURNED, e, said);
             }
             case NOT_CHARGED -> {
-                log.info("ledger: nothing was charged under {} — nothing to give back", e.reference());
+                log.info("ledger: nothing was charged under {} — nothing to give back", LogText.clean(e.reference()));
                 journal.note(OwedJournal.NOT_CHARGED, e, said);
             }
             case NEEDS_AN_OFFICER -> {
                 log.error("OFFICER: the reserve {} ({} {}, partner {} of {}) is NOT returned by the ledger: {} — an officer decides. Written to {}",
-                    e.reference(), e.amount(), e.uom(), e.partnerId(), e.tenant(), answer.words(), journal.file());
+                    LogText.clean(e.reference()), e.amount(), e.uom(), e.partnerId(), e.tenant(), LogText.failureText(answer.words()), journal.file());
                 journal.note(OwedJournal.OFFICER, e, said);
             }
             case NO_ROAD -> {
                 if (saidNoRoad.compareAndSet(false, true)) {
-                    log.warn("ledger: orchestrix at {} has no return road ({}): what must go back is journaled as owed, as before", settings.baseUrl(), answer.words());
+                    log.warn("ledger: orchestrix at {} has no return road ({}): what must go back is journaled as owed, as before", settings.baseUrl(), LogText.failureText(answer.words()));
                 }
                 journal.owe(e, "the ledger has no return road — " + said);
             }

@@ -302,3 +302,23 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 17:38 · **P1-K DONE** — items 1–5; the head 94e00c1 from clean in the worktree **595/0/0/3** (147 s) and on a git-archive clean
   copy **595/0/0/3** (159 s), two short lock holds 17:33–17:38 (offline, no install); +15 tests; 19 mutants red; the door tests 20 + 10
   runs under the hog green. The report's P1-K section: `docs/agents/P1-F-report.md`.
+
+## P1-L
+
+- 2026-10-24 17:52 · START — p1-follow at routesphere-flow ab91c44 (the architect's merge of P1-K, fast-forwarded by him); the brief
+  `docs/agents/P1-L-brief.md`. The plan: ONE helper `internal/LogText` (sessionflow) cleans every logged value (C0/C1 controls,
+  U+2028/2029 escaped; 200 characters, "…" when cut) and a failure's text and stack; the door and every sessionflow / switch-ledger line
+  that takes a request's value (a session id, a reference built from it, a lane's failure) go through it. seed-campaign's lines that carry
+  a task id or a change's text sit BELOW sessionflow (no path to the helper): listed in the report for a ruling. The machine's NO_TENANT
+  start road through the SAME sayer: the sayer moves into the kit (beside the counters; the flow's only field stays the kit — the pool
+  rule), the app named per call. Next: item 1, red first.
+- 2026-10-24 18:10 · item 1 DONE — ONE cleaner, `api/LogText` (in api so a lane can use it too): `clean(value)` escapes every control
+  character (C0, DEL, C1 — Character.isISOControl — and U+2028/2029: \\n \\r \\t, the others \\uXXXX), at most 200 characters with "…"
+  (never inside an escape or a character; a clean value given back as it is); `failureText(words)` the same at 1000; `cleaned(throwable)`
+  the same stack with every text in its chain (up to 8 causes) cleaned. The door cleans its door (also the window's key: memory bounded),
+  the session id, a failed rule's words and stack. Then 40 lines in 18 files of sessionflow and switch-ledger that take a session id, a
+  call id, a reference built from them, a lane's cause or a ledger's or a failure's words (the list in the report); debug lines guarded
+  (`isDebugEnabled`) so nothing is cleaned with debug off. Red first: NoForgedLogLinesTest — a session id with "\\n[app] forged" gave two
+  lines, a failed rule's "\\n" two. New: LogTextTest 8, NoForgedLogLinesTest 4. Mutants 13/13 red. Not cleaned, for a ruling:
+  seed-campaign's 5 lines with a task id or a change's text (the module sits below sessionflow). Direct: sessionflow 264,
+  switch-ledger 70, seed-tenant 23, samples 73. Next: item 2.

@@ -92,8 +92,8 @@ final class SessionSettlement<C extends RoutesphereContext> {
     private TierSettlement owed(C ctx, LevelAdmission level, BigDecimal charged, RuntimeException why) {
         flow.kit().counters().owed.incrementAndGet();
         RoutesphereFlow.log.error("[{}] {} | OWED: the settlement of tier {} ({}) partner {} was NOT taken — reference {}, reserved {} {}, to charge {}: {}",
-            flow.name(), ctx.sessionId(), level.getLevelIndex(), level.getDbName(), level.getPartnerId(), level.getDebitReference(),
-            level.getTotalReserved(), level.getUom(), charged, why.toString());
+            flow.name(), LogText.clean(ctx.sessionId()), level.getLevelIndex(), level.getDbName(), level.getPartnerId(), LogText.clean(level.getDebitReference()),
+            level.getTotalReserved(), level.getUom(), charged, LogText.failureText(why));
         return TierSettlement.owed(level, charged == null ? BigDecimal.ZERO : charged, why.toString());
     }
 

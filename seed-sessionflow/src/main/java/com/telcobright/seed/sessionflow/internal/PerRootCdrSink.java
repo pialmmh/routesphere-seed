@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import org.slf4j.Logger;
@@ -33,7 +34,7 @@ public final class PerRootCdrSink implements CdrSink {
     @Override
     public void publish(String root, String callId, List<CdrEvent> tiers) {
         CdrSink sink = root == null ? null : byRoot.get(root);
-        if (sink == null) { log.error("the CDR of session {} names the root '{}', which has no road here (roots {}) — NOT published", callId, root, byRoot.keySet()); return; }
+        if (sink == null) { log.error("the CDR of session {} names the root '{}', which has no road here (roots {}) — NOT published", LogText.clean(callId), root, byRoot.keySet()); return; }
         sink.publish(root, callId, tiers);
     }
 

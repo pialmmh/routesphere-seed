@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.RoutesphereFacts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,10 @@ import java.util.function.BooleanSupplier;
  * said as ONE summary line ("… and N more refused at &lt;door&gt; in the 60 s window from &lt;its start&gt;"), written at the door's next
  * refusal after the window — no timer thread. At most {@value #MOST_DOORS} doors are held apart; a refusal at any further door shares one
  * window, "{@value #OTHER_DOORS}" (memory stays bounded). Rule one: with debug on, EVERY refusal is said.
+ *
+ * <p>P1-L · Every value it writes that a request may carry — the door, the session id, a failed rule's words and its stack — is cleaned by
+ * {@link LogText} (control characters escaped, at most 200 characters): no request writes a log line of its own. A door's window is kept
+ * under its cleaned name (a door of a megabyte holds 200 characters).
  */
 public final class NoRootAtTheDoor {
 
@@ -97,7 +102,8 @@ public final class NoRootAtTheDoor {
 
     private void sayInFull(String door, RoutesphereFacts facts, RuntimeException ruleFailed) {
         String session = sessionOf(facts);
-        say("[" + app + "] no root at " + door + (session == null ? "" : " (session " + session + ")") + ": " + reasonOf(facts, ruleFailed), ruleFailed);
+        say("[" + app + "] no root at " + door + (session == null ? "" : " (session " + session + ")") + ": " + reasonOf(facts, ruleFailed),
+            LogText.cleaned(ruleFailed));
     }
 
     private void sayTheSummary(Turn turn) {
@@ -116,13 +122,13 @@ public final class NoRootAtTheDoor {
 
     private static String doorOf(RoutesphereFacts facts) {
         if (facts == null) return "no facts";
-        return facts.ingress() == null ? "no ingress" : facts.ingress().toString();
+        return facts.ingress() == null ? "no ingress" : LogText.clean(facts.ingress());
     }
 
-    private static String sessionOf(RoutesphereFacts facts) { return facts == null ? null : facts.sessionId(); }
+    private static String sessionOf(RoutesphereFacts facts) { return facts == null || facts.sessionId() == null ? null : LogText.clean(facts.sessionId()); }
 
     private static String reasonOf(RoutesphereFacts facts, RuntimeException ruleFailed) {
-        if (ruleFailed != null) return "the rule failed (" + ruleFailed + ") — the request is refused";
+        if (ruleFailed != null) return "the rule failed (" + LogText.failureText(ruleFailed) + ") — the request is refused";
         if (facts == null || facts.ingress() == null) return "the facts carry no ingress — the request is refused";
         return "no rule names this door — the request is refused";
     }
