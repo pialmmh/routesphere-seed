@@ -120,3 +120,10 @@ branch after P1-F's report head 0d170db (the architect gates and merges that com
   with the seed root btcl and without one) — **every case answered as prime-context's RootNaming: no red to report**. Red first (the table
   missing); 2 green; 4 mutants, 4 red (the seed's loose rule off, a leading zero allowed, the parent by the first underscore, one byte of
   the table changed); seed-naming 12/0/0/0 direct. Next: item 5.
+- 2026-10-24 06:56 · **P1-G item 5 done** — `naming.seed-prefix` (the envelope's one addition, PC-0022 §9.1): the reader takes it beside
+  `seed-root` (`Deployment.seedPrefix`, the 12-word constructor kept: null = the legacy `res_`); `TenantNames.withSeedRoot(seedRoot,
+  seedPrefix)` + `seedPrefix()` (`withSeedRoot(seedRoot)` = `LEGACY_PREFIX`, unchanged); a seed root named without its prefix said once
+  (INFO, once per process); a value that is not a name prefix (a lowercase letter, then lowercase letters, digits, underscores — the lab's
+  prefix-as-a-tier `res_44` passes, as prime-context's RootNaming takes it) refused at the read in words naming the key. Red first (compile:
+  no 2-word withSeedRoot / seedPrefix()); SeedPrefixTest 3, SeedPrefixFromTheBootstrapTest 3 green; 5 mutants, 5 red; direct: seed-naming
+  15, seed-sessionflow 221, seed-tenant 23, switch-ledger 63, samples 73, bootstrap-config 8 (0 failed). Next: item 6 (the late config values).
