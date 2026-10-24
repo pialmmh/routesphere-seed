@@ -120,6 +120,10 @@ session offered and never consumed (the ad's `unshown`). An answered session is 
 
 ## 4 · Per root
 
+**The root's source** (P1-I): the root is the lane's rule over the INGRESS — the door the session came in at, read by
+`engine.identifyRootLevelTenant(facts)` — and NEVER a value the request carries: not a body field, not a header, not a query. A caller
+that could name the root could bill another operator. `RoutesphereFacts.root()` carries only what that rule answered for this ingress.
+
 Every lookup of a session is scoped to the root its ingress named: the entry partner (`byPartnerId` — the root's OWN partner
 map; an id two tiers hold names nobody), the tier walk (a chain that ends at another root is refused `PARTNER_NOT_FOUND`), the
 rates, the CDR's topic. The session takes its root's snapshot at its start (`ctx.tree`, `ctx.treeVersion`) and keeps it to its end;

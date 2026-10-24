@@ -217,3 +217,7 @@ its gate 569/0/0/3).
   budget, item 1's code) **0 of 20 red**, 240 run, load 9→18 — the cut connect the architect's gates saw twice did not come in these 20
   (item 1's test reproduces it at will); AFTER **0 of 20 red**, 240 run, load 13–17. A mutant (the budget not applied: its own read
   timeout only) red. Next: item 3.
+- 2026-10-24 14:12 · **P1-I item 3 done** — docs only: `RoutesphereFacts.root()`'s javadoc and the sessionflow README (§4, "The root's source"):
+  the root is the lane's rule over the INGRESS (`engine.identifyRootLevelTenant`), NEVER a value the request carries (a body field, a
+  header, a query) — a caller that could name the root could bill another operator; `root()` carries only what that rule answered. The
+  ad's round (P2c) pins it with a test on its side. Next: item 4 (the reactor, a clean copy, the report).
