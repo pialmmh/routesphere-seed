@@ -19,6 +19,13 @@ public interface DialplanSource {
     /** The dialplan prefixes the request's source may use. Empty = the source is unknown or has none. */
     List<Prefix> prefixesOf(RoutingRequest request);
 
+    /**
+     * P1-O · The same prefixes indexed for the longest match ({@link PrefixTable}: one get per prefix length, never a walk). A source that
+     * keeps its tables per load should answer a table it built THEN, once; this default indexes the rows {@link #prefixesOf} hands, per
+     * request (cheap when those are only the rows that can match — ad-sphere's indexed source).
+     */
+    default PrefixTable prefixTableOf(RoutingRequest request) { return PrefixTable.of(prefixesOf(request)); }
+
     /** The dialplans a prefix maps to; several = a percent split. */
     List<DialplanShare> dialplansOf(Prefix prefix);
 

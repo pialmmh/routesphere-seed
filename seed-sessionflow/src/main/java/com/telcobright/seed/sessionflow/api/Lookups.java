@@ -59,13 +59,13 @@ public final class Lookups {
     /** The leaf of a partner whose id is known (the ad's advertiser), INSIDE THE SESSION'S OWN TREE; null = no id, or no such partner there. */
     public Tier byPartnerId(RoutesphereContext ctx, Integer partnerId) {
         if (partnerId == null || ctx.tree == null) return null;
-        return leafOf(ctx.tree.entryOf(partnerId));
+        return leafOf(ctx, ctx.tree.entryOf(partnerId));
     }
 
     /** The leaf of the ONE partner of the session's own tree with exactly this name (P1-O: exact); null = none, or two partners share it. */
     public Tier byPartnerName(RoutesphereContext ctx, String partnerName) {
         if (partnerName == null || partnerName.isBlank() || ctx.tree == null) return null;
-        return leafOf(ctx.tree.entryNamed(partnerName));
+        return leafOf(ctx, ctx.tree.entryNamed(partnerName));
     }
 
     /**
@@ -76,7 +76,7 @@ public final class Lookups {
      */
     public Tier byRouteCredentials(RoutesphereContext ctx, String username, String password) {
         RouteEntry route = routeOfCredentials(ctx, username, password);
-        return route == null ? null : leafOf(route.entry());
+        return route == null ? null : leafOf(ctx, route.entry());
     }
 
     /** The same check, answering the route itself (a lane that names its caller by the route: the ad's {@code ad_caller}); null as above. */
@@ -92,28 +92,28 @@ public final class Lookups {
     public Tier bySystemId(RoutesphereContext ctx, String systemId, String password) { return byRouteCredentials(ctx, systemId, password); }
 
     /** The leaf of the route served at this address, exactly as served (an ip, a domain); null = none. No port is assumed. */
-    public Tier byIp(RoutesphereContext ctx, String ip) { return leafOf(routeKey(ctx, ip)); }
+    public Tier byIp(RoutesphereContext ctx, String ip) { return leafOf(ctx, routeKey(ctx, ip)); }
 
     /** The leaf of the route served at {@code ip:port}, else at the bare {@code ip} (the port the lane saw: no {@code :5060} default). */
     public Tier byIp(RoutesphereContext ctx, String ip, int port) {
         if (ip == null) return null;
         EntryPartner withPort = routeKey(ctx, ip + ":" + port);
-        return leafOf(withPort != null ? withPort : routeKey(ctx, ip));
+        return leafOf(ctx, withPort != null ? withPort : routeKey(ctx, ip));
     }
 
     /** The leaf of the route served at this domain ({@code route.field5}); null = none. */
-    public Tier byDomain(RoutesphereContext ctx, String domain) { return leafOf(routeKey(ctx, domain)); }
+    public Tier byDomain(RoutesphereContext ctx, String domain) { return leafOf(ctx, routeKey(ctx, domain)); }
 
     /** The leaf of a SIP account's partner ({@code sipAccountWisePartners}); null = none. */
     public Tier bySipAccount(RoutesphereContext ctx, String account) {
         RootIndex index = indexOf(ctx);
-        return index == null ? null : leafOf(index.sipAccount(account));
+        return index == null ? null : leafOf(ctx, index.sipAccount(account));
     }
 
     /** The leaf of the partner of the longest prefix of {@code number} the tree serves — at most one get per prefix length; null = none. */
     public Tier byPrefix(RoutesphereContext ctx, String number) {
         RootIndex index = indexOf(ctx);
-        return index == null ? null : leafOf(index.longestPrefixOf(number));
+        return index == null ? null : leafOf(ctx, index.longestPrefixOf(number));
     }
 
     /** Every route of the leaf's partner in its tier ({@code partnerVsRoutes}: one partner, many routes); empty above the leaf, or none. */
@@ -131,7 +131,10 @@ public final class Lookups {
         return index == null ? null : index.routeKey(key);
     }
 
-    private static Tier leafOf(EntryPartner entry) { return entry == null ? null : Tier.entry(entry); }
+    /** The leaf with its snapshot's index: the partner above it is then one get (P1-O). */
+    private static Tier leafOf(RoutesphereContext ctx, EntryPartner entry) {
+        return entry == null ? null : Tier.entryIn(indexOf(ctx), entry.tenant(), entry.partner());
+    }
 
     private String byDoor(String kind, String match) {
         return match == null || match.isBlank() ? null : byIngress(new Ingress(kind, match));

@@ -11,14 +11,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The partner that stands, at a tier, for the tenant below it — the call switch's live rule
  * ({@code CallAdmissionController.identifyPartnerAtParentLevel}), which the base follows so that a call and an ad view climb one tree
- * the same way: the id the tenant's database name ends with, else the partner named as the tenant; no partner type is asked.
+ * the same way: the id the tenant's database name ends with, else the partner named as the tenant; no partner type is asked. P1-O (the
+ * architect's A2/A7): the name is EXACT and asked only when the id names nobody — one get, never a walk of the parent's partners.
  */
 class ResellerPartnerRuleTest {
 
     private final Tenant root = new TenantTreeBuilder()
         .root("btcl")
             .partner(233, "Gamma Distribution", PartnerType.CUSTOMER)     // stands for res_233: by the id its name ends with
-            .partner(12, "RES_ACME", PartnerType.CUSTOMER)                // stands for res_acme: by its name, whatever the case
+            .partner(12, "res_acme", PartnerType.CUSTOMER)                // stands for res_acme: by its exact name
+            .partner(13, "RES_BETA", PartnerType.CUSTOMER)                // P1-O: another case is another name — stands for nothing
             .partner(4, "res_4", PartnerType.RESELLER)                    // must never stand for res_44
             .partner(9, "res_233", PartnerType.RESELLER)                  // a name that points at res_233 while id 233 exists
             .and()
@@ -28,6 +30,7 @@ class ResellerPartnerRuleTest {
             .and()
         .tenant("res_233_2", "res_233").partner(9001, "Leaf", PartnerType.CUSTOMER).and()
         .tenant("res_acme", "btcl").partner(801, "Shop", PartnerType.CUSTOMER).and()
+        .tenant("res_beta", "btcl").partner(803, "Stall", PartnerType.CUSTOMER).and()
         .tenant("res_44", "btcl").partner(802, "Other", PartnerType.CUSTOMER).and()
         .build();
 
@@ -51,8 +54,9 @@ class ResellerPartnerRuleTest {
     }
 
     @Test
-    void aTenantNamedByHand_isStoodForByThePartnerOfItsName_withoutCase() {
+    void aTenantNamedByHand_isStoodForByThePartnerOfExactlyItsName() {
         assertThat(standsFor("res_acme", "btcl").getIdPartner()).isEqualTo(12);
+        assertThat(standsFor("res_beta", "btcl")).as("RES_BETA is not res_beta: the name is exact (no case-blind loop)").isNull();
     }
 
     @Test

@@ -52,3 +52,18 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   a dry-run admission, each candidate its own cause, no password in a note). Mutants 5, 5 red (an unknown user name without the cause 2/5,
   the admission ignoring the cause 2/5, no reset per candidate 1/5, the bare ip first 1/5, a :5060 default 1/5), each restored with a fresh
   mtime; the plain-equals mutant is not provable (A4: by eye). The whole reactor **660/0/0/3** (03:55–03:58). Next: item 3 (the scans gone).
+- 2026-10-25 04:15 · **item 3 done** — the scans gone. `partnerAbove` (and the public static `resellerPartnerOf`): the id at the end of the
+  child's db name against the PARENT's `partners`; ONLY on a miss the parent's partner named EXACTLY as the child (its name, else its db
+  name) — through the session's index (`RootIndex.partnerNamedIn`, the tier carries its snapshot's index: `Tier.entryIn`, package-private,
+  handed down `ancestorChain`), or for a tier made by hand rtc-domain's `partnerNameWisePartners` of the parent; no loop, no "both answer"
+  WARN any more (the name is not asked when the id answers). `entryNamed` → the index (item 1); `rootOfCode` → maps (item 1: TenantTrees
+  by RootInstall's codes, ServedTrees by its own; the default `TenantLookup.snapshot` asks `rootOfCode`). seed-routing: `spi/PrefixTable`
+  (the source's prefixes by called length, calling length and both; equal keys keep the first row, as the walk's max did) and
+  `DialplanSource.prefixTableOf` (default: indexes what `prefixesOf` hands; a source that keeps its tables builds it once per load);
+  `DialplanRouter.longest` = one get per length present, its three steps and trace words unchanged. New: `ArmedTree` (a copy of a tree whose
+  every map refuses to be walked once armed) and NoWalkAfterInstallTest 2 (after the install, every helper answers and a session climbs three
+  tiers by ids and a hand-named tier by its exact name — no walk). Existing test touched: ResellerPartnerRuleTest (A2/A7: the hand-named
+  tier's partner is now `res_acme` exactly; `RES_BETA` stands for nothing). Red first: NoWalkAfterInstallTest red on f7539a1's climb (the
+  mutant below is that climb). Mutants 3, 3 red: the unconditional name loop back (NoWalk 1/2 + ResellerPartnerRule 1/5), the per-session
+  walk back in entryOf (NoWalk 2/2), the shortest prefix first (DialplanRouterTest 1/6); restored with a fresh mtime. The whole reactor
+  **662/0/0/3** (04:11–04:15). Next: item 4 (HotPathHasNoListScanTest + the allowlist).

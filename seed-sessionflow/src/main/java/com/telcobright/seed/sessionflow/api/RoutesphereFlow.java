@@ -325,9 +325,10 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /**
      * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}
-     * → partner {@code <id>} of this tier, else the partner named as the tenant below ({@link #resellerPartnerOf}).
+     * → partner {@code <id>} of this tier; only when this tier has no partner of that id, the partner named EXACTLY as the tenant below
+     * ({@link #resellerPartnerOf}) — a get on the session's snapshot index (P1-O), never a walk of the tier's partners.
      */
-    protected Partner partnerAbove(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
+    protected Partner partnerAbove(Tier tier) { return partnerStandingFor(tier.below().tenant(), tier.tenant(), tier.index()); }
 
     /**
      * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
@@ -626,32 +627,33 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /**
      * The parent's partner that stands for the child tenant — the call switch's LIVE rule
      * ({@code CallAdmissionController.identifyPartnerAtParentLevel}): the partner whose id the child's database name ENDS with
-     * ({@code res_233} → partner 233 of the root, {@code res_233_2} → partner 2 of {@code res_233}), else the partner NAMED as the child
-     * tenant (its name or database name, without case). When both answer and disagree, the id wins (logged). No partner type is asked
-     * (the call's data types a reseller 4, the ad's {@link PartnerType#RESELLER} = 100).
+     * ({@code res_233} → partner 233 of the root, {@code res_233_2} → partner 2 of {@code res_233}); ONLY when the parent has no partner of
+     * that id, the partner of the parent named EXACTLY as the child (its name, else its database name). No partner type is asked (the
+     * call's data types a reseller 4, the ad's {@link PartnerType#RESELLER} = 100). P1-O: gets only — the id, then at most two names; for a
+     * tier made by hand the names are rtc-domain's own map of the parent's context ({@code partnerNameWisePartners}).
      */
-    public static Partner resellerPartnerOf(Tenant child, Tenant parent) {
-        if (child == null || parent == null || parent.getContext() == null || parent.getContext().getPartners() == null) return null;
+    public static Partner resellerPartnerOf(Tenant child, Tenant parent) { return partnerStandingFor(child, parent, null); }
+
+    /** The same rule, the names asked of the session's snapshot index when the tier was found through it (null = a tier made by hand). */
+    static Partner partnerStandingFor(Tenant child, Tenant parent, RootIndex index) {
+        if (child == null || parent == null || parent.getContext().getPartners() == null) return null;
         Partner byId = parent.getContext().getPartners().get(idAtTheEndOf(child.getDbName()));
-        Partner byName = partnerNamedAs(child, parent);
-        if (byId != null && byName != null && byId != byName) {
-            log.warn("tier {}: partner {} ({}) is NAMED as the tenant below, but its database name ends with partner {} ({}): the id wins",
-                parent.getDbName(), byName.getIdPartner(), byName.getPartnerName(), byId.getIdPartner(), byId.getPartnerName());
-        }
-        return byId != null ? byId : byName;
+        return byId != null ? byId : partnerNamedAs(child, parent, index);
     }
 
-    private static Partner partnerNamedAs(Tenant child, Tenant parent) {
-        String childName = child.getName() == null || child.getName().isBlank() ? child.getDbName() : child.getName();
-        for (Partner p : parent.getContext().getPartners().values()) {
-            if (p != null && namesTenant(p.getPartnerName(), childName, child.getDbName())) return p;
-        }
-        return null;
+    /** Only on a miss of the id: the parent's partner named exactly as the child — its name, else its database name. */
+    private static Partner partnerNamedAs(Tenant child, Tenant parent, RootIndex index) {
+        Partner byName = partnerNamedIn(parent, displayNameOf(child), index);
+        return byName != null ? byName : partnerNamedIn(parent, child.getDbName(), index);
     }
 
-    private static boolean namesTenant(String partnerName, String tenantName, String tenantDbName) {
-        if (partnerName == null) return false;
-        return partnerName.equalsIgnoreCase(tenantName) || partnerName.equalsIgnoreCase(tenantDbName);
+    private static Partner partnerNamedIn(Tenant parent, String name, RootIndex index) {
+        if (name == null) return null;
+        return index != null ? index.partnerNamedIn(parent, name) : parent.getContext().getPartnerNameWisePartners().get(name);
+    }
+
+    private static String displayNameOf(Tenant tenant) {
+        return tenant.getName() == null || tenant.getName().isBlank() ? tenant.getDbName() : tenant.getName();
     }
 
     /** The number a schema name ends with after its last underscore; -1 when it ends with none. */
