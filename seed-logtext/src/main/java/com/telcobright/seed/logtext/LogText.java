@@ -30,33 +30,46 @@ public final class LogText {
     /** P1-M · A parameter whose NAME says a password (password, passwd, pwd, secret — inside a longer name too), case-blind, in a query or after ';'. */
     private static final Pattern PASSWORD_PARAMETER = Pattern.compile("(?i)([?&;])([^=&;#?]*(?:password|passwd|pwd|secret)[^=&;#?]*)=([^&;#]*)");
 
+    /** P1-N · A key-value block {@code (name=value)} whose name says a password — Connector/J's {@code address=(host=…)(password=…)} form. */
+    private static final Pattern PASSWORD_BLOCK = Pattern.compile("(?i)\\(([^=()]*(?:password|passwd|pwd|secret)[^=()]*)=([^)]*)\\)");
+
     /**
-     * P1-M · A url as a log may print it: the password of its userinfo ({@code redis://:secret@host}, {@code redis://user:secret@host},
-     * {@code jdbc:mysql://user:secret@host}) and the value of every parameter whose name says a password, passwd, pwd or secret — in the
-     * query ({@code ?password=…}, {@code &pwd=…}) or after a ';' ({@code ;password=…}), case-blind — are written {@value #MASK}; the rest
-     * as it is. ONLY for printing: the url used to connect is the one written. Null for null.
+     * P1-M / P1-N · A url as a log may print it — the principle: an over-mask beats a leak (a line may lose a user name, never show a
+     * password). Written {@value #MASK}:
+     * <ul>
+     *   <li>the userinfo's password ({@code redis://:***@host}, {@code redis://user:***@host}, {@code jdbc:mysql://user:***@host}); a
+     *       userinfo WITHOUT ':' whole ({@code redis://***@host} — Lettuce reads {@code redis://password@host} as the password; a bare
+     *       token). The userinfo runs to the LAST '@' before the first '?' or '#': a password may carry '/' or ';' unencoded (Connector/J's
+     *       authority runs past ';'). An '@' in a path, or in a ';' property before any '?', so over-masks — accepted. A '?' or '#'
+     *       unencoded inside a password still ends the search (every parser breaks there) — accepted;</li>
+     *   <li>the value of every parameter whose name says a password, passwd, pwd or secret — in the query ({@code ?password=…},
+     *       {@code &pwd=…}) or after a ';' ({@code ;password=…}), case-blind, inside a longer name too;</li>
+     *   <li>the value of every key-value block whose name says one ({@code (password=…)}).</li>
+     * </ul>
+     * The rest as it is. ONLY for printing: the url used to connect is the one written. Null for null.
      */
     public static String maskPassword(String url) {
         if (url == null) return null;
-        return PASSWORD_PARAMETER.matcher(maskTheUserinfoPassword(url)).replaceAll("$1$2=" + Matcher.quoteReplacement(MASK));
+        String masked = PASSWORD_PARAMETER.matcher(maskTheUserinfo(url)).replaceAll("$1$2=" + Matcher.quoteReplacement(MASK));
+        return PASSWORD_BLOCK.matcher(masked).replaceAll("($1=" + Matcher.quoteReplacement(MASK) + ")");
     }
 
-    /** The userinfo's password: from the first ':' after "//" to the authority's last '@'; a userinfo without ':' has none. */
-    private static String maskTheUserinfoPassword(String url) {
+    /** The userinfo: after "//", to the LAST '@' before the first '?' or '#'; with ':' its password masked, without ':' the whole of it. */
+    private static String maskTheUserinfo(String url) {
         int scheme = url.indexOf("://");
         if (scheme < 0) return url;
-        int from = scheme + 3, to = endOfTheAuthority(url, from);
+        int from = scheme + 3, to = endOfTheUserinfoSearch(url, from);
         int at = url.lastIndexOf('@', to - 1);
-        if (at < from) return url;
+        if (at <= from) return url;                                                          // no userinfo, or an empty one
         int colon = url.indexOf(':', from);
-        if (colon < 0 || colon > at) return url;
+        if (colon < 0 || colon > at) return url.substring(0, from) + MASK + url.substring(at);   // no ':': the whole userinfo
         return url.substring(0, colon + 1) + MASK + url.substring(at);
     }
 
-    private static int endOfTheAuthority(String url, int from) {
+    private static int endOfTheUserinfoSearch(String url, int from) {
         for (int i = from; i < url.length(); i++) {
             char c = url.charAt(i);
-            if (c == '/' || c == '?' || c == '#' || c == ';') return i;
+            if (c == '?' || c == '#') return i;
         }
         return url.length();
     }

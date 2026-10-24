@@ -385,3 +385,20 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 20:08 · **P1-M DONE** — items 1–4; the head 778531f from clean in the worktree **635/0/0/3** (264 s) and on a git-archive clean
   copy **635/0/0/3** (231 s), two lock holds back to back 20:00–20:08 (offline, no install); +20 tests (8 moved); 26 mutants red. The
   report's P1-M section: `docs/agents/P1-F-report.md`.
+
+## P1-N
+
+- 2026-10-24 20:22 · START — p1-follow at routesphere-flow a05f028 (the architect's merge of P1-M, fast-forwarded by him); the brief
+  `docs/agents/P1-N-brief.md` (committed with item 1). Three url forms `maskPassword` printed raw: a lone userinfo (`redis://secret@h`,
+  a bare token), a userinfo password with an unencoded ';' or '/', Connector/J's `address=(…)(password=…)`. The rule: the userinfo ends
+  at the LAST '@' before the first '?' or '#'; without ':' it is masked whole; a `(name=value)` block whose name says a password is masked
+  like a parameter — an over-mask beats a leak. P1-M's pinned row `redis://ad_sphere@h` (a user name alone, printed) moves to the new
+  rule (masked whole — the brief's rule 2). The Maven lock is the PC agent's UI rig's (~20:17 + 45 min): code and direct runs first.
+- 2026-10-24 20:32 · item 1 DONE — `LogText.maskPassword` (seed-logtext): the userinfo runs to the LAST '@' before the first '?' or '#'
+  (a password may carry ';' or '/' unencoded); without ':' it is masked whole (`redis://***@h`, `https://***@h`); a `(name=value)` block
+  whose name says a password is masked like a parameter (`(password=***)`); an empty userinfo stays. The over-mask said in the javadoc and
+  pinned (`https://portal.test/users/a@b/x` → `https://***@b/x`); a '?' or '#' unencoded inside a password still ends the search
+  (accepted, no code). Red first: 3 forms + the over-mask (4 tests red; the brief's "must stay" rows pinned green). P1-M's pinned row
+  `redis://ad_sphere@h` moved to the new rule (the user name alone is lost — the brief's rule 2). Mutants 7/7 red (the lone userinfo kept,
+  ';' or '/' ending the search, the '(' form skipped, the search past '?', the first '@', an empty userinfo masked). Direct: logtext 24,
+  campaign 76, sessionflow 269, switch-ledger 70, seed-tenant 23, samples 73. Next: item 2 (docs), then the gates when the lock is free.
