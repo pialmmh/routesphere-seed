@@ -224,3 +224,20 @@ its gate 569/0/0/3).
 - 2026-10-24 14:17 · **P1-I DONE** — items 1–4; the head 4650da7 from clean in the worktree **572/0/0/3** (142 s) and on a git-archive clean
   copy **572/0/0/3** (138 s), two short lock holds 14:12–14:17 (offline, no install); +3 tests; 6 mutants red; the hog runs in item 2's
   line. The report's P1-I section: `docs/agents/P1-F-report.md`.
+
+## P1-J
+
+The architect's brief: `docs/agents/P1-J-brief.md` (accounts written after a tier exists reach the switch ledger — P2c's G1; the
+ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 206e7f0 (the merge of P1-I; its clean copy 572/0/0/3).
+
+- 2026-10-24 16:01 · START — from 206e7f0. Read: P2-report.md "P2c 4", G1, G3 (read only). Running: item 1 (every reload merges the new rows).
+- 2026-10-24 16:19 · **P1-J item 1 done** — G1: every reload of a root's tree merges the root's new rows into its switch ledger. The road's
+  gate (TiersFirst, which every new tree passes BEFORE it is shown: the doorbell's ring, a tenant_created, a root served, the backstop)
+  now tells the root's ledger `LedgerPort.treeReloaded()` (new default doing nothing; PerRootLedger routes it); the switch ledger's
+  port merges (`NewRowsOfATier`: reloadNewEntities, ghost reserves out) under its write gate, coalesced by `internal/CoalescedMerges`:
+  at most ONE merge per `ledger.merge-spacing-sec` (default 5 s) — the first ring at once on the reloading thread, the rest of a burst ONE
+  merge at the end of the spacing on the port's daemon thread (`<…>-merges`, made at the first deferred merge, stopped with the port);
+  never on a session's thread (sessions' money moves wait for a merge on the gate). Red first on P2c's order: an account written after
+  its tier exists, a ring → "ACCOUNT_NOT_FOUND: account 77 of tier 0 is not held in schema btcl_res_5"; NewAccountsReachTheLedgerTest 2
+  green after (it pays; a burst = one merge now + one at the end, the burst's account merged); 6 mutants, 6 red; under an 8-thread CPU
+  hog (stopped by PID, load 6→15) 20 runs, 0 red, 40 run. Direct: switch-ledger 65, sessionflow 236, seed-tenant 23. Next: item 2.

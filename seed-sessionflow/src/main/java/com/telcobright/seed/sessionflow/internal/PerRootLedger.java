@@ -68,6 +68,12 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
         return ledger == null || tierDb == null || ledger.tierLoaded(tierDb);
     }
 
+    /** P1-J · A root's tree was reloaded: that root's ledger alone is told (it merges the rows written since); a root without one is nothing. */
+    public void treeReloaded(String root) {
+        LedgerPort ledger = root == null ? null : byRoot.get(root);
+        if (ledger != null) ledger.treeReloaded();
+    }
+
     /** The engine's close: every root's ledger that holds something open (a switch ledger's MemLedger) is closed; a failure is said, the rest go on. */
     @Override
     public void close() {

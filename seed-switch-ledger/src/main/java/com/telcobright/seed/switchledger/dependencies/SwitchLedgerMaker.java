@@ -61,7 +61,16 @@ public final class SwitchLedgerMaker implements LedgerMaker {
             .replicationMode(ReplicationConfig.Mode.STANDALONE)     // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
             .build();
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
-        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load);
+        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root));
+    }
+
+    /** P1-J · {@code ledger.merge-spacing-sec}: the least time between two merges of the root's new rows; 5 s when not said. */
+    private static long mergeSpacingMsOf(RootResources root) {
+        String said = root.ledger().word("merge-spacing-sec");
+        if (said == null || said.isBlank()) return OwnedMemLedgerPort.DEFAULT_MERGE_SPACING_MS;
+        long sec = Long.parseLong(said.trim());
+        if (sec <= 0) throw new IllegalStateException("the root '" + root.root() + "': ledger.merge-spacing-sec must be above 0 (was " + sec + ")");
+        return sec * 1000;
     }
 
     private static RootResources.SwitchDb requireTheDatabase(RootResources root) {

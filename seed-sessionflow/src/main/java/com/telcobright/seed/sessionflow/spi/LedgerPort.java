@@ -63,6 +63,13 @@ public interface LedgerPort {
     default void tierAdded(String tierDb) { }
 
     /**
+     * P1-J · The root's tree was reloaded (a doorbell's ring — a purchase wrote accounts —, a {@code tenant_created}, a root served, the
+     * backstop): a ledger that keeps books per tier merges the rows written since its last look — an account made AFTER its tier existed
+     * (ad-sphere P2c's G1) —, coalesced and never on a session's thread. Called before the reloaded tree is shown. Default: nothing.
+     */
+    default void treeReloaded() { }
+
+    /**
      * After {@link #tierAdded}: are the tier's books loaded? A ledger that keeps books per tier and SAID its load failed (never thrown)
      * answers false, so the kit's gate hands the tier again on the next tree (the next doorbell ring, reload or event) instead of leaving
      * its money refused until a restart. Default: true (a ledger that keeps no books per tier has nothing to load).
