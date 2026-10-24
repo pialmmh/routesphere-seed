@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * The base's one-line lookups (R2): the helpers a lane's {@code identifyTenant} and {@code identifyPartner} are written with. A root is
+ * The base's one-line lookups (R2): the helpers a lane's {@code identifyRootLevelTenant} and {@code identifyPartner} are written with. A root is
  * found by its door against prime-context's identification rules (the kit's resolver); a partner inside the session's OWN tree. Every
  * answer is the thing or null — null is refused by the base ({@code NO_TENANT}, {@code PARTNER_NOT_FOUND}), never a default.
  *
@@ -20,7 +20,7 @@ public final class Lookups {
     /** @param rules the kit's identification rules, asked again on every lookup (a root added live brings its rules, R10) */
     public Lookups(Supplier<TenantResolver> rules) { this.rules = Objects.requireNonNull(rules, "rules"); }
 
-    // ── a root by its door (identifyTenant) ─────────────────────────────────
+    // ── a root by its door (identifyRootLevelTenant) ─────────────────────────────────
 
     /** The root of an HTTP listener — the local address a request arrived on (the ad, the SMS's HTTP door). */
     public String byListener(String ip, int port) { return byListener(ip + ":" + port); }

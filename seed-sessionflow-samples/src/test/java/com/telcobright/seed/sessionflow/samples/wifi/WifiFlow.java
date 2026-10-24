@@ -44,7 +44,7 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
 
     /** (a) The root by the gateway and its S-VLAN. */
     @Override
-    protected String identifyTenant(RoutesphereFacts facts) {
+    protected String identifyRootLevelTenant(RoutesphereFacts facts) {
         WifiFacts f = (WifiFacts) facts;
         return byVlan(f.gateway(), f.svlan());
     }
@@ -79,7 +79,7 @@ public final class WifiFlow extends RoutesphereFlow<WifiContext> {
     }
 
     @Override
-    protected RoutePlan routing(WifiContext session) {
+    protected RoutePlan route(WifiContext session) {
         WifiGate gate = gateByZone.get(session.root + "|" + ((WifiFacts) session.facts).site());
         return gate == null ? RoutePlan.none() : RoutePlan.one(gate);
     }

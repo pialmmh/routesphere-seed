@@ -174,6 +174,22 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
         return BusyAtTheDoor.counted(registry.submitDelivery(sessionId, firstFrame), flow.kit().counters());
     }
 
+    // ── the ingress's two lines (the owner's shape of 2026-10-24): identifyRootLevelTenant, then launchStateMachine ──
+
+    /**
+     * The ingress's FIRST line: the lane's rule names the ROOT operator that owns this door — no session, no machine yet. Null = no root:
+     * the ingress refuses at the door (nothing is recorded). The root rides to the machine in {@link RoutesphereFacts#root()}.
+     */
+    public String identifyRootLevelTenant(RoutesphereFacts facts) { return flow.identifyRootLevelTenant(facts); }
+
+    /** The ingress's SECOND line: a NEW session's first frame through the registry, counted — the same as {@link #launch}. */
+    public CompletableFuture<Void> launchStateMachine(String sessionId, Delivery firstFrame) { return launch(sessionId, firstFrame); }
+
+    /** The same, for a lane whose first frame is the supervisor's {@code SessionStart} of these facts. */
+    public CompletableFuture<Void> launchStateMachine(RoutesphereFacts facts) {
+        return launch(facts.sessionId(), Delivery.supervisor(new SessionStart(facts)));
+    }
+
     /** Wait until the session has nothing more queued. */
     public boolean awaitSettled(String sessionId, long timeout, TimeUnit unit) throws InterruptedException {
         return registry.awaitSettled(sessionId, timeout, unit);

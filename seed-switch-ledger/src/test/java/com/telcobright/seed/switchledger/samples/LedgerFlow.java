@@ -69,7 +69,7 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
     @Override public String name() { return "WifiLikeSupervisor"; }
 
     /** (a) The root by the gateway's door ({@code vlan gw-1:310}). */
-    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
+    @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
 
     @Override protected int serviceGroup(Session session) { return 0; }
 
@@ -99,7 +99,7 @@ public class LedgerFlow extends RoutesphereFlow<LedgerFlow.Session> {
         return TierRate.of(rate, rate, account.getUom(), "wifi").onAccount(account);
     }
 
-    @Override protected RoutePlan routing(Session session) { return RoutePlan.one(new Gate("gw-1")); }
+    @Override protected RoutePlan route(Session session) { return RoutePlan.one(new Gate("gw-1")); }
 
     /** The gate is the one hop: no re-route, whatever the cause. */
     @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }

@@ -57,10 +57,10 @@ public final class SmsFlow {
         SmsFlow sms = new SmsFlow(partnerByUser, ratePerSegment, smscsByRoot, refundOnNonDelivery);
         return RoutesphereApp.<SmsContext>builder("SmsSupervisor")
             .serviceGroup(0)
-            .identifyTenant(SmsFlow::rootByTheDoor)
+            .identifyRootLevelTenant(SmsFlow::rootByTheDoor)
             .identifyPartner((m, candidate, find) -> find.byPartnerId(m, sms.partnerByUser.get(m.root + "|" + m.user)))
             .rateAtLevel(sms::everySegment)
-            .routing(sms::theRootsSmscs)
+            .route(sms::theRootsSmscs)
             .delivered((m, outcome) -> SmsSubmit.DELIVERED.equals(m.endCause))
             .refundPolicy(m -> RefundPolicy.of(Rule.REFUND, sms.refundOnNonDelivery ? Rule.REFUND : Rule.CHARGE))
             .rerouteActionFor(SmsFlow::nextSmscWhenCongested)

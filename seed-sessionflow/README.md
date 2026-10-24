@@ -44,10 +44,10 @@ A big lane subclasses (the compiler asks for every ■):
 public final class AdFlow extends RoutesphereFlow<AdContext> {
     @Override public String name() { return "AdSupervisor"; }                                        // ■ the lane's ONE name
     @Override protected int serviceGroup(AdContext c) { return 30; }                                 // ■ the CDR's group
-    @Override protected String identifyTenant(RoutesphereFacts f) { return byListener(((AdFacts) f).listen()); }        // ■ (a)
+    @Override protected String identifyRootLevelTenant(RoutesphereFacts f) { return byListener(((AdFacts) f).listen()); }        // ■ (a)
     @Override protected Tier identifyPartner(AdContext c, Candidate k) { return byPartnerId(c, ((AdCandidate) k).payerPartnerId()); }  // ■ (c)
     @Override protected TierRate rateAtLevel(AdContext c, Tier t, Partner p) { ... }                 // ■ (e) null = UNRATED
-    @Override protected RoutePlan routing(AdContext c) { return RoutePlan.one(((AdCandidate) c.candidateBeingAdmitted()).creative()); }  // ■ (d)
+    @Override protected RoutePlan route(AdContext c) { return RoutePlan.one(((AdCandidate) c.candidateBeingAdmitted()).creative()); }  // ■ (d)
     @Override protected boolean delivered(AdContext c, Outcome o) { return c.shown; }               // ■ the call: c.answered()
     @Override protected RefundPolicy refundPolicy(AdContext c) { return RefundPolicy.of(Rule.REFUND, unshown); }   // ■ the call: callsRule()
     @Override protected RerouteAction rerouteActionFor(String cause) { return RerouteAction.FAIL_TERMINAL; }      // ■ one hop, no retry
@@ -64,10 +64,10 @@ hooks the call's defaults when not given, the base's lookups the identify lambda
 ```java
 RoutesphereFlow<SmsContext> flow = RoutesphereApp.<SmsContext>builder("SmsSupervisor")
     .serviceGroup(0)
-    .identifyTenant((facts, find) -> find.byIngress(facts.ingress()))                        // which root operator owns this door?
+    .identifyRootLevelTenant((facts, find) -> find.byIngress(facts.ingress()))                        // which root operator owns this door?
     .identifyPartner((sms, candidate, find) -> find.byPartnerId(sms, accounts.get(sms.user)))  // who pays at the leaf?
     .rateAtLevel((sms, tier, partner) -> rates.perSegment(tier, partner, sms.segments))        // what does this tier charge?
-    .routing(sms -> RoutePlan.of(smscs))                                                       // where, in failover order?
+    .route(sms -> RoutePlan.of(smscs))                                                       // where, in failover order?
     .delivered((sms, outcome) -> "DELIVERED".equals(sms.endCause))                             // did the service happen?
     .refundPolicy(sms -> RefundPolicy.of(Rule.REFUND, Rule.REFUND))                            // what does a failed one pay?
     .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL)                                    // retry, next hop, or stop?
@@ -95,13 +95,13 @@ signaling machine — three with the budget child). A `PoolStats` made with the 
 | | method | forced ■ / final / default | the call's answer (the default where there is one) |
 |---|---|---|---|
 | | `name()` · `serviceGroup(ctx)` | ■ | `CallSupervisor` · 0 (billing detects a voice call) |
-| (a) | `identifyTenant(facts)` | ■ | `byEslSocket(…)`; the helpers `byListener` · `byEslSocket` · `byVlan` · `byTopic` · `byIngress`; null → `NO_TENANT` |
+| (a) | `identifyRootLevelTenant(facts)` | ■ | `byEslSocket(…)`; the helpers `byListener` · `byEslSocket` · `byVlan` · `byTopic` · `byIngress`; null → `NO_TENANT` |
 | (b) | `iterateResellerTenants(leaf)` | final | leaf → reseller → … → root, inside the session's own tree |
 | (c) | `identifyPartner(ctx, candidate)` | ■ | the caller's partner; the helpers `byPartnerId` · `byPartnerName`; null → `PARTNER_NOT_FOUND` |
 | (c) | `partnerAbove(tier)` | default | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant |
-| (d) | `routing(ctx)` | ■ | the dialplan's hops, in order (made once at admission; route by `ctx.candidateBeingAdmitted()`) |
+| (d) | `route(ctx)` | ■ | the dialplan's hops, in order (made once at admission; route by `ctx.candidateBeingAdmitted()`) |
 | (e) | `rateAtLevel(ctx, tier, partner)` | ■ | one talk minute at the tier's rate |
-| (e) | `reserveBalance` · `finalizeCost` | default | the prepaid piece (§5.1): reserve one unit per tier; finalize = rate × billed units, the rest back |
+| (e) | `reserveBalance` · `finalizeTier` | default | the prepaid piece (§5.1): reserve one unit per tier; finalize = rate × billed units, the rest back |
 | | `delivered(ctx, outcome)` | ■ | answered |
 | | `refundPolicy(ctx)` | ■ | `RefundPolicy.callsRule()` (a failed session pays nothing) |
 | (f) | `rerouteActionFor(cause)` | ■ | the v1 table (`USER_BUSY` → REROUTE, `SWITCH_CONGESTION` → RETRY_SAME, …) |
@@ -246,7 +246,7 @@ Prepaid is strictly package-account + mem-ledger, and it is ONE reusable piece o
 | api | when | what it does |
 |---|---|---|
 | reserve — `reserveBalance(ctx, tier, partner)` | ADMITTING, every tier leaf → root | the tier's rate (`rateAtLevel`: package units before money, ONE unit) held on ITS account through the one ledger port, `<session>#L<tier>` |
-| finalize — `finalizeCost(ctx, tier, outcome)` | the final state, every tier, once | the cost of the session: delivered → rate × `billedUnits` (null = the units reserved); the reserve comes back, the difference is the final adjustment (more used than reserved = an extra debit, the call's rule); not delivered → the lane's refund rule (`refundPolicy` on `settleOutcome`) |
+| finalize — `finalizeTier(ctx, tier, outcome)` | the final state, every tier, once | the cost of the session: delivered → rate × `billedUnits` (null = the units reserved); the reserve comes back, the difference is the final adjustment (more used than reserved = an extra debit, the call's rule); not delivered → the lane's refund rule (`refundPolicy` on `settleOutcome`) |
 
 The SMS's case is the refund rule: a failed message — no SMSC took it, or it was not delivered and the lane refunds by config — returns
 its whole reserve at every tier (`SmsPrepaidPieceTest`); an answered call pays rate × its units and the rest of its reserve comes back
@@ -314,7 +314,12 @@ they run on the seed's 3.7.1 only.
   guard: no documented signal), `RoutesphereKit.toBuilder()` (the lane's own sinks on a kit from the bootstrap), `CdrSinks.all` keeps
   the root, `machinesBuilt` = the supervisors' pool's own count and `busy` counted at the door (`DoorChannel`, `engine.launch`; never
   `deliver`), `PoolStats.sessions` beside the cells, `FakeKafka` on kafka-clients 3.7.1 and 4.0.0. State: `docs/agents/P1-F-state.md`.
-- 2026-10-24 — P1-E, the framework round (the owner's R1–R13 of 2026-10-23): `identifyTenant` / `identifyPartner` forced with the base's
+- 2026-10-24 — the owner's readable shape: every ingress reads `root = engine.identifyRootLevelTenant(facts)` then
+  `engine.launchStateMachine(…)` (the root rides in `RoutesphereFacts.root()`; the machine takes it and asks the lane nothing); the base's
+  story in his words — `startSession · prepareCandidates · admitSession · performAdmission · route · reroute · finalizeTier · finishSession`
+  (statewalk's `onStart/prepare/admit/retry` are one-line adapters); renamed hooks: `identifyTenant → identifyRootLevelTenant`,
+  `routing → route`, `finalizeCost → finalizeTier` (the builder keeps the old two as deprecated aliases).
+- 2026-10-24 — P1-E, the framework round (the owner's R1–R13 of 2026-10-23): `identifyRootLevelTenant` / `identifyPartner` forced with the base's
   helpers (`Lookups`), the facts' `SessionStart` sample refused at start, one supervisor class per lane (`RoutesphereSupervisor`, the one
   engine door), the builder (`RoutesphereApp`; the SMS sample made with it), the kit from ONE bootstrap url (`fromBootstrap`, the makers on the
   classpath), naming and topic auto-creation (`seed-naming`, `TopicProvisioner`), a tenant created live (`tenant_created`), the prepaid

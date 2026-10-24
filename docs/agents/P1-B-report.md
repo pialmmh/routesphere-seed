@@ -47,7 +47,7 @@ logger is static). The library calls, each FINAL, each a short sequence of named
 | `nextHop` (ROUTING) | the plan's current hop | (d) the plan made at admission |
 | `retry` (CONNECTING) | records the attempt on the plan, then the rule | (f) `handleRerouting` → `rerouteActionFor` |
 | `onProgress` / `onEstablished` / `onActive` / `onEnd` / `onFailed` | the PDD stamp; the failure kept | `onSignalingProgress`, `onAnswered`, `onServiceStarted`, `onServiceEnded`, `onSignalingFailed` |
-| `settle` (answered final) | per tier, once, under the session's money lock | (e) `finalizeCost` → `delivered`, `chargeAtSettle`, `billedUnits`, `settleOutcome`, `refundPolicy` |
+| `settle` (answered final) | per tier, once, under the session's money lock | (e) `finalizeTier` → `delivered`, `chargeAtSettle`, `billedUnits`, `settleOutcome`, `refundPolicy` |
 | `release` (FAILED, never answered) | every reserve back; the refund rule decides only a session offered and never consumed | `settleOutcome`, `refundPolicy` |
 | `record` (both finals) | teardown, the slot, the CDR per tier on the root's road, the task, the SDR, the close | (g) `finishSession` → `onTeardown`, `cdrPerTier`, `fillCdr`, `buildSdr`, `onEnded` |
 
@@ -87,7 +87,7 @@ btcl's reload finishes on v1 (its tiers' tenants are the v1 objects), one after 
 the served root's real version; its doorbell reloads that root only (tested in seed-tenant). A restored context re-takes the snapshot.
 
 **§E credit control.** ONE `LedgerPort` [assumes D3]; its contract now says **idempotent per (session id, tier)**: references
-`<session>#L<tier>`, `<session>#<try>#L<tier>`, windows `…#W<n>`. `reserveBalance` per tier at admission; `finalizeCost` per tier in the
+`<session>#L<tier>`, `<session>#<try>#L<tier>`, windows `…#W<n>`. `reserveBalance` per tier at admission; `finalizeTier` per tier in the
 final state: delivered → rate × `billedUnits` (null = as reserved), the rest back, negative = an extra debit; not delivered → the refund
 rule. The budget child (`BudgetChild`, LevelBalanceTracker as a 4.0 `MachineSpec`): IDLE `.timeout(0)` → HOLDING `.timeout(0)` →
 `SessionActive` → FIRST_RENEWAL / RENEWING → WINDING_DOWN; `BudgetExhausted` → statewalk's `Stop(BALANCE_EXHAUSTED)`; the final-window
@@ -171,17 +171,17 @@ The owner's open decisions (design §9), built on the recommended options:
 Decisions the base made where the design page left a gap — please confirm:
 
 1. **The unshown rule lives in `release`.** In 4.0 an ad offered and never viewed never reaches the answer → FAILED → `release`. The
-   design's table puts the unshown rule under `finalizeCost` (SUCCEEDED) and "every reserve back" under `release`. The base's `release`
+   design's table puts the unshown rule under `finalizeTier` (SUCCEEDED) and "every reserve back" under `release`. The base's `release`
    gives every reserve back **unless** `settleOutcome` says OFFERED_NOT_CONSUMED and the lane's policy charges it (the call's rule:
    unshown = CHARGE — the 2026-10-16 D1 default). The call's default is unchanged: a never-answered call pays nothing.
 2. **`routing` runs at admission**, after the tiers and before the last gate (C8), so a candidate with no route is refused `NO_ROUTE` and
-   the next is tried; `nextHop` reads the plan (the design's `routing(ctx).current()` holds — the plan is kept on the context).
+   the next is tried; `nextHop` reads the plan (the design's `route(ctx).current()` holds — the plan is kept on the context).
 3. **`billedUnits` null = as reserved**: a pre-rated event (a view, a message) pays its reserve; a lane priced by time overrides
    `billedUnits` (the ad's watched seconds) or `chargeAtSettle` whole (the voice call's pulses).
 4. **§L.3 is the owner's business decision**: `billedUnits` sees `ctx.restoredAtMs`; the base bills nothing differently by itself, so a
    session restored after a lost BYE bills the downtime unless the lane says otherwise (the call's answer: P3, reconcile with FreeSWITCH).
 5. Smaller shapes: `identifySiblingLevelTenants` has the brief's default (the design had it abstract) and answers the root's code (a
-   String); `buildTask` answers a refusal (null = ok); `finalizeCost(ctx, LevelAdmission, Outcome)` returns the tier's `TierSettlement`;
+   String); `buildTask` answers a refusal (null = ok); `finalizeTier(ctx, LevelAdmission, Outcome)` returns the tier's `TierSettlement`;
    `identifyPartner(tier)` reads the tier below from `Tier.below()`; `applyRootRules(ctx, rootTier, partner)`; `NO_TENANT` is the base's
    word; a NO_TENANT session writes no CDR (no tree) — counted and logged.
 6. **The switch ledger's second end after a restart** moves nothing, but its words are OWED ("no reserve row open … nothing moved"): after

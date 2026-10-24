@@ -12,7 +12,7 @@ import java.util.Optional;
 /**
  * The resolvers a product can choose from (ARCH-0077-A item 8). {@link #ofRules}: an EXACT match on (kind, match) — no match is empty,
  * NEVER a default; two rules on one (kind, match) refuse the build in words. The rules come from the facade's bootstrap
- * ({@link IdentificationRules#fromBootstrap}); a lane's step (a) {@code identifyTenant} asks the resolver (through the base's helpers) with the session's
+ * ({@link IdentificationRules#fromBootstrap}); a lane's step (a) {@code identifyRootLevelTenant} asks the resolver (through the base's helpers) with the session's
  * {@code Ingress} and the answer is the session's ROOT ({@code RoutesphereKit.builder().identification(rules)} also checks, at load, that every
  * rule names a root this process serves).
  */

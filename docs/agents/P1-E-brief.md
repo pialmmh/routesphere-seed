@@ -34,8 +34,8 @@ the README's records section, `P1-R-*.md` docs (keep `P1-R-report.md` as history
 becomes required again at build ("the kit needs a CDR sink"). `RoutesphereFlowDriftTest`'s abstract set loses `cdrStatements`. Keep
 `P1-D 5`. Reactor green; name every test you deleted and why.
 
-**Item 1 — `identifyTenant` forced, with helpers (R1, R2).** `identifySiblingLevelTenants(SessionFacts)` becomes
-`protected abstract String identifyTenant(RoutesphereFacts facts)`. `onStart`: facts that are not `RoutesphereFacts` → refused `NO_TENANT`
+**Item 1 — `identifyRootLevelTenant` forced, with helpers (R1, R2).** `identifySiblingLevelTenants(SessionFacts)` becomes
+`protected abstract String identifyRootLevelTenant(RoutesphereFacts facts)`. `onStart`: facts that are not `RoutesphereFacts` → refused `NO_TENANT`
 with a history line naming the class; ≤ ~10 lines of named steps. Helpers (final, in the base, one line each, over
 `kit.resolver().tenantOf(Ingress)`): `byListener(ip, port)`, `byEslSocket(host, port)`, `byVlan(gateway, svlan)`, `byTopic(name)`,
 `byIngress(Ingress)`. The lanes: AdFlow `byListener`, VoiceFlow `byEslSocket`, WifiFlow `byVlan`, SmsFlow `byListener`, LabFlow/LedgerFlow
@@ -57,8 +57,8 @@ spec in the seed adds its sample. Red first.
 sample's class name = its flow's name.
 
 **Item 5 — the builder (R5).** `api/RoutesphereApp` (or `RoutesphereFlow.builder`): `RoutesphereApp.<C>builder(String name)`
-`.serviceGroup(int)` `.identifyTenant(Function<RoutesphereFacts,String>)` `.identifyPartner(BiFunction<C,Candidate,Tier>)`
-`.rateAtLevel(…)` `.routing(…)` `.delivered(…)` `.refundPolicy(…)` `.rerouteActionFor(…)` — the seven forced answers as lambdas, each
+`.serviceGroup(int)` `.identifyRootLevelTenant(Function<RoutesphereFacts,String>)` `.identifyPartner(BiFunction<C,Candidate,Tier>)`
+`.rateAtLevel(…)` `.route(…)` `.delivered(…)` `.refundPolicy(…)` `.rerouteActionFor(…)` — the seven forced answers as lambdas, each
 REQUIRED (`build()` refuses a missing one in words) — plus the optional hooks as lambdas (`buildTask`, `selectCandidates`,
 `confirmAdmission`, `billedUnits`, `rateNextWindow`, `onAnswered`, `onServiceEnded`, `fillCdr`, `buildSdr`, …). `build(kit)` answers a
 `RoutesphereFlow<C>` (an anonymous subclass); the helpers of items 1–2 are reachable from the lambdas through a `Helpers` argument or the
@@ -89,7 +89,7 @@ or mocked admin client (no real broker on this PC).
 bootstrap (item 6), its tree and rules, ensures its topics (item 7), and the engine serves it — no restart; a tier under a served root → the
 tree reload (the doorbell already does it). Idempotent (the same event twice = once). Tests with a fake source + `MockConsumer`.
 
-**Item 9 — the prepaid piece, documented and defaulted (R12).** No new money code: `reserveBalance` → `finalizeCost` already is the one
+**Item 9 — the prepaid piece, documented and defaulted (R12).** No new money code: `reserveBalance` → `finalizeTier` already is the one
 reserve/finalize. Make it visible: a README section "the prepaid piece" (the two apis, cost → refund → adjustment, the SMS case = the refund
 rule), and the default ledger from the bootstrap = `switch` (seed-switch-ledger). A test pins: a failed SMS returns its whole reserve; an
 answered call pays rate × units and returns the rest.

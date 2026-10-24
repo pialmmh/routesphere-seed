@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * §E · (e) performCreditControl through ONE ledger port: reserveBalance per tier at admission; the budget child renews per tier while
- * ACTIVE and starts only on statewalk's SessionActive (§L.2, G-1); finalizeCost per tier in the final state — delivered: rate × billed
+ * ACTIVE and starts only on statewalk's SessionActive (§L.2, G-1); finalizeTier per tier in the final state — delivered: rate × billed
  * units, the rest back (negative = an extra debit); not delivered: the refund rule; never answered: every reserve back unless the refund
  * rule charges a session offered and never consumed. Money calls are idempotent per (session, tier) (§L.1): a crash between the settle and
  * the final row ends the session again from its older row, and nothing moves twice.
@@ -43,7 +43,7 @@ class CreditControlTest {
     @AfterEach
     void close() { if (lab != null) lab.close(); }
 
-    // ── finalizeCost ────────────────────────────────────────────────────────
+    // ── finalizeTier ────────────────────────────────────────────────────────
 
     @Test
     void delivered_isChargedRateTimesBilledUnits_theShortfallDebited() {

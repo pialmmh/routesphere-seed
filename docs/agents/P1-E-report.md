@@ -18,7 +18,7 @@ nothing written into `~/.m2`; no database server, broker or prime-context reache
 | commit | item |
 |---|---|
 | 1caa152 | **item 0** — the records road removed (R13) |
-| 4a8b22a | **item 1** — `identifyTenant` forced, with the door helpers |
+| 4a8b22a | **item 1** — `identifyRootLevelTenant` forced, with the door helpers |
 | 891326b | **item 2** — `identifyPartner`, `partnerAbove`, `byPartnerId` / `byPartnerName` |
 | c1f5043 | **item 3** — the facts' `SessionStart` sample refused at build |
 | 1a3c83c | **item 4** — one supervisor class per lane, the one engine door |
@@ -54,7 +54,7 @@ The owner's correction: a switch never writes a CDR table; it publishes to Kafka
   package-private (P1-R had opened them for its `records` package).
 - **Docs:** the README's §5.1 and the records rows, a history line; `docs/agents/P1-R-records-brief.md` and `P1-R-state.md` deleted;
   `P1-R-report.md` kept as history with one line at its top (superseded, R13).
-- **`RoutesphereFlowDriftTest`:** the forced set loses `cdrStatements` (eight now; item 1 adds `identifyTenant`).
+- **`RoutesphereFlowDriftTest`:** the forced set loses `cdrStatements` (eight now; item 1 adds `identifyRootLevelTenant`).
 
 **Tests deleted (31), all the records road's own — the road they proved no longer exists:**
 
@@ -77,9 +77,9 @@ words ("needs cdr (the CDR sink)", and no word of a records road); it passed on 
 
 The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
 
-## Item 1 · `identifyTenant` forced, with helpers (R1, R2)
+## Item 1 · `identifyRootLevelTenant` forced, with helpers (R1, R2)
 
-- `identifySiblingLevelTenants(SessionFacts)` → **`protected abstract String identifyTenant(RoutesphereFacts facts)`** (■ in the class table).
+- `identifySiblingLevelTenants(SessionFacts)` → **`protected abstract String identifyRootLevelTenant(RoutesphereFacts facts)`** (■ in the class table).
   `onStart` asks it through `rootOf(ctx)`: facts that are not `RoutesphereFacts` → refused `NO_TENANT` with a history line naming the class
   ("the session's facts are <class>, not RoutesphereFacts: they name no ingress, so no root"); a throw → `NO_TENANT` (the base's `safely`).
 - **The helpers** (final, one line each): `byListener(ip, port)` / `byListener("ip:port")`, `byEslSocket(host, port)` / `byEslSocket("host:port")`,
@@ -90,10 +90,10 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
   door else `byListener`, LabFlow and LedgerFlow `byIngress(facts.ingress())`.
 - **Red first:** `IdentifyTenantTest` (4 tests) — `factsThatAreNotRoutesphereFacts_areRefusedNoTenant_andTheHistoryNamesTheirClass` red on the
   code before the note (Maven run, 1 failure of 7); then green.
-- **Mutants (4, each red, each restored with `shutil.copyfile`):** the class note removed; `identifyTenant` given a default (the ingress rule)
+- **Mutants (4, each red, each restored with `shutil.copyfile`):** the class note removed; `identifyRootLevelTenant` given a default (the ingress rule)
   → the drift guard red; a door no rule names answered a default root → the helpers test red; the lane's null overruled by the kit's rules →
   `aLaneThatNamesNoRoot` red.
-- **Tests touched:** `RoutesphereFlowDriftTest.FORCED` (+ `identifyTenant`); `RootFirstTest`'s javadoc (the name).
+- **Tests touched:** `RoutesphereFlowDriftTest.FORCED` (+ `identifyRootLevelTenant`); `RootFirstTest`'s javadoc (the name).
 
 ## Item 2 · `identifyPartner` (R2)
 
@@ -150,10 +150,10 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
 ## Item 5 · the builder (R5) — CONTRACT DONE
 
 - **`api/RoutesphereApp`**: `RoutesphereApp.<C>builder(String name)` → `Builder<C>` with the forced answers `serviceGroup(int)`,
-  `identifyTenant((facts, find) -> root)`, `identifyPartner((ctx, candidate, find) -> tier)`, `rateAtLevel((ctx, tier, partner) -> rate)`,
-  `routing(ctx -> plan)`, `delivered((ctx, outcome) -> yes/no)`, `refundPolicy(ctx -> policy)`, `rerouteActionFor(cause -> action)` — each
+  `identifyRootLevelTenant((facts, find) -> root)`, `identifyPartner((ctx, candidate, find) -> tier)`, `rateAtLevel((ctx, tier, partner) -> rate)`,
+  `route(ctx -> plan)`, `delivered((ctx, outcome) -> yes/no)`, `refundPolicy(ctx -> policy)`, `rerouteActionFor(cause -> action)` — each
   REQUIRED: `build(kit)` refuses with every missing one named and its question ("[SmsSupervisor] every lane states its rules (R2) — the builder
-  has no serviceGroup(int) — the CDR's service group; no identifyTenant(…) — which root operator owns this door? …"). The optional hooks
+  has no serviceGroup(int) — the CDR's service group; no identifyRootLevelTenant(…) — which root operator owns this door? …"). The optional hooks
   (the call's default when not given): `buildTask`, `selectCandidates`, `authorize`, `applyRootRules`, `confirmAdmission`, `settleOutcome`,
   `billedUnits`, `rateNextWindow`, `onSignalingProgress`, `onAnswered`, `onServiceEnded`, `fillCdr`, `buildSdr`, `onEnded`. A lane that needs
   more (the voice's slots, the WiFi's renewal) subclasses — R5's "big lanes subclass; small lanes use the builder".
@@ -273,7 +273,7 @@ The reactor from `clean`: **434 / 0 / 0 / 3** (465 − 31).
 
 ## Item 9 · the prepaid piece, documented and defaulted (R12)
 
-- No new money code: `reserveBalance` → `finalizeCost` already IS the one reserve / finalize. The README's new §5.1 "The prepaid piece" says
+- No new money code: `reserveBalance` → `finalizeTier` already IS the one reserve / finalize. The README's new §5.1 "The prepaid piece" says
   the two apis (reserve at admission, every tier, one unit at its rate; finalize at the final state: delivered → rate × billed units, the
   reserve back and the difference the final adjustment — an overrun is an extra debit, the call's rule; not delivered → the lane's refund
   rule), the SMS's case (the refund rule returns a failed message's whole reserve), idempotent per (session, tier).

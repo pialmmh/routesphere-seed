@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P1-F1 (T's §10.1) · Step (d) routes BY THE CANDIDATE under admission: {@code routing(ctx)} runs inside the walk, before
+ * P1-F1 (T's §10.1) · Step (d) routes BY THE CANDIDATE under admission: {@code route(ctx)} runs inside the walk, before
  * {@code ctx.chosen} is set, so a lane reads {@code ctx.candidateBeingAdmitted()}. Two candidates: the first has no route (refused
  * NO_ROUTE, its reserves back), the second is routed by its own hop.
  */
@@ -35,7 +35,7 @@ class RoutingByCandidateTest {
         lab = new Lab(Lab.settings(0), kit -> new LabFlow(kit, Map.of(), Lab.hops("carrier-a"), Set.of()) {
             @Override protected List<Candidate> selectCandidates(LabContext ctx) { return candidates; }
             @Override protected Tier identifyPartner(LabContext ctx, Candidate candidate) { return byPartnerId(ctx, ((Creative) candidate).partnerId()); }
-            @Override protected RoutePlan routing(LabContext ctx) {
+            @Override protected RoutePlan route(LabContext ctx) {
                 Creative c = (Creative) ctx.candidateBeingAdmitted();
                 return c.hop() == null ? RoutePlan.none() : RoutePlan.one(new LabHop(c.hop()));
             }

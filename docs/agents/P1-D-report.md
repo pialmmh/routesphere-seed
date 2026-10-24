@@ -50,7 +50,7 @@ a leftover has no context, its records carry the same root as their hierarchy's 
 - **The lanes say their rules:** VoiceFlow, LabFlow, WifiFlow, LedgerFlow → `ctx.answered()` + `RefundPolicy.callsRule()`; AdFlow, WifiFlow,
   LedgerFlow → FAIL_TERMINAL for every cause (VoiceFlow and LabFlow keep the v1 table, SmsFlow its own); all six → `cdrTableRowOf(record)`.
   AdFlow and SmsFlow already stated `delivered` and `refundPolicy`.
-- **Unchanged on purpose:** `reserveBalance`, `finalizeCost`, `settleOutcome`, `identifyPartner` keep their defaults;
+- **Unchanged on purpose:** `reserveBalance`, `finalizeTier`, `settleOutcome`, `identifyPartner` keep their defaults;
   `iterateResellerTenants`, `finishSession` and the 14 `SessionHandler` methods (the 13 calls + `timings`) stay final.
 - **The drift guard** `api/RoutesphereFlowDriftTest`: (1) the abstract methods of `RoutesphereFlow` are exactly the nine; (2) every
   non-static method of statewalk's `SessionHandler` is implemented FINAL, and so are (b) and (g); (3) the class javadoc marks exactly the

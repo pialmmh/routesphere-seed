@@ -2,7 +2,7 @@ package com.telcobright.seed.sessionflow.api;
 
 /**
  * Where a session came in — the ingress identity the signaling machine stamps on its facts, and the one thing the base's step (a)
- * {@code identifyTenant} reads (through its helpers) to find the ROOT tenant (operator model §5: identification is a rule (kind, match) → tenant,
+ * {@code identifyRootLevelTenant} reads (through its helpers) to find the ROOT tenant (operator model §5: identification is a rule (kind, match) → tenant,
  * served by prime-context in the bootstrap; no match = refused, never a default):
  *
  * <ul>

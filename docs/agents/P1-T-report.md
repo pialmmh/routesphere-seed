@@ -228,7 +228,7 @@ Each sample is a `RoutesphereFlow` subclass: decisions only, no per-session fiel
 | C14 | the periodic reserve, the tightest tier cuts | base budget child + `VoiceFlow.rateNextWindow` | `a_talking_call_renews_one_minute_per_period…` (Stop(BALANCE_EXHAUSTED) → uuid_kill) |
 | C15 | hangup → DISCONNECTING → TERMINATED | `EslCall` ANSWERED / DISCONNECTING | `EslCallTest.an_answered_call…` (the other leg killed, the end built once) |
 | C16 | SettleFinal: the duration | base `billedDuration` (fixed once) | `one_two_and_three_tiers…` (durationSec) |
-| C17 | the settlement | `VoiceFlow.billedUnits` (started minutes) + base `finalizeCost` | `one_two_and_three_tiers…` (balances); the renewal test (the windows back) |
+| C17 | the settlement | `VoiceFlow.billedUnits` (started minutes) + base `finalizeTier` | `one_two_and_three_tiers…` (balances); the renewal test (the windows back) |
 | C18 | BalanceClosed → SUCCESS / FAILED | base settle copies the settlements | `one_two_and_three_tiers…` (3 settlements). **Deviation**, see §10.3 |
 | C19 | SUCCESS.entry: CDR per tier, the slot once | base `finishSession` | `one_two_and_three_tiers…`; `a_partner_with_one_channel…` |
 | C20 | FAILED.entry | base release + `Reject` → `uuid_kill` | `refusals…` (every parked leg killed); `reroutes_stop_at_the_plans_cap…` (USER_BUSY to the caller, every reserve back). The no-balance announcement is not in the sample. |
@@ -283,7 +283,7 @@ checked byte-identical (`git diff --quiet`).
 
 ## 10 · Findings for the base's owner and the architect
 
-1. **B0's step (d) could not see the candidate being tried** — CLOSED. `routing(ctx)` runs inside a candidate's walk, before `ctx.chosen`
+1. **B0's step (d) could not see the candidate being tried** — CLOSED. `route(ctx)` runs inside a candidate's walk, before `ctx.chosen`
    is set, and the base's cursor was package-private; AdFlow kept a copy of its own. B's F1 (c26ba99) added
    `RoutesphereContext.candidateBeingAdmitted()`; T11 (b2c4797) moved AdFlow onto it and dropped the copy.
 2. **statewalk, after a crash between the signaling machine's final element and the supervisor's final row** (proved with money in §12,

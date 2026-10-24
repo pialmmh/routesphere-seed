@@ -31,10 +31,10 @@ final class AppFlow<C extends RoutesphereContext> extends RoutesphereFlow<C> {
 
     @Override public String name() { return app.name; }
     @Override protected int serviceGroup(C ctx) { return app.serviceGroup; }
-    @Override protected String identifyTenant(RoutesphereFacts facts) { return app.identifyTenant.identify(facts, kit.lookups()); }
+    @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return app.identifyRootLevelTenant.identify(facts, kit.lookups()); }
     @Override protected Tier identifyPartner(C ctx, Candidate candidate) { return app.identifyPartner.identify(ctx, candidate, kit.lookups()); }
     @Override protected TierRate rateAtLevel(C ctx, Tier tier, Partner partner) { return app.rateAtLevel.rate(ctx, tier, partner); }
-    @Override protected RoutePlan routing(C ctx) { return app.routing.apply(ctx); }
+    @Override protected RoutePlan route(C ctx) { return app.route.apply(ctx); }
     @Override protected boolean delivered(C ctx, Outcome outcome) { return app.delivered.test(ctx, outcome); }
     @Override protected RefundPolicy refundPolicy(C ctx) { return app.refundPolicy.apply(ctx); }
     @Override protected RerouteAction rerouteActionFor(String cause) { return app.rerouteActionFor.apply(cause); }

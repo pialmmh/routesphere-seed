@@ -50,7 +50,7 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
     @Override public String name() { return name; }
 
     /** (a) The root by the door the dial came in at. */
-    @Override protected String identifyTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
+    @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return byIngress(facts.ingress()); }
 
     @Override protected int serviceGroup(LabContext ctx) { return 0; }
 
@@ -75,7 +75,7 @@ public class LabFlow extends RoutesphereFlow<LabContext> {
         return TierRate.of(rate, rate, "BDT", "880");
     }
 
-    @Override protected RoutePlan routing(LabContext ctx) { return RoutePlan.of(hops); }
+    @Override protected RoutePlan route(LabContext ctx) { return RoutePlan.of(hops); }
 
     @Override
     protected RerouteAction rerouteActionFor(String cause) { return V1_TABLE.getOrDefault(cause, RerouteAction.FAIL_TERMINAL); }

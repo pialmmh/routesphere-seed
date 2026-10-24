@@ -21,7 +21,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P1-E item 1 · (a) {@code identifyTenant} — every lane names the root operator of its own door (R1, R2: "root level tenant identification
+ * P1-E item 1 · (a) {@code identifyRootLevelTenant} — every lane names the root operator of its own door (R1, R2: "root level tenant identification
  * logic will vary for call, sms, wifi"); the base's one-line helpers ask the kit's identification rules; null = refused NO_TENANT, never a
  * default root; facts that are not {@code RoutesphereFacts} name no door and are refused with their class in the session's history.
  */
@@ -72,7 +72,7 @@ class IdentifyTenantTest {
     @Test
     void aLaneThatNamesNoRoot_isRefusedNoTenant_neverADefaultRoot() {
         LabFlow flow = new LabFlow(kit(), Map.of(), List.of(), Set.of()) {
-            @Override protected String identifyTenant(RoutesphereFacts facts) { return null; }
+            @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return null; }
         };
         LabContext ctx = started(flow, new LabFacts("n-1", 0, Ingress.esl("10.10.188.9", 8021), 1, "8801"));
         assertThat(ctx.startRefusal).isEqualTo(RoutesphereFlow.NO_TENANT);

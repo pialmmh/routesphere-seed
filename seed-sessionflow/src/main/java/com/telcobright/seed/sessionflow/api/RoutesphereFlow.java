@@ -37,15 +37,17 @@ import java.util.function.Supplier;
  * <pre>
  *   library call (state)          the base                                              the owner's methods (■ = abstract: every lane answers it)
  *   every call                    the lane's ONE name: statewalk's table, the log        name■ · serviceGroup■ (the CDR's group)
- *   onStart       IDLE → INIT     the root by the lane's door, its snapshot, the task   (a) identifyTenant■ · buildTask
+ *   onStart       IDLE → INIT     startSession: the root (the ingress's, facts.root(),      (a) identifyRootLevelTenant■ · buildTask
+ *                                 else the lane's rule), its snapshot, the task
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       per candidate: the leaf, the tiers leaf → root,        (c) identifyPartner■ · (b) iterateResellerTenants
- *                                 per tier check · authorize · root rules · reserve      (c) partnerAbove · (e) reserveBalance → rateAtLevel■
- *                                 the route at the root, the last gate                   (d) routing■ · confirmAdmission
- *   nextHop       ROUTING         the plan's current hop                                 (d) routing■ (made once, at admission)
+ *   admit         ADMITTING       admitSession, per candidate: the leaf, the tiers        (c) identifyPartner■ · (b) iterateResellerTenants
+ *                                 leaf → root, per tier performAdmission: check ·        (c) partnerAbove · (e) reserveBalance → rateAtLevel■
+ *                                 authorize · root rules · reserve
+ *                                 the route at the root, the last gate                   (d) route■ · confirmAdmission
+ *   nextHop       ROUTING         the plan's current hop                                 (d) route■ (made once, at admission)
  *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
  *   onActive      ACTIVE          the budget child starts on statewalk's SessionActive    onServiceStarted
- *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeCost → chargeAtSettle, billedUnits,
+ *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeTier → chargeAtSettle, billedUnits,
  *                                 rule; the rest back                                        delivered■, settleOutcome, refundPolicy■
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
@@ -55,7 +57,7 @@ import java.util.function.Supplier;
  * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
  * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule and its failover by cause — an SMS or an ad
  * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
- * with its defaults ({@code reserveBalance}, {@code finalizeCost}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
+ * with its defaults ({@code reserveBalance}, {@code finalizeTier}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
  * (b), the finish (g) and every statewalk call are final.
  *
  * <p><b>Two ways to write a lane (R5).</b> A big lane subclasses this class and overrides; a small lane answers the same questions as
@@ -120,32 +122,15 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /** IDLE → INIT: the root by the ingress (a), the root's snapshot, the application's task. */
     @Override
-    public final void onStart(C ctx, SessionStart start) {
-        ctx.createdAtMs = kit.clock().millis();
-        ctx.root = rootOf(ctx);
-        if (ctx.root == null) { refuseAtStart(ctx, NO_TENANT); return; }
-        if (!takeTheRootsSnapshot(ctx)) { refuseAtStart(ctx, SessionCause.TENANT_UNAVAILABLE); return; }
-        String refusal = safely(ctx, "buildTask", () -> step(ctx, "BUILD_TASK", () -> buildTask(ctx)), SessionCause.INTERNAL_ERROR);
-        if (refusal != null) refuseAtStart(ctx, refusal);
-    }
+    public final void onStart(C ctx, SessionStart start) { startSession(ctx, start); }
 
     /** INIT: the candidates, in failover order; the budget child when the service renews (spawned here, started at ACTIVE). */
     @Override
-    public final void prepare(C ctx, InternalEventResolver resolver) {
-        kit.counters().launched.incrementAndGet();
-        if (ctx.startRefusal != null) return;
-        ctx.candidates = candidatesOf(ctx);
-        if (renewsBudget()) resolver.spawnChild(BudgetChild.TYPE, BudgetChild.contextFor(ctx));
-    }
+    public final void prepare(C ctx, InternalEventResolver resolver) { prepareCandidates(ctx, resolver); }
 
     /** ADMITTING: the first candidate every tier admits is the session's; a refused candidate gives every reserve back. */
     @Override
-    public final Verdict admit(C ctx) {
-        if (ctx.startRefusal != null) return Verdict.reject(ctx.startRefusal);
-        Verdict verdict = AdmissionChain.of(this).admitFirstCandidate(ctx);
-        ctx.keepTiers();
-        return verdict;
-    }
+    public final Verdict admit(C ctx) { return admitSession(ctx); }
 
     /** ROUTING (d): the plan's current hop — the plan step (d) made at admission; null = NO_ROUTE. */
     @Override
@@ -156,10 +141,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /** CONNECTING (f): the attempt is recorded, then the application's rule decides; a retry never re-admits, never re-reserves. */
     @Override
-    public final boolean retry(C ctx, SignalingFailed failed) {
-        recordFailedAttempt(ctx, failed);
-        return safely(ctx, "handleRerouting", () -> handleRerouting(ctx, failed), false);
-    }
+    public final boolean retry(C ctx, SignalingFailed failed) { return reroute(ctx, failed); }
 
     /** CONNECTING: the first progress report is the PDD; the session stays CONNECTING. */
     @Override
@@ -209,6 +191,56 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // The session's story — what the machine calls, in order; FINAL, each a few named steps (the owner's words of 2026-10-24)
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /** IDLE → INIT · the root (the ingress's, else the lane's rule), the root's tree snapshot, the application's task. */
+    protected final void startSession(C ctx, SessionStart start) {
+        ctx.createdAtMs = kit.clock().millis();
+        ctx.root = rootOf(ctx);
+        if (ctx.root == null) { refuseAtStart(ctx, NO_TENANT); return; }
+        if (!takeTheRootsSnapshot(ctx)) { refuseAtStart(ctx, SessionCause.TENANT_UNAVAILABLE); return; }
+        String refusal = safely(ctx, "buildTask", () -> step(ctx, "BUILD_TASK", () -> buildTask(ctx)), SessionCause.INTERNAL_ERROR);
+        if (refusal != null) refuseAtStart(ctx, refusal);
+    }
+
+    /** INIT · the candidates, in failover order; the budget child when the service renews. */
+    protected final void prepareCandidates(C ctx, InternalEventResolver resolver) {
+        kit.counters().launched.incrementAndGet();
+        if (ctx.startRefusal != null) return;
+        ctx.candidates = candidatesOf(ctx);
+        if (renewsBudget()) resolver.spawnChild(BudgetChild.TYPE, BudgetChild.contextFor(ctx));
+    }
+
+    /**
+     * ADMITTING · the first candidate every tier admits is the session's: per candidate the leaf ({@link #identifyPartner}), then
+     * {@link #performAdmission} at every tier leaf → root, then the plan ({@link #route}) and {@link #confirmAdmission}; a refused candidate
+     * gives every reserve back.
+     */
+    protected final Verdict admitSession(C ctx) {
+        if (ctx.startRefusal != null) return Verdict.reject(ctx.startRefusal);
+        Verdict verdict = AdmissionChain.of(this).admitFirstCandidate(ctx);
+        ctx.keepTiers();
+        return verdict;
+    }
+
+    /**
+     * ONE tier's admission, in the call switch's order: {@link #checkPartner} · {@link #authorizeBeforeSlot} · the channel slot (at the
+     * leaf) · {@link #authorize} · {@link #applyRootRules} (at the root) · {@link #reserveBalance} ({@link #rateAtLevel} → the ledger).
+     * The first refusal ends the walk; the caller gives back everything taken before it.
+     */
+    protected final Verdict performAdmission(C ctx, Tier tier, Partner partner) {
+        String refusal = AdmissionChain.of(this).performAdmission(ctx, tier, partner);
+        return refusal == null ? Verdict.ok() : Verdict.reject(refusal);
+    }
+
+    /** CONNECTING · after a signaling failure: the attempt recorded, then the lane's rule ({@link #rerouteActionFor}) decides the next hop. */
+    protected final boolean reroute(C ctx, SignalingFailed failed) {
+        recordFailedAttempt(ctx, failed);
+        return safely(ctx, "handleRerouting", () -> handleRerouting(ctx, failed), false);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
     // The owner's methods (a)–(g)
     // ═════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -218,7 +250,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * VLAN ({@link #byVlan}), the SMS's Kafka door by its topic ({@link #byTopic}) — each helper asks prime-context's identification rules.
      * Null = nobody's: the session is refused {@code NO_TENANT}, never given a default root.
      */
-    protected abstract String identifyTenant(RoutesphereFacts facts);
+    protected abstract String identifyRootLevelTenant(RoutesphereFacts facts);
 
     /** (a) helper · The root of an HTTP listener (the local address the request arrived on); null = no rule names it. */
     protected final String byListener(String ip, int port) { return kit.lookups().byListener(ip, port); }
@@ -270,7 +302,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * {@code ctx.candidateBeingAdmitted()}: {@code ctx.chosen} is set only when a candidate was admitted. An empty plan refuses this
      * candidate with NO_ROUTE (its reserves go back) and the next is tried.
      */
-    protected abstract RoutePlan routing(C ctx);
+    protected abstract RoutePlan route(C ctx);
 
     /**
      * (e) Reserve at this tier: the call model — the tier's rate ({@link #rateAtLevel}: package units before money, ONE unit), held on ITS
@@ -284,7 +316,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * (negative = an extra debit, the call's rule); not delivered → the refund rule ({@link #refundPolicy} on {@link #settleOutcome}).
      * Through the one ledger port, idempotent per (session, tier).
      */
-    protected TierSettlement finalizeCost(C ctx, LevelAdmission tier, Outcome outcome) {
+    protected TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome) {
         BigDecimal charged = delivered(ctx, outcome) ? chargeAtSettle(ctx, tier) : chargeByTheRefundRule(ctx, tier);
         if (charged == null || charged.signum() < 0) charged = BigDecimal.ZERO;
         return kit.ledger().settle(tier, charged);
@@ -673,13 +705,14 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /** The plan step (d) made, made now if the session has none (a lane that routes after admission). */
     final RoutePlan planOf(C ctx) {
-        if (ctx.routePlan == null) ctx.routePlan = step(ctx, "ROUTING", () -> routing(ctx));
+        if (ctx.routePlan == null) ctx.routePlan = step(ctx, "ROUTING", () -> route(ctx));
         return ctx.routePlan;
     }
 
     /** (a) The lane's answer for the session's facts — facts that are not {@code RoutesphereFacts} name no door (said in the history). */
     private String rootOf(C ctx) {
-        if (ctx.facts instanceof RoutesphereFacts facts) return safely(ctx, "identifyTenant", () -> identifyTenant(facts), null);
+        if (ctx.facts instanceof RoutesphereFacts facts && facts.root() != null) return facts.root();       // the ingress identified it
+        if (ctx.facts instanceof RoutesphereFacts facts) return safely(ctx, "identifyRootLevelTenant", () -> identifyRootLevelTenant(facts), null);
         noteFactsWithoutAnIngress(ctx);
         return null;
     }

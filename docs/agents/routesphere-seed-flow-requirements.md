@@ -25,22 +25,22 @@ all on statewalk's registry, with as much code re-use as possible."*
 
 **R1 · Small, readable, incremental.** Adding an application = a handful of small methods, each answering one
 question. The owner: *"root level tenant identification logic will vary for call, sms, wifi; we need to add support
-for new applications with readable small incremental code — new implementations of identifyTenant(),
+for new applications with readable small incremental code — new implementations of identifyRootLevelTenant(),
 identifyPartner() …"*
 
 **R2 · The forced methods** (abstract in the base; every lane must write them):
 
 | Method | The question | Call | Ad | WiFi | SMS |
 |---|---|---|---|---|---|
-| `identifyTenant(facts)` | which root operator owns this door? | by the ESL socket | by the HTTP listener | by the VLAN | by the bind / listener |
+| `identifyRootLevelTenant(facts)` | which root operator owns this door? | by the ESL socket | by the HTTP listener | by the VLAN | by the bind / listener |
 | `identifyPartner(ctx)` | who pays at the leaf? | the caller's partner (ip / prefix) | the chosen campaign's advertiser | the subscriber | the bind's account |
 | `rateAtLevel(ctx, tier, partner)` | what does this tier charge; how much is reserved? | one talk minute | a view, or a second | a data window | one message |
-| `routing(ctx)` | where does it go, in failover order? | dialplan hops | the creative | the gateway | the SMSCs |
+| `route(ctx)` | where does it go, in failover order? | dialplan hops | the creative | the gateway | the SMSCs |
 | `delivered(ctx)` | did the service happen? | answered | shown | answered | delivery report |
 | `refundPolicy(ctx)` | what does a non-delivered session pay? | nothing | the unshown rule (config) | nothing | nothing (refund) |
 | `rerouteActionFor(cause)` | retry same, next hop, or stop? | the v1 table | stop | stop | congestion → next |
 
-`identifyTenant` and `identifyPartner` are the owner's names; the base's one-line helpers do the common lookups
+`identifyRootLevelTenant` and `identifyPartner` are the owner's names; the base's one-line helpers do the common lookups
 (`byListener`, `byEslSocket`, `byVlan`, `byTopic` against prime-context's identification rules; `byPartnerId`,
 `bySubscriber`, `byIpOrPrefix`, `bySystemId` inside the session's own tree). `null` = refused by the base
 (`NO_TENANT`, `PARTNER_NOT_FOUND`).
@@ -54,8 +54,8 @@ rule), the candidates (one: itself), the admission gates, `billedUnits`, the bud
 close words, the SDR (none).
 
 **R5 · Builder syntax.** *"For defining a new routesphere application we shall use builder syntax like the new
-statewalk implementations."* `RoutesphereApp.builder("SmsSupervisor").facts(…).identifyTenant(f -> …)
-.identifyPartner(…).rateAtLevel(…).routing(…).delivered(…).refundPolicy(…).rerouteActionFor(…)
+statewalk implementations."* `RoutesphereApp.builder("SmsSupervisor").facts(…).identifyRootLevelTenant(f -> …)
+.identifyPartner(…).rateAtLevel(…).route(…).delivered(…).refundPolicy(…).rerouteActionFor(…)
 .signaling(spec).channel(channel, decoder).build()` — the same questions as lambdas. Big lanes subclass; small
 lanes use the builder. *"Method overrides, or when applicable, a callback contained by the domain classes of the
 specific application within the package."*
@@ -109,7 +109,7 @@ moves into prime-context (its provisioning road already makes PostgreSQL schemas
 mem-ledger cache. Prepaid reserve and finalize balance shall be one reusable piece inside the flow: a reserve api and
 a finalize api; finalize computes the cost of the session, refunds the reserve and makes the final adjustment (the
 current call flow already does this). For some applications, e.g. SMS, finalize just returns the balance for a
-failed message."* The base already holds this once (`reserveBalance` → `finalizeCost`: delivered → rate × units,
+failed message."* The base already holds this once (`reserveBalance` → `finalizeTier`: delivered → rate × units,
 the rest back; not delivered → the lane's refund rule). The default ledger becomes the in-switch one
 (`seed-switch-ledger`: mem-ledger + package accounts); the ad lane moves to it from orchestrix's REST roads.
 

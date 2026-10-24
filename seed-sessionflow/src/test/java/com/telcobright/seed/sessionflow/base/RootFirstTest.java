@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * §C · (a) identifyTenant — the root first, per protocol: the ingress → the ROOT by the bootstrap's rules, and from then on
+ * §C · (a) identifyRootLevelTenant — the root first, per protocol: the ingress → the ROOT by the bootstrap's rules, and from then on
  * every lookup is scoped to that root's tree. Two roots whose partner ids overlap; a request per root; no lookup crosses roots; no match
  * refused NO_TENANT; a rule naming an unknown root refused at load.
  */

@@ -18,7 +18,7 @@ small and stays small. First consumer: **wifi-sphere**.
 - `seed-bootstrap-config` — the application's WHOLE config from prime-context's bootstrap (R8): a SmallRye `ConfigSourceFactory` at
   ordinal 275 over the same road as the kit; the application's yml is two lines (the url and the token's variable name).
 - `seed-sessionflow` — `RoutesphereFlow`, the ONE base flow — the FRAMEWORK every routesphere application extends (P1, P1-E): the
-  handler of statewalk 4.1's final `SessionSupervisor` — the root by the lane's door (`identifyTenant`), the payer (`identifyPartner`),
+  handler of statewalk 4.1's final `SessionSupervisor` — the root by the lane's door (`identifyRootLevelTenant`), the payer (`identifyPartner`),
   the reseller tiers leaf to root, routing, the prepaid piece through one ledger port, rerouting by cause, the finish (one CDR message per
   session, a record per tier, on `cdr_<root>`); a lane is a subclass or a `RoutesphereApp` builder with its own supervisor class; the kit
   from ONE bootstrap url (`RoutesphereKit.fromBootstrap`), roots added live. See `seed-sessionflow/README.md`.

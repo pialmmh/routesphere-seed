@@ -52,7 +52,7 @@ SessionMachine, SessionState, LaunchResult, RequestFacts, SessionFlowKit, Sessio
 | `identifyEntryPartner(ctx)` 292 | (c) `identifyEntryPartner(ctx, candidate)` — the inversion (the candidate's advertiser) |
 | `rateAtLevel(ctx, Tenant, Partner, int)` 324 | `rateAtLevel(ctx, Tier, Partner)` (`TierAdRating`, per view or per second) |
 | `confirmAdmission(ctx, StepMode)` 407 | `confirmAdmission(ctx, Candidate)`; **check `ctx.dryRun` before the quota** |
-| — (no route step today) | (d) `routing(ctx)`: `RoutePlan.one(creative of ctx.candidateBeingAdmitted())` |
+| — (no route step today) | (d) `route(ctx)`: `RoutePlan.one(creative of ctx.candidateBeingAdmitted())` |
 | `rerouteActionFor(protocol, cause)` 544 | (f) `rerouteActionFor(cause)` = FAIL_TERMINAL (never a second creative after the hand-over) |
 | `onActive(ctx, machine)` 533 (opens the credit window: `EvCreditWindowOpen`) | the window is AdPlayback's VIEWED state; `onServiceStarted` keeps the rest |
 | `settlesAsync` 551 = false | gone: the final state settles, synchronously |

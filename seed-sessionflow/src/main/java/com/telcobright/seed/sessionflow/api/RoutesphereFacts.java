@@ -12,4 +12,10 @@ public interface RoutesphereFacts extends SessionFacts {
 
     /** Where this session came in — the base's step (a) finds the ROOT tenant by it. Null = no identity: refused NO_TENANT. */
     Ingress ingress();
+
+    /**
+     * The ROOT operator the ingress already identified ({@code engine.identifyRootLevelTenant(facts)}, the ingress's first line): the
+     * machine takes it and asks the lane nothing. Null (the default) = the machine identifies the root itself at its start.
+     */
+    default String root() { return null; }
 }

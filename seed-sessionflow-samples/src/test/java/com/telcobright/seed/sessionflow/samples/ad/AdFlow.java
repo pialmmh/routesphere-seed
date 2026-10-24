@@ -62,7 +62,7 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
     @Override public String name() { return "AdSupervisor"; }
 
     /** (a) The root by the HTTP listener the request came in on. */
-    @Override protected String identifyTenant(RoutesphereFacts facts) { return byListener(((AdFacts) facts).listen()); }
+    @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return byListener(((AdFacts) facts).listen()); }
 
     /** An ad view is group 30, taken as given. */
     @Override protected int serviceGroup(AdContext view) { return 30; }
@@ -117,7 +117,7 @@ public final class AdFlow extends RoutesphereFlow<AdContext> {
 
     /** The creative of the candidate under admission is the one hop (step (d) runs inside the candidate's walk, before {@code chosen}). */
     @Override
-    protected RoutePlan routing(AdContext view) {
+    protected RoutePlan route(AdContext view) {
         AdCandidate k = (AdCandidate) view.candidateBeingAdmitted();
         return k == null ? RoutePlan.none() : RoutePlan.one(k.creative());
     }

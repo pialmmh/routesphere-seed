@@ -4,7 +4,7 @@ Status: READY 2026-10-22 (statewalk 4.0.0 released locally, §K). Launched on th
 1. (done) statewalk 4.0.0;
 2. the owner's rulings on the design page's decisions D1–D7 (`routesphere-flow.html` §9). This draft assumes the recommended options; each assumption is marked **[assumes Dn]**.
 
-The owner's order (2026-10-21, verbatim core): "refactor and organize the following applications … to maximize code-reuse, with based lib/class/interface approach … migrate to statewalk v4.0 … base class shall have the logic to load multi-tenant, multi-level reseller based lifecycle part, dynamic context loading through prime-context, and kafka notification of config changing through kafka … identifySiblingLevelTenants … iterate through all multi level reseller tenants … identityPartner() … routing() … performCreditControl() (reserveBalance and finalizeCost; refund when the service is not delivered) … handleRerouting() … finishSession() (tear down, write cdr, return + reset statemachines to the registry pool) … we will first refactor the ad-sphere flow, the base flow shall be called routesphereFlow."
+The owner's order (2026-10-21, verbatim core): "refactor and organize the following applications … to maximize code-reuse, with based lib/class/interface approach … migrate to statewalk v4.0 … base class shall have the logic to load multi-tenant, multi-level reseller based lifecycle part, dynamic context loading through prime-context, and kafka notification of config changing through kafka … identifySiblingLevelTenants … iterate through all multi level reseller tenants … identityPartner() … route() … performCreditControl() (reserveBalance and finalizeTier; refund when the service is not delivered) … handleRerouting() … finishSession() (tear down, write cdr, return + reset statemachines to the registry pool) … we will first refactor the ad-sphere flow, the base flow shall be called routesphereFlow."
 
 The design: `~/arch-drafts/launch/session-supervisor/routesphere-flow.html` (served at http://127.0.0.1:7299/routesphere-flow.html). Read it first, completely.
 
@@ -37,7 +37,7 @@ The library calls twelve handler methods at fixed points; the base implements ev
 | `nextHop` (ROUTING) | the current hop of the plan | **(d) `routing`** |
 | `retry` (CONNECTING, the guard) | by cause: RETRY_SAME / REROUTE (advance the plan under `maxAttempts`) / FAIL_TERMINAL; never re-admits, never re-reserves | **(f) `handleRerouting`** (→ `rerouteActionFor`) |
 | `onEstablished`, `onActive` (ACTIVE) | keep the answer; start the budget window (G-1) | `onServiceStarted` |
-| `settle` (final) | per tier: delivered → charge rate × billed units, the rest back; not delivered → the refund rule | **(e) `finalizeCost`** (→ `billedUnits`, `delivered`, `settleOutcome`, `refundPolicy`) |
+| `settle` (final) | per tier: delivered → charge rate × billed units, the rest back; not delivered → the refund rule | **(e) `finalizeTier`** (→ `billedUnits`, `delivered`, `settleOutcome`, `refundPolicy`) |
 | `release` (final, never answered) | every reserve back | — |
 | `record` (both finals) | teardown, CDR per tier, the task close, the SDR, the app's close — then the registry resets every machine and returns it to its pool | **(g) `finishSession`** (→ `onTeardown`, `cdrPerTier`, `buildSdr`, `onEnded`) |
 
@@ -64,7 +64,7 @@ The library calls twelve handler methods at fixed points; the base implements ev
 - `LedgerPort` (reserve · settle · release) is the ONLY money road [assumes D3]; the base never names a ledger.
 - `reserveBalance` per tier at admission (today's `AdmissionChain` rate + reserve); the budget child renews per tier in ACTIVE.
 - The budget child = today's `LevelBalanceTracker` as a 4.0 `MachineSpec` (IDLE first with `.timeout(0)`; HOLDING → FIRST_RENEWAL → RENEWING → WINDING_DOWN; publishes `BudgetExhausted`; the final-window cut); spawned in `prepare`, started at ACTIVE through G-1, reset with the session.
-- `finalizeCost` per tier in the final state: delivered → charged = rate × billed units, the rest returned (negative = extra debit, the call's rule); not delivered → `refundPolicy` (the ad's `unshown`, the SMS's refund-on-non-delivery by config).
+- `finalizeTier` per tier in the final state: delivered → charged = rate × billed units, the rest returned (negative = extra debit, the call's rule); not delivered → `refundPolicy` (the ad's `unshown`, the SMS's refund-on-non-delivery by config).
 - Every answered session is settled, never released (D-A1).
 
 ## F · (f) handleRerouting

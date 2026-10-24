@@ -35,7 +35,7 @@ can silently inherit the CALL's rules for delivery, refund and failover — an S
   AdFlow → FAIL_TERMINAL for every cause (never a second creative after the hand-over); WifiFlow and LedgerFlow → FAIL_TERMINAL.
   Behaviour must not change: every existing test stays green unchanged except where a test built a flow anonymously and now must
   answer the new abstract methods (say which).
-- Unchanged on purpose (the owner's code-reuse goal): the money code (`reserveBalance`, `finalizeCost`, `settleOutcome`'s default,
+- Unchanged on purpose (the owner's code-reuse goal): the money code (`reserveBalance`, `finalizeTier`, `settleOutcome`'s default,
   `identifyPartner`) stays shared with its defaults; `iterateResellerTenants` and `finishSession` stay final; the 13 statewalk
   calls stay final.
 - A drift guard (like statewalk's `GuideDriftTest`): by reflection, the abstract methods of `RoutesphereFlow` are exactly

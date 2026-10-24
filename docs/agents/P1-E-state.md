@@ -12,8 +12,8 @@ every time is read with `date` first.
   under the lock, 2 min 18 s). Order: items 0 → 11. Running: item 0.
 - 2026-10-23 23:25 · **item 0 done** (1caa152) — the records road removed (R13): 25 main files, the `records/` tests, `AdRecordsTest`, three sample
   scene helpers, the P1-R brief and state; `cdrStatements` no longer forced; the CDR sink required again. The reactor from clean
-  **434/0/0/3** (31 tests deleted, named in the report). Next: item 1 (`identifyTenant` forced).
-- 2026-10-24 00:08 · **item 1 done** (4a8b22a) — `identifyTenant(RoutesphereFacts)` abstract, the five door helpers (`api/Lookups`, `kit.lookups()`),
+  **434/0/0/3** (31 tests deleted, named in the report). Next: item 1 (`identifyRootLevelTenant` forced).
+- 2026-10-24 00:08 · **item 1 done** (4a8b22a) — `identifyRootLevelTenant(RoutesphereFacts)` abstract, the five door helpers (`api/Lookups`, `kit.lookups()`),
   the facts-class refusal noted; red first (the class not named), 4 mutants red; modules green (direct runs: sessionflow 151, samples 69,
   switch-ledger 50). The clean-copy reactor of 4a8b22a runs in the background (the lock is shared with two other agents).
 - 2026-10-24 00:12 · **item 2 done** (891326b) — `identifyPartner(ctx, candidate)` (was identifyEntryPartner), `partnerAbove(tier)` (was
@@ -32,7 +32,7 @@ every time is read with `date` first.
   builder (`SmsFlow.of(kit, …)`), `SmsFlowTest` / `SmsSubmitTest` green with one line of `SmsFlowTest` changed (the flow's type); red first
   (compile), 5 mutants red; sessionflow 163, samples 71, switch-ledger 50 green.
 
-CONTRACT DONE — items 0–5 (the records road gone; identifyTenant / identifyPartner forced with helpers; the facts' sample at build; one
+CONTRACT DONE — items 0–5 (the records road gone; identifyRootLevelTenant / identifyPartner forced with helpers; the facts' sample at build; one
 supervisor class per lane; the builder). The architect may merge up to item 5's commit and start the ad-sphere port on it. Running next:
 item 6 (the kit from ONE bootstrap url).
 - 2026-10-24 about 00:37 · the contract head **c992262** on a git-archive clean copy (offline, under the lock): **452/0/0/3** (started

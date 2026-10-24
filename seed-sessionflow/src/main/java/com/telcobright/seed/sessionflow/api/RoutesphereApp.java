@@ -28,10 +28,10 @@ import java.util.function.Function;
  * <pre>
  *   RoutesphereFlow&lt;SmsContext&gt; flow = RoutesphereApp.&lt;SmsContext&gt;builder("SmsSupervisor")
  *       .serviceGroup(0)
- *       .identifyTenant((facts, find) -&gt; find.byIngress(facts.ingress()))                       // which root owns this door?
+ *       .identifyRootLevelTenant((facts, find) -&gt; find.byIngress(facts.ingress()))                       // which root owns this door?
  *       .identifyPartner((sms, candidate, find) -&gt; find.byPartnerId(sms, accounts.get(sms.user))) // who pays at the leaf?
  *       .rateAtLevel((sms, tier, partner) -&gt; rates.perMessage(tier, partner, sms.segments))       // what does this tier charge?
- *       .routing(sms -&gt; RoutePlan.of(smscs))                                                  // where does it go, in order?
+ *       .route(sms -&gt; RoutePlan.of(smscs))                                                  // where does it go, in order?
  *       .delivered((sms, outcome) -&gt; "DELIVERED".equals(sms.endCause))                         // did the service happen?
  *       .refundPolicy(sms -&gt; RefundPolicy.of(Rule.REFUND, Rule.REFUND))                         // what does a failed one pay?
  *       .rerouteActionFor(cause -&gt; RerouteAction.FAIL_TERMINAL)                                  // retry, next hop, or stop?
@@ -78,10 +78,10 @@ public final class RoutesphereApp {
     public static final class Builder<C extends RoutesphereContext> {
         final String name;
         Integer serviceGroup;
-        TenantRule identifyTenant;
+        TenantRule identifyRootLevelTenant;
         PartnerRule<C> identifyPartner;
         RateRule<C> rateAtLevel;
-        Function<C, RoutePlan> routing;
+        Function<C, RoutePlan> route;
         BiPredicate<C, Outcome> delivered;
         Function<C, RefundPolicy> refundPolicy;
         Function<String, RerouteAction> rerouteActionFor;
@@ -112,13 +112,17 @@ public final class RoutesphereApp {
         /** ■ The CDR's service group: 0 = billing detects it (a voice call); 30 = an ad view, taken as given. */
         public Builder<C> serviceGroup(int v) { open(); this.serviceGroup = v; return this; }
         /** ■ (a) Which root operator owns this door? */
-        public Builder<C> identifyTenant(TenantRule v) { open(); this.identifyTenant = v; return this; }
+        public Builder<C> identifyRootLevelTenant(TenantRule v) { open(); this.identifyRootLevelTenant = v; return this; }
+        /** @deprecated the old name of {@link #identifyRootLevelTenant}. */
+        @Deprecated public Builder<C> identifyTenant(TenantRule v) { return identifyRootLevelTenant(v); }
         /** ■ (c) Who pays at the leaf? */
         public Builder<C> identifyPartner(PartnerRule<C> v) { open(); this.identifyPartner = v; return this; }
         /** ■ (e) What does this tier charge; how much is reserved? */
         public Builder<C> rateAtLevel(RateRule<C> v) { open(); this.rateAtLevel = v; return this; }
         /** ■ (d) Where does it go, in failover order? */
-        public Builder<C> routing(Function<C, RoutePlan> v) { open(); this.routing = v; return this; }
+        public Builder<C> route(Function<C, RoutePlan> v) { open(); this.route = v; return this; }
+        /** @deprecated the old name of {@link #route}. */
+        @Deprecated public Builder<C> routing(Function<C, RoutePlan> v) { return route(v); }
         /** ■ Did the service happen? (the call: answered; the SMS: its delivery report; the ad: shown) */
         public Builder<C> delivered(BiPredicate<C, Outcome> v) { open(); this.delivered = v; return this; }
         /** ■ What does a session not delivered pay? (the call: {@code RefundPolicy.callsRule()}) */
@@ -173,10 +177,10 @@ public final class RoutesphereApp {
         private void refuseAMissingAnswer() {
             List<String> missing = new ArrayList<>();
             if (serviceGroup == null) missing.add("serviceGroup(int) — the CDR's service group");
-            if (identifyTenant == null) missing.add("identifyTenant((facts, find) -> root) — which root operator owns this door?");
+            if (identifyRootLevelTenant == null) missing.add("identifyRootLevelTenant((facts, find) -> root) — which root operator owns this door?");
             if (identifyPartner == null) missing.add("identifyPartner((ctx, candidate, find) -> tier) — who pays at the leaf?");
             if (rateAtLevel == null) missing.add("rateAtLevel((ctx, tier, partner) -> rate) — what does this tier charge?");
-            if (routing == null) missing.add("routing(ctx -> plan) — where does it go, in failover order?");
+            if (route == null) missing.add("route(ctx -> plan) — where does it go, in failover order?");
             if (delivered == null) missing.add("delivered((ctx, outcome) -> yes/no) — did the service happen?");
             if (refundPolicy == null) missing.add("refundPolicy(ctx -> policy) — what does a session not delivered pay?");
             if (rerouteActionFor == null) missing.add("rerouteActionFor(cause -> action) — retry, the next hop, or stop?");

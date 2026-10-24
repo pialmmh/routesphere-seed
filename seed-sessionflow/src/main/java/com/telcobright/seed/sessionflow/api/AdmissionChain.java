@@ -100,7 +100,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
         keepTheEntry(ctx, leaf);
         for (Tier tier : chain) {
             Partner partner = tier.isLeaf() ? leaf.partner() : partnerOfTheTierAbove(ctx, tier);
-            String refusal = admitAtLevel(ctx, tier, partner);
+            String refusal = causeOf(flow.performAdmission(ctx, tier, partner));
             if (refusal != null) return refusal;
         }
         return null;
@@ -136,7 +136,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
      * take no slot → the leaf's channel slot → the checks after the slot → the root's rules → rated and reserved. The first refusal ends the
      * walk; the caller gives back everything taken before it.
      */
-    private String admitAtLevel(C ctx, Tier tier, Partner partner) {
+    String performAdmission(C ctx, Tier tier, Partner partner) {
         if (partner == null) return SessionCause.PARTNER_NOT_FOUND;
         String refusal = causeOf(flow.step(ctx, "CHECK_PARTNER", () -> flow.checkPartner(ctx, tier, partner)));
         if (refusal == null) refusal = causeOf(flow.step(ctx, "AUTHORIZE_BEFORE_SLOT", () -> flow.authorizeBeforeSlot(ctx, tier, partner)));

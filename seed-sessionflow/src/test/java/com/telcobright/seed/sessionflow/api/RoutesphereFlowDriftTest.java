@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RoutesphereFlowDriftTest {
 
     /** The owner's word of 2026-10-23 (decision 3; R13: the CDR's SQL left with the records road): what every lane answers itself. */
-    static final Set<String> FORCED = Set.of("name", "serviceGroup", "identifyTenant", "identifyPartner", "routing", "rateAtLevel",
+    static final Set<String> FORCED = Set.of("name", "serviceGroup", "identifyRootLevelTenant", "identifyPartner", "route", "rateAtLevel",
         "delivered", "refundPolicy", "rerouteActionFor");
 
     @Test

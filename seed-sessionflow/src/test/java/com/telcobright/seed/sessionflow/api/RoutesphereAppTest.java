@@ -44,10 +44,10 @@ class RoutesphereAppTest {
     private static RoutesphereApp.Builder<LabContext> complete() {
         return RoutesphereApp.<LabContext>builder("TinySupervisor")
             .serviceGroup(7)
-            .identifyTenant((facts, find) -> find.byIngress(facts.ingress()))
+            .identifyRootLevelTenant((facts, find) -> find.byIngress(facts.ingress()))
             .identifyPartner((ctx, candidate, find) -> find.byPartnerId(ctx, ((LabFacts) ctx.facts).partnerId()))
             .rateAtLevel((ctx, tier, partner) -> TierRate.of(new BigDecimal("1.00"), new BigDecimal("1.00"), "BDT", "880"))
-            .routing(ctx -> RoutePlan.one(new Hop("h-1")))
+            .route(ctx -> RoutePlan.one(new Hop("h-1")))
             .delivered((ctx, outcome) -> ctx.answered())
             .refundPolicy(ctx -> RefundPolicy.callsRule())
             .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL);
@@ -67,8 +67,8 @@ class RoutesphereAppTest {
     void aMissingForcedAnswer_isRefusedAtBuild_everyOneNamedInWords() {
         assertThatThrownBy(() -> RoutesphereApp.<LabContext>builder("SmsSupervisor").build(kit))
             .hasMessageContaining("[SmsSupervisor] every lane states its rules (R2)")
-            .hasMessageContaining("serviceGroup(int)").hasMessageContaining("identifyTenant(").hasMessageContaining("identifyPartner(")
-            .hasMessageContaining("rateAtLevel(").hasMessageContaining("routing(").hasMessageContaining("delivered(")
+            .hasMessageContaining("serviceGroup(int)").hasMessageContaining("identifyRootLevelTenant(").hasMessageContaining("identifyPartner(")
+            .hasMessageContaining("rateAtLevel(").hasMessageContaining("route(").hasMessageContaining("delivered(")
             .hasMessageContaining("refundPolicy(").hasMessageContaining("rerouteActionFor(");
         assertThatThrownBy(() -> complete().rerouteActionFor(null).build(kit)).hasMessageContaining("no rerouteActionFor(")
             .hasMessageNotContaining("no serviceGroup");
@@ -80,7 +80,7 @@ class RoutesphereAppTest {
         RoutesphereFlow<LabContext> flow = complete().build(kit);
         assertThat(flow.name()).isEqualTo("TinySupervisor");
         LabContext ctx = started(flow, 1);
-        assertThat(ctx.root).as("identifyTenant through the base's lookups").isEqualTo("btcl");
+        assertThat(ctx.root).as("identifyRootLevelTenant through the base's lookups").isEqualTo("btcl");
         Verdict verdict = flow.admit(ctx);
         assertThat(verdict.accepted()).isTrue();
         assertThat(ctx.tiers).extracting(t -> t.dbName + "/" + t.partnerId).containsExactly("btcl/1");
