@@ -1,0 +1,54 @@
+# The walks the hot-path guard allows (P1-O; the architect's A8 b; the test is seed-sessionflow's HotPathHasNoListScanTest).
+# The owner's rule (2026-10-25): "avoiding a LIST lookup on the hot path is a STRICT rule for partner and tenant identification".
+# The guard scans the MAIN sources of seed-sessionflow, seed-tenant and seed-routing for a `for (…)` over partners() / routes() /
+# children() / tiers() / tenants() (the names without case: getPartners() counts) and for every `.stream(` and `.forEach(`.
+# Each walk must be named here as `Class#method — reason` (`Class#*` = every method of that class; a nested class is Outer.Inner;
+# `<field>` = a field's initializer). A new walk in a flow class is red; an entry that names no walk any more is red too.
+# A session's identification is a get on the index its snapshot was installed with — never a reason to add a line here.
+
+# ── the install: once per root and load, never per session ──
+RootIndexBuild#* — the index builder: ONE walk of every tier of a root's tree when its snapshot is installed (roots × loads)
+PartnerTiers#of — seed-tenant's D5 map (the ids two tiers hold), built at the same install
+
+# ── a session's own few lines, not a lookup ──
+RoutesphereFlow#bringBackTheLiveTiers — a session's OWN tier lines (one per tier of its chain) re-linked to its snapshot after a restore
+SessionCdr#closeAsReserved — the reserve windows of ONE leftover session's tier, at the start's leftovers
+PerRootJournal#released — the journal of the session's root (every root's only when the session left no line: a handful of roots)
+PerRootJournal#noted — the same: the session's root's journal
+PerRootJournal#done — the same: the session's root's journal
+
+# ── the start, a root served, the close, the stats ──
+RoutesphereEngine.Builder#refuseASignalingWithoutItsFactsSample — the engine's build, once at start
+KitMakers#onTheClasspath — the ServiceLoader's makers, once at the kit's build
+TopicProvisioner#outcomeOf — the topics made at start and when a root is added
+BootstrapRoad#start — the served roots' topics, once at start
+BootstrapRoad#close — the admins and producers closed, once
+DeploymentReader#secretsOf — reading the bootstrap's envelope (at start, a root added)
+DeploymentReader#words — reading the bootstrap's envelope (at start, a root added)
+Deployment#rulesOf — a root's doors for the start line (BootstrapRoad.describe), not a session's
+RootResources#shownWords — a root's resources as a log line's text (start, a root served)
+PerRootCdrSink#close — every root's CDR road closed, once
+PerRootJournal#leftovers — every root's journal read once at start
+PerRootJournal#keeps — whether any root keeps a journal (the engine's start check)
+PerRootJournal#close — every root's journal closed, once
+PerRootLedger#slowestAnswerMs — the stats road: the slowest answer over the roots' ledgers
+PerRootLedger#close — every root's ledger closed, once
+ReturnRoad#resumeOpen — the owed entries left open, once at start
+
+# ── seed-routing: a request's own attributes, a policy's compile and its admin text ──
+RoutingRequest#RoutingRequest — the request's own attributes copied (a handful), not a lookup
+RoutingSettings#RoutingSettings — the routing settings read at load
+RouteGroupSelector#select — the weights of ONE route group's members (a handful per dialplan), not a lookup of partners or tenants
+AttributeMatch.In#pinned — a policy's compile (RuleSetEvaluator's index and order, once per policy load)
+AttributeMatch.In#toJson — a policy written as JSON (the admin road)
+AttributeMatch.Prefix#longest — a rule's specificity at the policy's compile (the try order), once per policy load
+AttributeMatch.Prefix#toJson — a policy written as JSON (the admin road)
+RuleSetEvaluator#routeNames — the routes a policy names, for the admin's check
+RuleSetEvaluator#warnings — the admin's check of a policy against the route directory
+RuleSetJson#ruleNode — a policy written as JSON (the admin road)
+
+# ── the testkit (main sources, used by tests only) ──
+TenantTreeBuilder.TenantSpec#context — a test's tree built once
+InMemoryLedger#count — a test's ledger journal counted
+RecordingCdrSink#of — a test's recorded CDRs filtered
+FakeKafka#create — a test's topics made

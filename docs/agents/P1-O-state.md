@@ -67,3 +67,14 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   mutant below is that climb). Mutants 3, 3 red: the unconditional name loop back (NoWalk 1/2 + ResellerPartnerRule 1/5), the per-session
   walk back in entryOf (NoWalk 2/2), the shortest prefix first (DialplanRouterTest 1/6); restored with a fresh mtime. The whole reactor
   **662/0/0/3** (04:11–04:15). Next: item 4 (HotPathHasNoListScanTest + the allowlist).
+- 2026-10-25 04:30 · **item 4 done** — the guard: `HotPathHasNoListScanTest` (seed-sessionflow) scans the MAIN sources of seed-sessionflow,
+  seed-tenant and seed-routing with A8's pattern — the five names matched WITHOUT case (so `getPartners()`, `getChildren()`, `getRoutes()`
+  count: as written, lower case only, it would not see the climb's old `for (Partner p : parent.getContext().getPartners().values())`) and
+  `for` followed by any spaces — comments, strings and text blocks blanked, each walk owned by its `Class#method` (a brace-tracking scan:
+  classes nested as Outer.Inner, `<field>` for an initializer, a record's compact constructor, a lambda belongs to its method); every walk
+  must stand in `docs/agents/hot-path-allowlist.txt` (`Class#method — reason`, `Class#*` for the index builder; 37 entries: the install,
+  a session's own few lines, the start/close/stats roads, seed-routing's request copy, route-group weights and policy compile/admin, the
+  testkit); an entry that names no walk any more is red too. A second test pins the scanner on a fixture (a field, a method, a compact
+  constructor, a lambda; a comment and a string not counted). Red first: the guard red with an empty allow-list (52 walks listed). Mutants
+  3, 3 red: a new walk in `Lookups.byPartnerId`, the climb's old loop back (seen by the guard alone), a stale allow-list entry; restored
+  with a fresh mtime. Next: item 5 (the samples use the helpers).
