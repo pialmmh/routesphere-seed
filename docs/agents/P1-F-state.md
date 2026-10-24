@@ -224,3 +224,38 @@ its gate 569/0/0/3).
 - 2026-10-24 14:17 · **P1-I DONE** — items 1–4; the head 4650da7 from clean in the worktree **572/0/0/3** (142 s) and on a git-archive clean
   copy **572/0/0/3** (138 s), two short lock holds 14:12–14:17 (offline, no install); +3 tests; 6 mutants red; the hog runs in item 2's
   line. The report's P1-I section: `docs/agents/P1-F-report.md`.
+
+## P1-J
+
+The architect's brief: `docs/agents/P1-J-brief.md` (accounts written after a tier exists reach the switch ledger — P2c's G1; the
+ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 206e7f0 (the merge of P1-I; its clean copy 572/0/0/3).
+
+- 2026-10-24 16:01 · START — from 206e7f0. Read: P2-report.md "P2c 4", G1, G3 (read only). Running: item 1 (every reload merges the new rows).
+- 2026-10-24 16:19 · **P1-J item 1 done** — G1: every reload of a root's tree merges the root's new rows into its switch ledger. The road's
+  gate (TiersFirst, which every new tree passes BEFORE it is shown: the doorbell's ring, a tenant_created, a root served, the backstop)
+  now tells the root's ledger `LedgerPort.treeReloaded()` (new default doing nothing; PerRootLedger routes it); the switch ledger's
+  port merges (`NewRowsOfATier`: reloadNewEntities, ghost reserves out) under its write gate, coalesced by `internal/CoalescedMerges`:
+  at most ONE merge per `ledger.merge-spacing-sec` (default 5 s) — the first ring at once on the reloading thread, the rest of a burst ONE
+  merge at the end of the spacing on the port's daemon thread (`<…>-merges`, made at the first deferred merge, stopped with the port);
+  never on a session's thread (sessions' money moves wait for a merge on the gate). Red first on P2c's order: an account written after
+  its tier exists, a ring → "ACCOUNT_NOT_FOUND: account 77 of tier 0 is not held in schema btcl_res_5"; NewAccountsReachTheLedgerTest 2
+  green after (it pays; a burst = one merge now + one at the end, the burst's account merged); 6 mutants, 6 red; under an 8-thread CPU
+  hog (stopped by PID, load 6→15) 20 runs, 0 red, 40 run. Direct: switch-ledger 65, sessionflow 236, seed-tenant 23. Next: item 2.
+- 2026-10-24 16:26 · **P1-J item 2 done** — G3: the switch ledger's OWN login, additive. `RootResources.ledgerDb` (the 7th word; the six-word
+  constructor kept) + `ledgerLogin()` (its own, url and schema switch-db's where it says none — `SwitchDb.over`; else switch-db's);
+  the reader takes `ledger.db {user, password-ref[, url, schema]}` (`username` read too), refused in words with no user or on a ledger
+  that is not the switch ledger; `SwitchLedgerMaker` connects with `ledgerLogin()`; the ledger's own password from the PROCESS
+  environment only (`SwitchDb.passwordFromTheEnvironment`); switch-db's unchanged (the environment, then the envelope's secrets — P1-E's
+  behaviour, pinned by SwitchLedgerMakerTest; it contradicts G4's house rule: left for the architect). The NEW sample
+  `bootstrap/deployment-with-ledger-login.json` (btcl with a login, link3 without); the pinned samples byte-identical (e1ca4f43…,
+  63f396e2…). Red first (compile); LedgerLoginFromTheBootstrapTest 3, LedgerOwnLoginTest 3 green; 6 mutants, 6 red. Direct: sessionflow
+  239, switch-ledger 68, seed-tenant 23, samples 73. Next: item 3 (docs).
+- 2026-10-24 16:26 · **P1-J item 3 done** — docs: the switch ledger's README ("Every reload merges the root's new rows": the order a BSS
+  follows, the gate, the bound — at most one merge per merge-spacing-sec, the first at once, the rest of a burst one at the end —, never a
+  session's thread, the backstop counts, the cost on the pinned jar and from 0f04624; "The switch ledger's own login": the shape, why two
+  logins — separation of duties at the database, ONE writer of money per root —, the environment-only password, and that until
+  prime-context accepts the keys (PC-0023) a deployment document cannot carry ledger.db nor merge-spacing-sec); the sessionflow README's
+  history line. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 16:32 · **P1-J DONE** — items 1–4; the head cc7e90b from clean in the worktree **580/0/0/3** (148 s) and on a git-archive clean
+  copy **580/0/0/3** (148 s), two short lock holds 16:26–16:31 (offline, no install); +8 tests; 12 mutants red; the merge tests 20 runs
+  under the hog green. The report's P1-J section: `docs/agents/P1-F-report.md`.

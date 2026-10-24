@@ -33,16 +33,25 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     private final Predicate<String> loader;
     private final Set<String> tiers = ConcurrentHashMap.newKeySet();
     private final ReentrantReadWriteLock gate = new ReentrantReadWriteLock();
+    /** P1-J · The default spacing of two merges of the root's new rows. */
+    public static final long DEFAULT_MERGE_SPACING_MS = 5_000;
+    private final CoalescedMerges merges;
 
     /**
      * @param tiers  the tier schemas the MemLedger was built over
      * @param loader loads ONE new tier schema into the MemLedger (true = loaded now): {@link AddTierLive}
      */
     public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader) {
+        this(port, memLedger, tiers, loader, DEFAULT_MERGE_SPACING_MS);
+    }
+
+    /** P1-J · The same, two merges of the root's new rows at least {@code mergeSpacingMs} apart ({@code ledger.merge-spacing-sec}). */
+    public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader, long mergeSpacingMs) {
         this.port = port;
         this.memLedger = memLedger;
         this.loader = loader;
         this.tiers.addAll(tiers);
+        this.merges = new CoalescedMerges(mergeSpacingMs, this::mergeTheNewRowsAlone, System::currentTimeMillis, "switch-ledger");
     }
 
     @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) { return shared(() -> port.reserve(level, amount, reference)); }
@@ -100,8 +109,35 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
         }
     }
 
-    /** The MemLedger shut down, once (its own flag makes a second close nothing). */
-    @Override public void close() { memLedger.shutdown(); }
+    /**
+     * P1-J · The root's tree was reloaded — the doorbell's ring (a purchase wrote accounts), a {@code tenant_created}, a root served, the
+     * backstop: the rows written since the ledger last looked (an account made AFTER its tier existed) are merged — at most one merge per
+     * spacing, the first at once on the reloading thread, the rest of a burst ONE merge at the end of the spacing; under the write gate
+     * (the root's money moves wait for it, never run under it), ghost reserves taken out ({@code NewRowsOfATier}).
+     */
+    @Override public void treeReloaded() { merges.ask(); }
+
+    /** The merges of the root's new rows run so far (the operations' view; a test's). */
+    public long mergesRun() { return merges.runs(); }
+
+    /** The MemLedger shut down, once (its own flag makes a second close nothing); the merges stopped first. */
+    @Override
+    public void close() {
+        merges.close();
+        memLedger.shutdown();
+    }
+
+    private void mergeTheNewRowsAlone() {
+        gate.writeLock().lock();
+        try {
+            int rows = NewRowsOfATier.merge(memLedger);
+            if (rows > 0) log.info("the switch ledger merged {} new row(s) after its tree was reloaded (an account written after its tier)", rows);
+        } catch (RuntimeException e) {
+            log.error("the switch ledger did NOT merge the rows written since its last look (its tree was reloaded): {}", e.getMessage());
+        } finally {
+            gate.writeLock().unlock();
+        }
+    }
 
     private <T> T shared(Supplier<T> verb) {
         gate.readLock().lock();

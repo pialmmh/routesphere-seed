@@ -52,7 +52,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         RootResources.SwitchDb db = requireTheDatabase(root);
         Set<String> tiers = tierSchemasOf(root, context);
         MemLedger memLedger = MemLedger.builder()
-            .dataSource(dataSources.of(db, db.password(context.environment(), context.deployment().secrets())))
+            .dataSource(dataSources.of(db, passwordOf(root, db, context)))
             .databases(tiers.toArray(String[]::new))
             .registerEntity(Books.ACCOUNT, PackageAccount.class)
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
@@ -61,11 +61,30 @@ public final class SwitchLedgerMaker implements LedgerMaker {
             .replicationMode(ReplicationConfig.Mode.STANDALONE)     // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
             .build();
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
-        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load);
+        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root));
     }
 
+    /** P1-J · {@code ledger.merge-spacing-sec}: the least time between two merges of the root's new rows; 5 s when not said. */
+    private static long mergeSpacingMsOf(RootResources root) {
+        String said = root.ledger().word("merge-spacing-sec");
+        if (said == null || said.isBlank()) return OwnedMemLedgerPort.DEFAULT_MERGE_SPACING_MS;
+        long sec = Long.parseLong(said.trim());
+        if (sec <= 0) throw new IllegalStateException("the root '" + root.root() + "': ledger.merge-spacing-sec must be above 0 (was " + sec + ")");
+        return sec * 1000;
+    }
+
+    /**
+     * P1-J · The ledger's own login ({@code ledger.db}) reads its password from the process environment only; switch-db's as before
+     * (the environment, then the bootstrap's secrets).
+     */
+    private static String passwordOf(RootResources root, RootResources.SwitchDb login, Context context) {
+        if (root.ledgerDb() != null) return login.passwordFromTheEnvironment(context.environment());
+        return login.password(context.environment(), context.deployment().secrets());
+    }
+
+    /** The login the ledger connects with — its own ({@code ledger.db}) or switch-db's — refused in words without its database. */
     private static RootResources.SwitchDb requireTheDatabase(RootResources root) {
-        RootResources.SwitchDb db = root.switchDb();
+        RootResources.SwitchDb db = root.ledgerLogin();
         if (db == null || db.url() == null) throw new IllegalStateException("the root '" + root.root() + "' has the switch ledger but no switch-db.url: its package accounts have no database");
         return db;
     }

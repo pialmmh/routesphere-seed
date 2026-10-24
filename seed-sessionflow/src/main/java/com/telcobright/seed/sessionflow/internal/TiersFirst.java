@@ -16,6 +16,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * lets the tree be shown, the tier's money refused until it loads — and that tier is handed AGAIN on the next tree (the next ring, reload or
  * event), because the ledger answers {@code tierLoaded} false; a restart is not needed. A root whose roads are not made yet passes: no
  * session reaches it, and its ledger is built over the tree it is made with.
+ *
+ * <p>P1-J · Every new tree also tells its root's ledger the tree was reloaded ({@code LedgerPort.treeReloaded}) BEFORE it is shown: the
+ * switch ledger merges the rows written since its last look — an account a purchase made after its tier existed (ad-sphere P2c's G1) —,
+ * at most once per its spacing.
  */
 public final class TiersFirst implements TreeGate {
 
@@ -32,6 +36,7 @@ public final class TiersFirst implements TreeGate {
         for (String tierDb : tiersOf(tree)) {
             if (!builtOver.contains(key(rootDb, tierDb))) hand(rootDb, tierDb);
         }
+        ledger.treeReloaded(rootDb);                                          // P1-J: the rows written since, merged before the tree is shown
     }
 
     /**
