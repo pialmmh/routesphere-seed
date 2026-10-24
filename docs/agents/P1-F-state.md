@@ -191,3 +191,6 @@ two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
   Tests touched: PendingRootTest, OrchestrixLedgerTest (constants, one as() text, slowestAnswerMs 300 → READ_TIMEOUT_MS),
   RootsRoadsAllOrNothingTest, TenantCreatedLiveTest, DebounceGateTest, DebounceGateCapTest — assertions' meaning unchanged.
   seed-sessionflow 226/0/0/0, seed-config-client debounce 5/0 direct. Next: the whole reactor + the clean copy, the report's P1-H section.
+- 2026-10-24 08:01 · **P1-H DONE** — items 1–3; the head 9f6873b from clean in the worktree **562/0/0/3** (136 s) and on a git-archive clean
+  copy **562/0/0/3** (136 s), one lock hold 07:56–08:01 (offline, no install); +5 tests (RootsRoadsAllOrNothingTest), 8 mutants red; the
+  timing proof under the hog in item 3's line. The report's P1-H section: `docs/agents/P1-F-report.md`.

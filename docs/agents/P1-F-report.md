@@ -153,3 +153,62 @@ after the P1-F report head 0d170db; additive — every existing signature kept (
   again (`PerRootLedger.add` replaces it unclosed). An edge, not fixed.
 - Item 3: the ghost guard assumes STANDALONE (one writer per root's reserves); a replicated switch ledger needs another rule.
 - Item 6: an opt-in `@StaticInitSafe` factory for JVM-mode apps (one fetch, cached for the run-time ask) — a later round if wanted.
+
+## P1-H
+
+The coordinator's round after P1-G: a root's roads all-or-nothing (P1-G's open point 2, rated a money risk), two doc lines, and — after
+the gate of 9d97760 went red under load (371/2/0/3 at load ~6) — the timing tests made to hold under load. On this branch from 9d97760.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | ac897e3 | A root's roads are all-or-nothing. `serveItsRoads` opens the ledger, CDR road and journal (each written down as opened, `internal/RootRoadsMade`), the topics, then the doors, the deployment LAST; any failure closes what THAT try opened — the ledger first, then the CDR road (never its shared producer; a producer the try made for a Kafka no other root uses is closed) and the journal —, takes the tree's serve back (`LiveTrees.unserve`, a new default doing nothing) and the root goes pending. The road never opens a second ledger for a root while one is open (`refuseASecondLedger`, an ERROR in words); a ledger whose close failed is kept as still open and closed first at the next try. A start refused half-way closes what it opened. |
+| 2 | 177fdc7 | Docs: a deployment must not set `pending-root` until prime-context's `DeploymentShape` accepts it; ONE writer per root (STANDALONE) said where a second could be configured — the switch ledger's README, `SwitchLedgerMaker` (javadoc and its `replicationMode` line), the sessionflow README. |
+| 3 | 9f6873b | The timing tests hold under load (below). |
+
+### Numbers
+
+- **Head 9f6873b**: the worktree from clean **562/0/0/3** (136 s) and a git-archive clean copy of the head **562/0/0/3** (136 s),
+  one lock hold 07:56–08:01 (offline, no install); the P1-G head 0c26518 was 557/0/0/3.
+- **+5 tests, all new**: RootsRoadsAllOrNothingTest 5. Red first as the architect said: TWO open ledgers for link3 on the timer's road; the
+  journal's exception thrown out of `onTenantCreated` on the event's road (a half-served root, no retry); the refused-start test written
+  with the fix, its red shown by its mutant. **8 mutants, 8 red** (the undo's close, the ledger left in, the tree not taken back, the CDR
+  road left in, the shared producer closed, the guard off, the deployment switched first, a refused start closing nothing).
+  Not covered by a test: the journal's undo after a LATER step fails (the topics, the doors) — no step after the journal fails in the fakes.
+- **Item 3, under an 8-thread CPU hog** (scratch `Hog.java`, one busy thread per core, stopped by PID; load 6–13), 20 runs each, no
+  recompiling between runs:
+
+  | class | before (the tests as they were) | after |
+  |---|---|---|
+  | PendingRootTest | **16 of 20 runs red** — 20 of 80 tests: "Expecting empty but was: [link3]" (the gate's failure: the deployment seen served before the root left pending) and "Expected size: 1 but was: 0" (the give-up line not yet written when the root left pending) | **0 of 20**: 80 run, 0 failed |
+  | OrchestrixLedgerTest | **1 of 20 runs red**: aTimeoutRetriesTheSameReferenceOnce — "timed out twice" (a quick answer later than the 300 ms read timeout). The gate's own failure (the 500 ms connect timeout) did not come back in 20 runs; its cause is the same one (two clocks too close) | **0 of 20**: 240 run, 0 failed |
+  | DebounceGateTest (hardened too) | — | 0 of 10 under the hog: 40 run |
+
+### Item 3, what changed
+
+- **PendingRootTest** waits on the WHOLE condition — served AND no longer pending — with a 30 s deadline, never a fixed sleep. One product
+  change: `PendingRoots` says "given up" BEFORE the root leaves pending (a root no longer pending has been said).
+- **OrchestrixLedgerTest** keeps its three clocks apart: the connect 30 s (a slow local accept never fires it), the read timeout 1 s (a
+  quick answer stays under it), the slow answer 3 s (a late client timer still fires first); the repeats get 10 s of admission time; the
+  "not its own 5 s" bound is 4.8 s. `slowestAnswerMs` reads the constant; one `as()` text names the read timeout instead of "300 ms".
+- Also hardened (cheap): RootsRoadsAllOrNothingTest and TenantCreatedLiveTest wait 30 s; seed-config-client's DebounceGateTest (three
+  presence checks after fixed sleeps → each waits for the fire; the burst's first fire waits 10 s) and DebounceGateCapTest (the trailing
+  fire waited for, then 0.5 s for no second one). Every assertion's meaning unchanged.
+
+The seed's other sleeps, read one by one and left:
+
+| kind | where | why it is left |
+|---|---|---|
+| a rate by design | DebounceGateCapTest's gaps 5.5–8.5 s, ≥ 4 fires in 30 s | it measures the cap's pace; a loaded box stretches it — the one load-sensitive check left (34 s a run) |
+| absence after a fixed sleep | DebounceGateTest burst (250 ms, no second fire), TenantContextsTest :114 :135 :165, CreditControlTest :188, switch-ledger CreditTest :80, TierAddedLiveTest :84 :113 | a loaded box can make them pass without proving, never red |
+| time made to pass (pacing) | OneTablePerLaneTest :59 :61, VoiceFlowTest :78, WifiGatewayTest :60, EslCallTest :74, RestoreLostUpTest :73 :133 :176 :217, RotationTest :40, QueuedCampaignStoreTest :291 (a releaser thread) | a loaded box only adds time |
+| a poll with a deadline (3–8 s) | FinishSessionTest :116, CreditControlTest :210 :231 :268, RotationTest :39, Bed :88, FlowBed :93, TenantTreesTest :127, DoorbellTest :40, RootSnapshotTest :38, LedgerLab.await, SwitchLedgerMakerTest :68, SwitchLedgerOnTheBootstrapKitTest :117, VoiceFlowDoorbellTest :59, WifiFlowTest :104, VoiceFlowTest :272, OrchestrixLedgerTest.journalLines, QueuedCampaignStoreTest :140, BucketNextLiveTest :115, RestoreLostUpTest :308 | they wait on the condition; a deadline can be raised where a gate ever shows one |
+| an integration test | seed-context KafkaDoorbellIT | real Kafka; not in the reactor's run |
+
+### What P2 must change (P1-H)
+
+1. **`AdTrees.unserve(root)`** (the new `LiveTrees` default does nothing): take a root out again when the road's try fails after its
+   tree was served — else its tree stays served without doors or roads until the next try (harmless, but not "nothing").
+2. **One process per root**: a root's switch ledger has ONE writer (STANDALONE); never two ad-sphere instances on one root.
+3. A deployment document must not carry `pending-root` until prime-context's checker accepts it.
