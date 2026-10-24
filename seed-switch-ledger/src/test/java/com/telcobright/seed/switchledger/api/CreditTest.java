@@ -95,6 +95,66 @@ class CreditTest {
         assertThat(lab.dbBalance("res_2", 11)).isEqualByComparingTo("100");
     }
 
+    // ── the debit (F10, the WiFi's clock time) ──
+
+    @Test
+    void aDebitTakesTheDeltaOffTheLiveBalance_mySqlSeesIt() {
+        Credit.Credited taken = ledger.credit().debit("res_2", 11, new BigDecimal("30"), "clock-1");
+
+        assertThat(taken.before()).isEqualByComparingTo("100");
+        assertThat(taken.after()).isEqualByComparingTo("70");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("70");
+        LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).compareTo(new BigDecimal("70")) == 0);
+    }
+
+    @Test
+    void aDebitNeverTakesTheBalanceBelowZero_andAnEmptyAccountIsLeftAlone() {
+        Credit.Credited first = ledger.credit().debit("res_2", 11, new BigDecimal("150"), "clock-2");
+        assertThat(first.after()).as("floored at zero, never negative").isEqualByComparingTo("0");
+
+        Credit.Credited again = ledger.credit().debit("res_2", 11, new BigDecimal("5"), "clock-3");
+        assertThat(again.before()).isEqualByComparingTo("0");
+        assertThat(again.after()).isEqualByComparingTo("0");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("0");
+        LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).signum() == 0);
+    }
+
+    @Test
+    void aDebitWhileAReserveIsOpen_takesTheFreeBalance_andTheSettleStillReturnsTheRest() {
+        LevelAdmission level = tier();
+        Reservation held = ledger.port().reserve(level, new BigDecimal("10"), "c-9#L0").orElseThrow();
+        level.setDebitReference("c-9#L0");
+        level.setReservedAmount(held.reserved());
+
+        Credit.Credited taken = ledger.credit().debit("res_2", 11, new BigDecimal("20"), "clock-4");
+
+        assertThat(taken.before()).isEqualByComparingTo("90");
+        assertThat(taken.after()).isEqualByComparingTo("70");
+        TierSettlement done = ledger.port().settle(level, new BigDecimal("4"));
+        assertThat(done.balanceAfter()).as("70 + the 6 the settle returns").isEqualByComparingTo("76");
+    }
+
+    @Test
+    void theDebitWaitsForTheAccountsLock_theOnePortsVerbsHold() throws Exception {
+        AccountLocks locks = AccountLocks.of(lab.ledger(), 2000);
+        CompletableFuture<BigDecimal> taken;
+        try (AccountLocks.Held held = locks.hold("res_2", 11)) {
+            taken = CompletableFuture.supplyAsync(() -> ledger.credit().debit("res_2", 11, new BigDecimal("5"), "clock-5").after());
+            Thread.sleep(300);
+            assertThat(taken.isDone()).as("the debit waits while a verb holds the account").isFalse();
+            assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
+        }
+        assertThat(taken.get(5, TimeUnit.SECONDS)).isEqualByComparingTo("95");
+    }
+
+    @Test
+    void aNonPositiveDebit_andAnUnknownAccount_areRefusedInWords() {
+        assertThatThrownBy(() -> ledger.credit().debit("res_2", 11, BigDecimal.ZERO, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("positive");
+        assertThatThrownBy(() -> ledger.credit().debit("res_2", 11, new BigDecimal("-1"), "x")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ledger.credit().debit("res_2", 99, BigDecimal.ONE, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not held in schema res_2");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
+    }
+
     @Test
     void aNonPositiveDelta_andAnUnknownAccount_areRefusedInWords() {
         assertThatThrownBy(() -> ledger.credit().credit("res_2", 11, BigDecimal.ZERO, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("positive");
