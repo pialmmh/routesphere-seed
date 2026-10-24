@@ -39,10 +39,8 @@ class VoiceFlowDoorbellTest {
         trees = TenantTrees.builder().directory(() -> Set.of("btcl", "ccl")).source(primeContext).debounceMs(20).build().start();
         Map<String, BigDecimal> rates = new HashMap<>(World.RATES);
         rates.put("res_44#705", new BigDecimal("0.65"));
-        Map<String, Integer> partners = new HashMap<>(VoiceFlowTest.PARTNERS);
-        partners.put("btcl|10.0.0.5", 705);
         w.ledger.fund("res_44", 705, "100.00");
-        VoiceFlow flow = new VoiceFlow(w.kit(World.settings(), trees), partners, rates, VoiceFlowTest.ROUTES);
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings(), trees), rates, VoiceFlowTest.ROUTES);
         b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new), new EslChannel(), EslFrames::decode);
         long btclV1 = trees.snapshot("btcl").orElseThrow().version();
         long cclV1 = trees.snapshot("ccl").orElseThrow().version();

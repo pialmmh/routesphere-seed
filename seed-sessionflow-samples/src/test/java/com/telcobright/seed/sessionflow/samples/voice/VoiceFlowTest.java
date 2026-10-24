@@ -31,10 +31,6 @@ class VoiceFlowTest {
     static final EslTimings ESL = new EslTimings(5_000, 8_000, 60_000, 3_600_000, 300);
     static final EslTimings RINGS_300_MS = new EslTimings(5_000, 8_000, 300, 3_600_000, 300);
 
-    static final Map<String, Integer> PARTNERS = Map.of(
-        "btcl|10.0.0.9", 9, "btcl|10.0.0.7", 701, "btcl|10.0.0.8", 801, "btcl|10.0.0.2", 702, "btcl|10.0.0.3", 703,
-        "btcl|10.0.0.4", 704, "ccl|10.0.0.7", 701, "ccl|10.0.0.9", 9);
-
     static final Map<String, List<DialplanRoute>> ROUTES = Map.of(
         "btcl", List.of(
             new DialplanRoute("017", new EslTarget("GP-trunk", 5, "10.10.199.20", "external", null, "rs-out")),
@@ -54,7 +50,7 @@ class VoiceFlowTest {
     private FlowBed<VoiceContext, EslOut, EslFrame> bed(RoutesphereSettings s, EslTimings t) { return bed(s, t, null); }
 
     private FlowBed<VoiceContext, EslOut, EslFrame> bed(RoutesphereSettings s, EslTimings t, PersistenceProvider store) {
-        VoiceFlow flow = new VoiceFlow(w.kit(s), PARTNERS, World.RATES, ROUTES);
+        VoiceFlow flow = new VoiceFlow(w.kit(s), World.RATES, ROUTES);
         FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(t, EslCallContext::new), new EslChannel(),
             EslFrames::decode, store);
         open.add(b);
@@ -151,6 +147,23 @@ class VoiceFlowTest {
         assertEquals(List.of("uuid_kill c-x CALL_REJECTED"), b.wire("c-x"));
         assertTrue(w.ledger.journal().isEmpty(), "nothing reserved");
         b.assertBackInThePools("c-x");
+    }
+
+    // ── C1 · the partner through its route (P1-O: the served route maps, no private map) ─────────────────────
+
+    @Test
+    void the_partner_is_found_through_its_route_the_port_the_park_saw_first_then_the_bare_ip_then_its_sip_account() throws Exception {
+        FlowBed<VoiceContext, EslOut, EslFrame> b = bed(World.settings(), ESL);
+        b.frame("c-port", EslFrame.park("c-port", World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.17", 7023, "1001"));
+        assertEquals("CONNECTING/TRYING", b.states("c-port"));
+        assertEquals(701, b.session("c-port").entryPartnerId, "10.0.0.17:7023 is a route of Unilever's");
+        b.frame("c-5060", EslFrame.park("c-5060", World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.17", 5060, "1001"));
+        assertEquals("PARTNER_NOT_FOUND", b.session("c-5060").endCause, "no route at 10.0.0.17 itself, and no :5060 default");
+        b.frame("c-bare", EslFrame.park("c-bare", World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.7", 5080, "1001"));
+        assertEquals(701, b.session("c-bare").entryPartnerId, "a port no route names: the route at the bare ip");
+        b.frame("c-sip", EslFrame.park("c-sip", World.ESL_BTCL, "01711000001", "01711000002", "10.9.9.9", "sip-walton"));
+        assertEquals(801, b.session("c-sip").entryPartnerId, "no route at that address: the SIP account names Walton");
+        assertEquals("res_44_7", b.session("c-sip").entryTenantDb);
     }
 
     // ── C1 C4 C7 C5 · refusals at admission ────────────────────────────────────────────────────────────────
@@ -317,7 +330,7 @@ class VoiceFlowTest {
 
     @Test
     void the_entry_tier_refuses_an_unknown_did_before_anything_and_a_sip_account_over_its_cap_before_any_reserve() throws Exception {
-        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), PARTNERS, World.RATES, ROUTES, java.util.Set.of("btcl|09678000001"),
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), World.RATES, ROUTES, java.util.Set.of("btcl|09678000001"),
             Map.of("btcl|2002", 1));
         FlowBed<VoiceContext, EslOut, EslFrame> b = new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(ESL, EslCallContext::new), new EslChannel(),
             EslFrames::decode);
@@ -345,7 +358,7 @@ class VoiceFlowTest {
 
     @Test
     void the_simulator_walks_the_tiers_with_their_rates_and_finds_the_route_with_nothing_reserved_and_nothing_written() throws Exception {
-        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), PARTNERS, World.RATES, ROUTES);
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings()), World.RATES, ROUTES);
         VoiceContext walton = new VoiceContext();
         walton.facts = new EslFacts("c-dry", System.currentTimeMillis(), World.ESL_BTCL, "01711000001", "01711000002", "10.0.0.8", "1001");
         com.telcobright.seed.sessionflow.api.DryRun dry = flow.simulate(walton);

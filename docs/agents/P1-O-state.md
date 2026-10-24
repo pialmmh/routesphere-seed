@@ -78,3 +78,18 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   constructor, a lambda; a comment and a string not counted). Red first: the guard red with an empty allow-list (52 walks listed). Mutants
   3, 3 red: a new walk in `Lookups.byPartnerId`, the climb's old loop back (seen by the guard alone), a stale allow-list entry; restored
   with a fresh mtime. Next: item 5 (the samples use the helpers).
+- 2026-10-25 05:44 · **item 5 done** — the samples find their partners through the served route maps (no private map): the World's trees
+  carry them (`route(partner, key…)`: 10.0.0.9 → 9, 10.0.0.7 → 701, 10.0.0.17:7023 → 701 at that port only, 10.0.0.2/.3/.4, 10.0.0.8 →
+  801, 10.0.0.5 → NewCo 705 in the reloaded tree; ccl's 10.0.0.9 and 10.0.0.7 in its own tree; `sipAccount(801, "sip-walton")`;
+  `routeCredentials` for the SMS users `direct` and `unilever` (hashed), `legacyRouteCredentials` for `walton` (plaintext row);
+  `World.SMS_PASSWORDS`). Voice: `VoiceFlow.identifyPartner` = `byIp(ip, port)` when the park carried its port (else the bare ip), then
+  `bySipAccount`; the park carries `sourcePort` (EslFrame / ChannelPark / EslFacts — the old 6-word `park` and 7-word facts kept, port 0);
+  the `partnerBySource` map and every constructor's map gone. SMS: the HTTP door `byRouteCredentials(user, password)` (`SmsFrame.http`
+  carries the password; `SmsRequest` / `SmsFacts` the password — `@JsonIgnore`, never in their text — and the Kafka door's campaign
+  `partnerId`), the Kafka door `byPartnerId` (the campaign names it); the machine answers a refused credential `401 CREDENTIALS_REJECTED`
+  (every other refusal `REJECTED <cause>`); `SmsFlow.of` without the users' map. WiFi and the ad sample unchanged. Tests: VoiceFlowTest
+  +1 (ip:port first, the bare ip for an unnamed port, no :5060 default, the SIP account), SmsFlowTest +1 (a wrong password and none →
+  CREDENTIALS_REJECTED + 401, nothing reserved; the legacy row admitted through three tiers; the route named); moved to the new road:
+  SmsFlowTest's unknown user (now CREDENTIALS_REJECTED + 401 — the item's acceptance) and every sample's construction. Mutants 4, 4 red:
+  voice ignoring the port (VoiceFlowTest 1/16), voice without the SIP fallback (1/16), the HTTP door by the user name alone (SmsFlowTest
+  2/8), no 401 (SmsFlowTest 2/8); restored with a fresh mtime.

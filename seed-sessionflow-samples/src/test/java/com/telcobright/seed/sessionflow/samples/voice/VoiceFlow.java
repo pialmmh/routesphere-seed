@@ -23,7 +23,8 @@ import java.util.Set;
 
 /**
  * The ESL call on the base (P1 §H; design §7 "ESL call") — decisions only: no state, no ESL word (that is {@link EslCall}). What is the
- * call's own: the entry partner by the source address, INSIDE the root its FreeSWITCH connection named (C1); at the entry tier a call to
+ * call's own: the entry partner through its ROUTE — the address the leg came from ({@code byIp}: the port it saw, then the bare ip), else
+ * its SIP account ({@code bySipAccount}) — INSIDE the root its FreeSWITCH connection named (C1; P1-O: the served route maps, no private map); at the entry tier a call to
  * the DID range must reach a DID the root knows and the SIP account keeps to its own cap (C4); one minute at each tier's
  * per-minute rate reserved at admission (C6) and renewed every period while it talks (C14); the root's digit filter (C5); the routes
  * of the root by the dialed prefix, in order, as the plan (C8); the call switch's v1 re-route table (C12); every started minute
@@ -34,7 +35,6 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
     /** A route of a root's dialplan: the dialed prefix it serves and the ESL target it transfers to (its destination is filled per call). */
     public record DialplanRoute(String prefix, EslTarget target) {}
 
-    private final Map<String, Integer> partnerBySource;
     private final Map<String, BigDecimal> ratePerMinute;
     private final Map<String, List<DialplanRoute>> routesByRoot;
     private final Set<String> dids;
@@ -46,30 +46,27 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
     public static final String DID_RANGE = "0967";
 
     /**
-     * @param partnerBySource the entry partner by {@code <root>|<source ip>} (C1: inside the root, never across)
      * @param ratePerMinute   a tier's partner's rate per minute, by {@code <tier>#<partner>}
      * @param routesByRoot    each root's dialplan, in the order it tries the routes
      */
-    public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
-                     Map<String, List<DialplanRoute>> routesByRoot) {
-        this(kit, partnerBySource, ratePerMinute, routesByRoot, Set.of(), Map.of());
+    public VoiceFlow(RoutesphereKit kit, Map<String, BigDecimal> ratePerMinute, Map<String, List<DialplanRoute>> routesByRoot) {
+        this(kit, ratePerMinute, routesByRoot, Set.of(), Map.of());
     }
 
     /**
      * @param dids           the DIDs each root knows, by {@code <root>|<number>}
      * @param sipAccountCaps a SIP account's concurrent calls, by {@code <root>|<account>} (absent = no cap of its own)
      */
-    public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
-                     Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids, Map<String, Integer> sipAccountCaps) {
-        this(kit, partnerBySource, ratePerMinute, routesByRoot, dids, sipAccountCaps, false);
+    public VoiceFlow(RoutesphereKit kit, Map<String, BigDecimal> ratePerMinute, Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids,
+                     Map<String, Integer> sipAccountCaps) {
+        this(kit, ratePerMinute, routesByRoot, dids, sipAccountCaps, false);
     }
 
     /** @param perSecond bill the talk time by the second (C17: charged = rate / 60 × seconds) instead of every started minute */
-    public VoiceFlow(RoutesphereKit kit, Map<String, Integer> partnerBySource, Map<String, BigDecimal> ratePerMinute,
-                     Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids, Map<String, Integer> sipAccountCaps, boolean perSecond) {
+    public VoiceFlow(RoutesphereKit kit, Map<String, BigDecimal> ratePerMinute, Map<String, List<DialplanRoute>> routesByRoot, Set<String> dids,
+                     Map<String, Integer> sipAccountCaps, boolean perSecond) {
         super(kit);
         this.perSecond = perSecond;
-        this.partnerBySource = Map.copyOf(partnerBySource);
         this.ratePerMinute = Map.copyOf(ratePerMinute);
         this.routesByRoot = Map.copyOf(routesByRoot);
         this.dids = Set.copyOf(dids);
@@ -96,11 +93,15 @@ public class VoiceFlow extends RoutesphereFlow<VoiceContext> {
         return null;
     }
 
-    /** C1: the partner by the source address, found in the call's OWN root's tree; none → PARTNER_NOT_FOUND. */
+    /**
+     * C1: the partner through its route, in the call's OWN root's tree — the address the leg came from (the port the park saw, then the bare
+     * ip; no port assumed), else the SIP account it authenticated as; none → PARTNER_NOT_FOUND.
+     */
     @Override
     protected Tier identifyPartner(VoiceContext call, Candidate candidate) {
-        Integer partnerId = partnerBySource.get(call.root + "|" + facts(call).sourceIp());
-        return partnerId == null ? null : byPartnerId(call, partnerId);
+        EslFacts f = facts(call);
+        Tier byRoute = f.sourcePort() > 0 ? byIp(call, f.sourceIp(), f.sourcePort()) : byIp(call, f.sourceIp());
+        return byRoute != null ? byRoute : bySipAccount(call, f.sipAccount());
     }
 
     /** C4 · the entry tier, before the partner's slot: a call to the DID range must reach a DID this root knows. */

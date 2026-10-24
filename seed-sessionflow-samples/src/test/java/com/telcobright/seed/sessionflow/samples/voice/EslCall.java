@@ -61,7 +61,7 @@ public final class EslCall {
     }
 
     /** The park the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
-    static final ChannelPark SAMPLE = new ChannelPark("sample", "10.10.188.9:8021", "8801700000000", "8801700000001", "10.10.199.20", "sample", 0);
+    static final ChannelPark SAMPLE = new ChannelPark("sample", "10.10.188.9:8021", "8801700000000", "8801700000001", "10.10.199.20", "sample", 0, 0);
 
     private EslCall() {}
 

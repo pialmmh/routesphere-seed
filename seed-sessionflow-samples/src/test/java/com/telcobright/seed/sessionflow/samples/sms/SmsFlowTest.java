@@ -28,7 +28,6 @@ class SmsFlowTest {
     static final Smsc SMSC_1 = new Smsc("smsc-1", 5, "10.10.199.30:2775"), SMSC_2 = new Smsc("smsc-2", 6, "10.10.199.31:2775");
     static final Smsc CCL_SMSC = new Smsc("ccl-smsc", 15, "10.10.177.30:2775");
 
-    static final Map<String, Integer> USERS = Map.of("btcl|direct", 9, "btcl|unilever", 701, "btcl|walton", 801, "ccl|unilever", 701);
     static final Map<String, List<Smsc>> SMSCS = Map.of("btcl", List.of(SMSC_1, SMSC_2), "ccl", List.of(CCL_SMSC));
 
     private final List<AutoCloseable> open = new ArrayList<>();
@@ -40,14 +39,17 @@ class SmsFlowTest {
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed(boolean refund, SmsTimings t) { return bed(refund, t, World.settings(), null); }
 
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed(boolean refund, SmsTimings t, RoutesphereSettings s, PersistenceProvider store) {
-        RoutesphereFlow<SmsContext> flow = SmsFlow.of(w.kit(s), USERS, World.RATES, SMSCS, refund);
+        RoutesphereFlow<SmsContext> flow = SmsFlow.of(w.kit(s), World.RATES, SMSCS, refund);
         FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(c -> new SmsSupervisor(flow, c), SmsContext::new, SmsSubmit.spec(t, SmsSubmitContext::new), new SmsChannel(),
             SmsFrames::decode, store);
         open.add(b);
         return b;
     }
 
-    static SmsFrame http(String user, String text) { return SmsFrame.http(World.SMS_HTTP_BTCL, user, "BRAND", "8801711000002", text); }
+    /** The HTTP door with the user's route credentials (P1-O: the World's routes keep their passwords). */
+    static SmsFrame http(String user, String text) { return httpAs(user, World.SMS_PASSWORDS.get(user), text); }
+
+    static SmsFrame httpAs(String user, String password, String text) { return SmsFrame.http(World.SMS_HTTP_BTCL, user, password, "BRAND", "8801711000002", text); }
 
     /** A message submitted, accepted and given its receipt. */
     static void send(FlowBed<SmsContext, SmsOut, SmsFrame> b, String id, SmsFrame request, String stat) throws Exception {
@@ -90,7 +92,7 @@ class SmsFlowTest {
     void two_roots_the_http_door_names_btcl_and_the_kafka_topic_names_ccl() throws Exception {
         FlowBed<SmsContext, SmsOut, SmsFrame> b = bed(true, SMPP);
         send(b, "m-btcl", http("unilever", "hi"), "DELIVRD");
-        send(b, "m-ccl", SmsFrame.kafka(World.SMS_TOPIC_CCL, "unilever", "BRAND", "8801711000002", "hi"), "DELIVRD");
+        send(b, "m-ccl", SmsFrame.kafka(World.SMS_TOPIC_CCL, 701, "BRAND", "8801711000002", "hi"), "DELIVRD");   // the campaign names its partner
         assertEquals(List.of("res_44/701", "btcl/44"), tiersOf("m-btcl"));
         assertEquals(List.of("ccl_44/701", "ccl/44"), tiersOf("m-ccl"));
         assertEquals("smsc:submit_sm ccl-smsc BRAND>8801711000002 segments=1", b.wire("m-ccl").get(0), "ccl's own SMSC");
@@ -147,15 +149,34 @@ class SmsFlowTest {
     void refusals_at_admission_an_unknown_user_and_no_balance_at_a_middle_tier() throws Exception {
         w.ledger.fund("res_44", 7, "0.00");
         FlowBed<SmsContext, SmsOut, SmsFrame> b = bed(true, SMPP);
-        b.frame("m-nf", http("nobody", "hi"));
-        assertEquals("PARTNER_NOT_FOUND", b.session("m-nf").endCause);
-        assertEquals(List.of("client:REJECTED PARTNER_NOT_FOUND"), b.wire("m-nf"));
+        b.frame("m-nf", httpAs("nobody", "any", "hi"));
+        assertEquals("CREDENTIALS_REJECTED", b.session("m-nf").endCause, "P1-O: an unknown user name is a refused credential");
+        assertEquals(List.of("client:401 CREDENTIALS_REJECTED"), b.wire("m-nf"));
         b.frame("m-mid", http("walton", "hi"));
         assertEquals("INSUFFICIENT_BALANCE", b.session("m-mid").endCause);
         assertEquals(1, verbs("release", "m-mid"), "the leaf's reserve back");
         assertEquals(new BigDecimal("100.00"), w.balance("res_44_7", 801));
         assertEquals(0, w.ledger.openReserves());
     }
+
+    @Test
+    void the_http_door_finds_the_payer_through_its_route_credentials_and_refuses_a_wrong_password_with_a_401() throws Exception {
+        FlowBed<SmsContext, SmsOut, SmsFrame> b = bed(true, SMPP);
+        b.frame("m-wrong", httpAs("unilever", "walton-pw", "hi"));
+        assertEquals("CREDENTIALS_REJECTED", b.session("m-wrong").endCause, "another user's password");
+        assertEquals(List.of("client:401 CREDENTIALS_REJECTED"), b.wire("m-wrong"), "the HTTP door's 401; no SMSC was asked");
+        b.frame("m-none", httpAs("unilever", null, "hi"));
+        assertEquals("CREDENTIALS_REJECTED", b.session("m-none").endCause, "no password");
+        assertEquals(0, verbs("reserve", "m-wrong") + verbs("reserve", "m-none"), "nothing reserved for a refused credential");
+        assertEquals(0, w.ledger.openReserves());
+        assertFalse(String.valueOf(b.session("m-wrong").facts).contains("walton-pw"), "the facts never print the password");
+
+        send(b, "m-legacy", http("walton", "hi"), "DELIVRD");                       // Walton's route keeps the legacy plaintext row
+        assertEquals(List.of("res_44_7/801", "res_44/7", "btcl/44"), tiersOf("m-legacy"));
+        assertEquals("Walton-sms", find(b).routeOfCredentials(b.session("m-legacy"), "walton", "walton-pw").routeName(), "the route the client is");
+    }
+
+    private static com.telcobright.seed.sessionflow.api.Lookups find(FlowBed<SmsContext, SmsOut, SmsFrame> b) { return b.flow.kit().lookups(); }
 
     @Test
     void a_message_restored_while_it_waits_for_its_receipt_is_settled_once_on_the_next_node() throws Exception {

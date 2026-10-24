@@ -11,7 +11,7 @@ public final class EslEvents {
      * {@code CHANNEL_PARK} of the A-leg — the first event of a call: the registry takes the kit for it. {@code esl} is the FreeSWITCH
      * connection ({@code host:port}) the event came from — the ingress identity the root is found by; the adapter carries it.
      */
-    public record ChannelPark(String uuid, String esl, String caller, String called, String sourceIp, String sipAccount, long atMs)
+    public record ChannelPark(String uuid, String esl, String caller, String called, String sourceIp, String sipAccount, long atMs, int sourcePort)
         implements StatemachineEvent {
         @Override public boolean isFirst() { return true; }
     }

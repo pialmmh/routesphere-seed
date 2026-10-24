@@ -13,7 +13,7 @@ public final class VoiceSamples {
 
     /** The voice flow on {@code trees} (seed-tenant's, or {@code TenantLookup.of}) with the world's books, its ESL machine and channel. */
     public static FlowBed<VoiceContext, EslOut, EslFrame> bed(World w, TenantLookup trees) {
-        VoiceFlow flow = new VoiceFlow(w.kit(World.settings(), trees), VoiceFlowTest.PARTNERS, World.RATES, VoiceFlowTest.ROUTES);
+        VoiceFlow flow = new VoiceFlow(w.kit(World.settings(), trees), World.RATES, VoiceFlowTest.ROUTES);
         return new FlowBed<>(c -> new CallSupervisor(flow, c), VoiceContext::new, EslCall.spec(VoiceFlowTest.ESL, EslCallContext::new), new EslChannel(),
             EslFrames::decode);
     }

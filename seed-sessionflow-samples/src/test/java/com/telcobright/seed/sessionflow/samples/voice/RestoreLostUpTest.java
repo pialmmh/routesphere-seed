@@ -245,7 +245,7 @@ class RestoreLostUpTest {
     // ── the bed ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private VoiceFlow flow(RoutesphereKit kit) {
-        return new VoiceFlow(kit, VoiceFlowTest.PARTNERS, RATES, VoiceFlowTest.ROUTES, Set.of(), Map.of(), true);
+        return new VoiceFlow(kit, RATES, VoiceFlowTest.ROUTES, Set.of(), Map.of(), true);
     }
 
     private FlowBed<VoiceContext, EslOut, EslFrame> node(VoiceFlow flow, PersistenceProvider store) {
@@ -261,7 +261,7 @@ class RestoreLostUpTest {
         private final AtomicInteger held = new AtomicInteger();
 
         HeldAtTheAnswer(RoutesphereKit kit, Crash crash) {
-            super(kit, VoiceFlowTest.PARTNERS, RATES, VoiceFlowTest.ROUTES, Set.of(), Map.of(), true);
+            super(kit, RATES, VoiceFlowTest.ROUTES, Set.of(), Map.of(), true);
             this.crash = crash;
         }
 
