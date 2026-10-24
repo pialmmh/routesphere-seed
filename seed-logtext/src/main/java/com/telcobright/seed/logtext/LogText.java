@@ -8,7 +8,8 @@ import java.util.regex.Pattern;
  * no dependency of its own), so every module reaches it: seed-campaign sits below seed-sessionflow, whose {@code api.LogText} delegates here. A session id is built from what the request
  * carries (the ad's: {@code ad-<tenant>-<mac>-<ms>-<n>}), a reserve's reference from the session id, a lane's failure may quote the
  * request: a CR or LF in any of them would write a forged line of its own. Every control character — C0 (CR, LF, TAB, …), DEL, C1 and
- * the line and paragraph separators U+2028 / U+2029 — is written as a visible escape ({@code \n} → {@code \\n}, {@code \r} → {@code \\r},
+ * the line and paragraph separators U+2028 / U+2029 — and (P1-M) every Unicode FORMAT character (Cf: the bidi controls, the marks, the
+ * zero-width characters, the TAG characters — what reorders or hides what a terminal shows) is written as a visible escape ({@code \n} → {@code \\n}, {@code \r} → {@code \\r},
  * {@code \t} → {@code \\t}, the others {@code \\uXXXX}); a value is at most {@value #CAP} characters, a failure's text at most
  * {@value #FAILURE_CAP}, with "…" when cut — never in the middle of an escape or a character. A clean value is given back as it is.
  */
@@ -80,31 +81,43 @@ public final class LogText {
         StringBuilder out = new StringBuilder(Math.min(text.length(), cap) + CUT.length());
         for (int i = 0; i < text.length(); ) {
             int c = text.codePointAt(i);
-            int width = isControl(c) ? escapeWidth(c) : Character.charCount(c);
+            int width = needsAnEscape(c) ? escapeWidth(c) : Character.charCount(c);
             if (out.length() + width > cap) return out.append(CUT).toString();
-            if (isControl(c)) appendEscape(out, c); else out.appendCodePoint(c);
+            if (needsAnEscape(c)) appendEscape(out, c); else out.appendCodePoint(c);
             i += Character.charCount(c);
         }
         return out.toString();
     }
 
+    /** Fit as it is: short enough, and not one character that needs an escape (read by code point: a TAG character is two chars). */
     private static boolean isFit(String text, int cap) {
         if (text.length() > cap) return false;
-        for (int i = 0; i < text.length(); i++) if (isControl(text.charAt(i))) return false;
+        for (int i = 0; i < text.length(); ) {
+            int c = text.codePointAt(i);
+            if (needsAnEscape(c)) return false;
+            i += Character.charCount(c);
+        }
         return true;
     }
 
-    /** C0, DEL and C1 ({@link Character#isISOControl}), and the line and paragraph separators. */
-    private static boolean isControl(int c) { return Character.isISOControl(c) || c == 0x2028 || c == 0x2029; }
+    /**
+     * C0, DEL and C1 ({@link Character#isISOControl}), the line and paragraph separators, and — P1-M — the WHOLE Unicode format category
+     * (Cf: the bidi controls, the marks, the zero-width characters, the soft hyphen, the invisible operators, the TAG characters): what
+     * would break a line, or reorder or hide what a terminal shows.
+     */
+    private static boolean needsAnEscape(int c) {
+        return Character.isISOControl(c) || c == 0x2028 || c == 0x2029 || Character.getType(c) == Character.FORMAT;
+    }
 
-    private static int escapeWidth(int c) { return c == '\n' || c == '\r' || c == '\t' ? 2 : 6; }
+    /** {@code \n} {@code \r} {@code \t} two characters; every other escape six per UTF-16 unit (a character above U+FFFF: twelve). */
+    private static int escapeWidth(int c) { return c == '\n' || c == '\r' || c == '\t' ? 2 : 6 * Character.charCount(c); }
 
     private static void appendEscape(StringBuilder out, int c) {
         switch (c) {
             case '\n' -> out.append("\\n");
             case '\r' -> out.append("\\r");
             case '\t' -> out.append("\\t");
-            default -> out.append(String.format("\\u%04x", c));
+            default -> { for (char unit : Character.toChars(c)) out.append(String.format("\\u%04x", (int) unit)); }
         }
     }
 

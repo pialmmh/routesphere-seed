@@ -374,3 +374,9 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   it). Kafka bootstraps are host:port lists (no password form): printed as they are. Red first: MaskPasswordTest (6, one per form) +
   NoPasswordInAUrlIsPrintedTest (4). Mutants 15/15 red (one spec fixed before its run). Direct: logtext 14, campaign 76, sessionflow 269,
   switch-ledger 70, seed-tenant 23, samples 73. Next: item 3.
+- 2026-10-24 19:59 · item 3 DONE — invisible characters escaped: the WHOLE Unicode format category Cf (`Character.getType == FORMAT`), not
+  only the brief's list — the JDK keeps the category current; it holds every character the brief names and also what hides text the same
+  way (the TAG characters U+E0001 / U+E0020–U+E007F, which can carry an invisible text; U+2061–U+2064; U+FFF9–U+FFFB; U+180E; the soft
+  hyphen). A character above U+FFFF is written as its two UTF-16 escapes (12 characters, never cut in half); the fast path reads code
+  points. The cost, said: ZWNJ / ZWJ in Bengali or in an emoji sequence, and a soft hyphen, show as escapes in a log line. Red first:
+  InvisibleCharactersTest (5; 4 red, letters and emoji stay). Mutants 5/5 red (incl. "only the named list"). Next: item 4.
