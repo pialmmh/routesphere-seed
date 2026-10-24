@@ -5,7 +5,6 @@ import com.telcobright.seed.sessionflow.internal.BootstrapRoad;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.seed.sessionflow.internal.BusyAtTheDoor;
 import com.telcobright.seed.sessionflow.internal.DoorChannel;
-import com.telcobright.seed.sessionflow.internal.NoRootAtTheDoor;
 import com.telcobright.statewalk.channel.Channel;
 import com.telcobright.statewalk.channel.Delivery;
 import com.telcobright.statewalk.persistence.PersistenceMode;
@@ -50,11 +49,9 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
     private final RoutesphereFlow<C> flow;
     private final StatemachineRegistry<C> registry;
     private final ScheduledExecutorService housekeeping;
-    private final NoRootAtTheDoor noRoot;
 
     private RoutesphereEngine(Builder<C> b) {
         this.flow = b.flow;
-        this.noRoot = new NoRootAtTheDoor(flow.name(), flow.kit().clock(), flow.kit().counters(), () -> flow.kit().settings().debug());
         flow.kit().attachSessions(this::sessionOf);
         flow.publishWhatWasLeftInTheAir();                 // R1-6: before the first session, what a stopped process left in the air
         flow.kit().bootstrapRoad().ifPresent(road -> road.start(flow::topicsOf));    // R9: every served root's topics (a kit from the bootstrap)
@@ -191,21 +188,10 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
      * ingress's own protocol answer (an HTTP status, an ESL hangup, an SMPP error), in its guard line: {@code if (root == null) return reject…}.
      */
     public String identifyRootLevelTenant(RoutesphereFacts facts) {
-        RootAnswer answer = askTheLanesRule(facts);
-        if (answer.root() == null) noRoot.refused(facts, answer.ruleFailed());
+        RoutesphereFlow.RootAnswer answer = flow.askTheLanesRule(facts);
+        if (answer.root() == null) flow.kit().noRootAtTheDoor().refused(flow.name(), facts, answer.ruleFailed());
         return answer.root();
     }
-
-    /** The lane's rule over the facts' door; a rule that throws names no root (its failure kept for the refusal's words). */
-    private RootAnswer askTheLanesRule(RoutesphereFacts facts) {
-        try {
-            return new RootAnswer(flow.identifyRootLevelTenant(facts), null);
-        } catch (RuntimeException ruleFailed) {
-            return new RootAnswer(null, ruleFailed);
-        }
-    }
-
-    private record RootAnswer(String root, RuntimeException ruleFailed) {}
 
     /** The ingress's SECOND line: a NEW session's first frame through the registry, counted — the same as {@link #launch}. */
     public CompletableFuture<Void> launchStateMachine(String sessionId, Delivery firstFrame) { return launch(sessionId, firstFrame); }
@@ -244,7 +230,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
     }
 
     /** P1-K · What the door said of the requests it refused for no root — the last lines (the operations' view; a test's). */
-    public List<String> saidAtTheDoor() { return noRoot.said(); }
+    public List<String> saidAtTheDoor() { return flow.kit().noRootAtTheDoor().said(); }
 
     /** P1-F · The supervisors the registry's pool ever built — statewalk's own count (the base builds no machine; each type has its pool). */
     private long supervisorsBuilt() {

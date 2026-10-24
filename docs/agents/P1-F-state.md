@@ -322,3 +322,13 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   lines, a failed rule's "\\n" two. New: LogTextTest 8, NoForgedLogLinesTest 4. Mutants 13/13 red. Not cleaned, for a ruling:
   seed-campaign's 5 lines with a task id or a change's text (the module sits below sessionflow). Direct: sessionflow 264,
   switch-ledger 70, seed-tenant 23, samples 73. Next: item 2.
+- 2026-10-24 18:19 · item 2 DONE — the machine's NO_TENANT start road is said through the SAME sayer: `NoRootAtTheDoor` now lives in the
+  kit (`kit.noRootAtTheDoor()`, beside the counters; the flow's only field stays the kit, the pool rule), the app named per call; the
+  door says `refused(app, facts, failure)` ("— the request is refused"), the start `refusedAtTheStart(app, sessionId, facts, failure)`
+  ("— the session is refused NO_TENANT"): the same window per door, the same `refusedNoRoot`. The rule's question
+  (`askTheLanesRule`, `RootAnswer`) moved from the engine into the flow, shared by both roads; a throw at the start is noted in the
+  history as before ("identifyRootLevelTenant threw: …") and said by the windowed WARN with its cleaned stack — no longer an ERROR line per
+  session (`safely` no longer wraps that step). Red first: NoTenantAtTheStartTest (5; the start's refusal had no line, the count 0). No
+  double count: an ingress that follows the two lines refuses at the door, launches nothing (launched 0, no context), the count 1. The
+  window test names the app per call (its own P1-K test, touched). Mutants 7/7 red. Direct: sessionflow 269, switch-ledger 70, seed-tenant
+  23, samples 73. Next: item 3.

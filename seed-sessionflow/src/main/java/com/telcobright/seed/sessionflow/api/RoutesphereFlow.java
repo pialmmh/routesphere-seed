@@ -197,8 +197,9 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** IDLE → INIT · the root (the ingress's, else the lane's rule), the root's tree snapshot, the application's task. */
     protected final void startSession(C ctx, SessionStart start) {
         ctx.createdAtMs = kit.clock().millis();
-        ctx.root = rootOf(ctx);
-        if (ctx.root == null) { refuseAtStart(ctx, NO_TENANT); return; }
+        RootAnswer answer = rootOf(ctx);
+        ctx.root = answer.root();
+        if (ctx.root == null) { refuseForNoRoot(ctx, answer.ruleFailed()); return; }
         if (!takeTheRootsSnapshot(ctx)) { refuseAtStart(ctx, SessionCause.TENANT_UNAVAILABLE); return; }
         String refusal = safely(ctx, "buildTask", () -> step(ctx, "BUILD_TASK", () -> buildTask(ctx)), SessionCause.INTERNAL_ERROR);
         if (refusal != null) refuseAtStart(ctx, refusal);
@@ -709,13 +710,39 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         return ctx.routePlan;
     }
 
-    /** (a) The lane's answer for the session's facts — facts that are not {@code RoutesphereFacts} name no door (said in the history). */
-    private String rootOf(C ctx) {
-        if (ctx.facts instanceof RoutesphereFacts facts && facts.root() != null) return facts.root();       // the ingress identified it
-        if (ctx.facts instanceof RoutesphereFacts facts) return safely(ctx, "identifyRootLevelTenant", () -> identifyRootLevelTenant(facts), null);
+    /**
+     * (a) The root: the ingress's ({@code facts.root()}), else the lane's rule over the facts' door — a throw is noted in the history and
+     * kept for the refusal's words; facts that are not {@code RoutesphereFacts} name no door (said in the history).
+     */
+    private RootAnswer rootOf(C ctx) {
+        if (ctx.facts instanceof RoutesphereFacts facts && facts.root() != null) return new RootAnswer(facts.root(), null);   // the ingress identified it
+        if (ctx.facts instanceof RoutesphereFacts facts) return noteAThrow(ctx, askTheLanesRule(facts));
         noteFactsWithoutAnIngress(ctx);
-        return null;
+        return new RootAnswer(null, null);
     }
+
+    private RootAnswer noteAThrow(C ctx, RootAnswer answer) {
+        if (answer.ruleFailed() != null) ctx.history.note(name(), "identifyRootLevelTenant threw: " + answer.ruleFailed());
+        return answer;
+    }
+
+    /** P1-L · NO_TENANT at the start — and said through the kit's ONE sayer of the no-root refusals (the same window per door, the same count). */
+    private void refuseForNoRoot(C ctx, RuntimeException ruleFailed) {
+        refuseAtStart(ctx, NO_TENANT);
+        kit.noRootAtTheDoor().refusedAtTheStart(name(), ctx.sessionId(), ctx.facts, ruleFailed);
+    }
+
+    /** P1-K / P1-L · The lane's rule over the facts' door — the ingress's door and the machine's start ask it alike; a throw names no root. */
+    final RootAnswer askTheLanesRule(RoutesphereFacts facts) {
+        try {
+            return new RootAnswer(identifyRootLevelTenant(facts), null);
+        } catch (RuntimeException ruleFailed) {
+            return new RootAnswer(null, ruleFailed);
+        }
+    }
+
+    /** The rule's answer: the root, or none — and the rule's failure when it threw. */
+    record RootAnswer(String root, RuntimeException ruleFailed) {}
 
     private void noteFactsWithoutAnIngress(C ctx) {
         String kind = ctx.facts == null ? "no facts" : ctx.facts.getClass().getName();

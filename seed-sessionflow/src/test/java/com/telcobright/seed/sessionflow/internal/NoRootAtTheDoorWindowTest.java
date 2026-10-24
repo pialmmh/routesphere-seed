@@ -20,11 +20,11 @@ class NoRootAtTheDoorWindowTest {
     private static final Ingress NOBODYS = Ingress.esl("10.10.197.9", 8021), STRANGERS = Ingress.listen("10.10.188.2", 7070);
     private final ManualClock clock = new ManualClock(Instant.parse("2026-10-24T11:20:00Z"), ZoneOffset.UTC);
     private final FlowCounters counters = new FlowCounters();
-    private final NoRootAtTheDoor door = new NoRootAtTheDoor("lab", clock, counters, () -> false);
+    private final NoRootAtTheDoor door = new NoRootAtTheDoor(clock, counters, () -> false);
 
     private record DoorFacts(String sessionId, long atMs, Ingress ingress) implements RoutesphereFacts {}
 
-    private void refuse(String sessionId, Ingress at) { door.refused(new DoorFacts(sessionId, clock.millis(), at), null); }
+    private void refuse(String sessionId, Ingress at) { door.refused("lab", new DoorFacts(sessionId, clock.millis(), at), null); }
 
     @Test
     void aBurstOf1000_saysOneLine_thenAfterTheWindow_ONESummaryWithTheExactCount_andTheNextInFull() {
@@ -87,7 +87,7 @@ class NoRootAtTheDoorWindowTest {
 
     @Test
     void factsWithoutAnIngress_areSaidSo() {
-        door.refused(new DoorFacts("s-1", 0, null), null);
+        door.refused("lab", new DoorFacts("s-1", 0, null), null);
         assertThat(door.said()).singleElement().asString().contains("no root at no ingress (session s-1)").contains("the facts carry no ingress");
     }
 

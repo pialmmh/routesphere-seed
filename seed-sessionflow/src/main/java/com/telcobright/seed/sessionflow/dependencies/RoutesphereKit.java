@@ -8,6 +8,7 @@ import com.telcobright.seed.sessionflow.internal.BootstrapRoad;
 import com.telcobright.seed.sessionflow.internal.CdrAssembler;
 import com.telcobright.seed.sessionflow.internal.ChannelSlots;
 import com.telcobright.seed.sessionflow.internal.FlowCounters;
+import com.telcobright.seed.sessionflow.internal.NoRootAtTheDoor;
 import com.telcobright.seed.sessionflow.spi.BootstrapSource;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
@@ -43,6 +44,7 @@ public final class RoutesphereKit {
     private final RoutesphereSettings settings;
     private final ChannelSlots slots = new ChannelSlots();
     private final FlowCounters counters = new FlowCounters();
+    private final NoRootAtTheDoor noRoot;
     private final CdrAssembler cdrAssembler;
     private final Lookups lookups = new Lookups(this::resolver);
     private final BootstrapRoad bootstrap;
@@ -62,6 +64,7 @@ public final class RoutesphereKit {
         this.resolver = b.rules != null ? checkedResolver(b.rules, tenants) : b.resolver;
         this.cdrAssembler = new CdrAssembler(zone, clock.millis() * 1000);
         this.bootstrap = b.bootstrap;
+        this.noRoot = new NoRootAtTheDoor(clock, counters, settings::debug);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -136,6 +139,13 @@ public final class RoutesphereKit {
 
     /** The application's running numbers. */
     public FlowCounters counters() { return counters; }
+
+    /**
+     * P1-L · The ONE sayer of the requests refused for no root, beside the counters: the ingress's door
+     * ({@code engine.identifyRootLevelTenant}) and the machine's start ({@code NO_TENANT}) say through it — the same window per door, the
+     * same {@code refusedNoRoot}.
+     */
+    public NoRootAtTheDoor noRootAtTheDoor() { return noRoot; }
 
     /** The CDR builder (its running sequence is the producer's own). */
     public CdrAssembler cdrAssembler() { return cdrAssembler; }
