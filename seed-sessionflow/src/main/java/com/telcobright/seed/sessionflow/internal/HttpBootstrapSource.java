@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * prime-context's bootstrap over HTTP (§C.1): {@code GET <url>} with {@code Authorization: Bearer <the service's own token>} — the token is
@@ -54,6 +55,14 @@ public final class HttpBootstrapSource implements BootstrapSource {
 
     /** P1-M · Where the envelope comes from, as a log may print it: a password in its url masked (the client asks the url as written). */
     @Override public String where() { return LogText.maskPassword(url.toString()); }
+
+    /** P1-O · The token this source asks the envelope with — the same variable, read at every ask; null when it is empty. Never printed. */
+    @Override public Supplier<String> bearer() { return this::tokenIfAny; }
+
+    private String tokenIfAny() {
+        String token = environment.apply(tokenVar);
+        return token == null || token.isBlank() ? null : token.trim();
+    }
 
     private HttpResponse<String> send() {
         HttpRequest.Builder request = HttpRequest.newBuilder(url).timeout(timeout).header("Accept", "application/json").header("Authorization", "Bearer " + token()).GET();

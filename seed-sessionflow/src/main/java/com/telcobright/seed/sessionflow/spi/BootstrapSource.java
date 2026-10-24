@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.spi;
 
 import com.telcobright.seed.sessionflow.api.LogText;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Where an application's whole config comes from (R8, the owner: "routesphere-seed/flow shall fetch all config through the prime-context
@@ -20,6 +21,12 @@ public interface BootstrapSource {
 
     /** Where the envelope comes from, for a log line — never the token. */
     default String where() { return LogText.maskPassword(origin()); }
+
+    /**
+     * P1-O · The service's own token for prime-context's other roads (the roots' trees, {@code get-specific-tenant-root}): the SAME token
+     * the envelope is asked with, read at every ask (a rotated token is taken); null = none. Never printed, never kept in a text.
+     */
+    default Supplier<String> bearer() { return () -> null; }
 
     /** prime-context did not answer, or answered with no envelope. */
     final class BootstrapUnavailable extends RuntimeException {

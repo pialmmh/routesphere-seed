@@ -93,3 +93,10 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   SmsFlowTest's unknown user (now CREDENTIALS_REJECTED + 401 — the item's acceptance) and every sample's construction. Mutants 4, 4 red:
   voice ignoring the port (VoiceFlowTest 1/16), voice without the SIP fallback (1/16), the HTTP door by the user name alone (SmsFlowTest
   2/8), no 401 (SmsFlowTest 2/8); restored with a fresh mtime.
+- 2026-10-25 05:44 · **item 6 done** — the tree road sends the bootstrap's bearer (A9): `BootstrapSource.bearer()` (default: none),
+  `HttpBootstrapSource.bearer()` = the SAME variable the envelope is asked with, read at every ask (a rotated token taken; null when empty);
+  `PrimeContextTrees` (the deployed trees) hands it to `PrimeContextTreeSource`, which sends `Authorization: Bearer …` whenever there is a
+  token and nothing when there is none; the test road (`PrimeContextTrees(Function, doorbell)`) unchanged. TreeRoadBearerTest 2 (a JDK
+  HttpServer on 127.0.0.1 as prime-context; no platform Kafka, no doorbell): the token on the first ask and the rotated one on the reload;
+  no token → no header; a 401's refusal never prints the token. Mutants 2, 2 red: the tree road without the bearer (2/2), the bearer read
+  once (1/2); restored with a fresh mtime.
