@@ -9,6 +9,9 @@ small and stays small. First consumer: **wifi-sphere**.
 - `seed-config` — the routesphere tenant/profile/channel config convention as a
   dependency-light library (snakeyaml + slf4j only; Quarkus or plain JVM).
 - `seed-config-client` — the config doorbell (Kafka + Redis notifications → one debounced re-fetch).
+- `seed-logtext` — the ONE cleaner of what the seed writes into a log line (P1-L, P1-M): a value a request carries (control and
+  Unicode format characters escaped, at most 200 characters; a failure's text 1000, its stack cleaned) and a url (a password inside it
+  masked). At the bottom — no dependency of its own — so every module reaches it; `seed-sessionflow`'s `api.LogText` delegates to it.
 - `seed-routing` — the common REQUEST ROUTING of every switch (call, SMS, payment, later ad): dialplan by
   default, or a named ROUTING POLICY — a DB entity with one JSON document — picked in config. See
   `seed-routing/README.md`.

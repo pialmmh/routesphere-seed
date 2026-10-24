@@ -380,3 +380,5 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   hyphen). A character above U+FFFF is written as its two UTF-16 escapes (12 characters, never cut in half); the fast path reads code
   points. The cost, said: ZWNJ / ZWJ in Bengali or in an emoji sequence, and a soft hyphen, show as escapes in a log line. Red first:
   InvisibleCharactersTest (5; 4 red, letters and emoji stay). Mutants 5/5 red (incl. "only the named list"). Next: item 4.
+- 2026-10-24 20:00 · item 4, docs — the root README (the new module `seed-logtext`), the sessionflow README's ingress section (the cleaner in
+  seed-logtext, the Cf escapes, "No password inside a url is printed"), its class table and history line. Next: the reactor, a clean copy.
