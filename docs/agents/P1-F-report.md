@@ -243,3 +243,43 @@ gate 569/0/0/3). Additive; every existing signature kept.
 ### For P2 / the owner
 
 - Nothing to change in ad-sphere for P1-I; its round (P2c) pins the root's source with a test on its side.
+
+## P1-J
+
+The architect's brief (`docs/agents/P1-J-brief.md`): ad-sphere P2c's end-to-end run against prime-context 8f8d922 found two seed gaps —
+G1 (accounts written after a tier exists never reached the switch ledger) and G3 (one switch-db login for both the app's and the ledger's
+roles). On this branch, fast-forwarded to routesphere-flow 206e7f0 (the merge of P1-I). Additive; the pinned §C samples byte-identical.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | 277b4d9 | Every new tree passes the road's gate before it is shown and now tells its root's ledger `treeReloaded()` (a new `LedgerPort` default doing nothing; `PerRootLedger` routes it). The switch ledger merges the rows written since (`NewRowsOfATier`: `reloadNewEntities`, ghost reserves out) under its write gate, at most ONE merge per `ledger.merge-spacing-sec` (default 5 s): the first ring at once (before the tree is shown), the rest of a burst ONE merge at the end of the spacing (`internal/CoalescedMerges`, the port's daemon thread). Never on a session's thread. |
+| 2 | 6f7f8bf | The switch ledger's OWN login: an optional `ledger.db {user, password-ref[, url, schema]}` (`RootResources.ledgerDb`, the six-word constructor kept; `ledgerLogin()`, url and schema switch-db's where it says none). `SwitchLedgerMaker` connects with it when present; absent = switch-db's, as before. Its password from the process environment only. A NEW sample `bootstrap/deployment-with-ledger-login.json`. |
+| 3 | cc7e90b | Docs: the switch ledger's README (the merge on every reload — its bound, cost, threads; the two logins and why; PC-0023 first) and the sessionflow README's history line. |
+
+### Numbers
+
+- **Head cc7e90b**: the worktree from clean **580/0/0/3** (148 s, 16:26) and a git-archive clean copy of the head **580/0/0/3** (148 s,
+  16:29), two short lock holds (offline, no install); 206e7f0 was 572/0/0/3.
+- **+8 tests, all new**: NewAccountsReachTheLedgerTest 2 (switch-ledger), LedgerLoginFromTheBootstrapTest 3 (sessionflow), LedgerOwnLoginTest 3
+  (switch-ledger). Red first: G1 on P2c's order — an account written after its tier exists, a ring → "ACCOUNT_NOT_FOUND: account 77 of
+  tier 0 is not held in schema btcl_res_5"; G3 by compile (no `ledgerDb`). **12 mutants, 12 red** (item 1: 6 — the gate silent, the port
+  deaf, the merge empty, no coalescing, the burst never merged, a deferred merge per ask; item 2: 6). No existing test touched.
+- **Under an 8-thread CPU hog** (stopped by PID, load 6→15): NewAccountsReachTheLedgerTest 20 runs, 0 red (40 tests).
+
+### Decisions
+
+1. **The merge runs at once on the first ring and BEFORE the tree is shown** (the gate's thread): G1's single ring after a purchase gives
+   no ACCOUNT_NOT_FOUND window. Only an account written inside a burst waits — at most one spacing.
+2. **Every reload counts, the backstop's too** (seed-context reloads every root each 5 min): the loader is not told why it loads; the
+   cost is one merge per root per backstop, said in the README.
+3. **The ledger's own password from the environment only**, as the brief asks. switch-db's password is UNCHANGED (the environment, then
+   the envelope's `secrets` — P1-E's behaviour, pinned by `SwitchLedgerMakerTest`); that fallback contradicts P2's G4 "house rule" —
+   left for the architect to rule on (a behaviour change).
+4. `ledger.db`'s user is read as `user` (the brief's word) or `username` (switch-db's).
+
+### For P2
+
+1. Use `ledger.db` (the ledger's role) once prime-context accepts the key (PC-0023); until then the lab's role membership stands.
+2. Nothing to change for G1: the merge is the seed's; P2's own `AdTrees` must call the road's gate (P1-G) for its reloads to merge.

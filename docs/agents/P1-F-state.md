@@ -256,3 +256,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
   logins — separation of duties at the database, ONE writer of money per root —, the environment-only password, and that until
   prime-context accepts the keys (PC-0023) a deployment document cannot carry ledger.db nor merge-spacing-sec); the sessionflow README's
   history line. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 16:32 · **P1-J DONE** — items 1–4; the head cc7e90b from clean in the worktree **580/0/0/3** (148 s) and on a git-archive clean
+  copy **580/0/0/3** (148 s), two short lock holds 16:26–16:31 (offline, no install); +8 tests; 12 mutants red; the merge tests 20 runs
+  under the hog green. The report's P1-J section: `docs/agents/P1-F-report.md`.
