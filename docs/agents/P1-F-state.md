@@ -341,3 +341,6 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 18:26 · item 4, docs — the sessionflow README: the ingress section (the machine's start road said through the same sayer; "No
   request writes a log line of its own": `api.LogText`, the escapes, 200 / 1000 characters, a lane's own use), the class table, the
   `refusedNoRoot` words, the bootstrap section (no record prints a written password-ref), the history line. Next: the reactor, a clean copy.
+- 2026-10-24 18:53 · **P1-L DONE** — items 1–4; the head 060b500 from clean in the worktree **615/0/0/3** (162 s) and on a git-archive clean
+  copy **615/0/0/3** (155 s), two short lock holds 18:36–18:39 and 18:50–18:52 (offline, no install); +20 tests; 25 mutants red. The
+  report's P1-L section: `docs/agents/P1-F-report.md`.
