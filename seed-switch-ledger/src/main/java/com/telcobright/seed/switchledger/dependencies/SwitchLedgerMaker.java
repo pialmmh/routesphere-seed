@@ -26,6 +26,10 @@ import java.util.Set;
  * tier created live (R10) is loaded into it ONE schema at a time, between the root's money moves ({@code AddTierLive}). Found on the
  * classpath by its kind ({@code META-INF/services}).
  *
+ * <p>ONE writer per root: the MemLedger is STANDALONE, the only writer of the root's package accounts and reserves — serve each root from
+ * ONE process. A second process on the same root, or another replication mode, would be a second writer of the same money (and a live
+ * tier's merge, {@code NewRowsOfATier}, takes a reserve it did not write for a settled one's ghost).
+ *
  * <p>The pool of the database's connections is the host's choice: the default opens one per use ({@code DriverManager}); a host passes its
  * own pooled {@code DataSource} maker.
  */
@@ -54,7 +58,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
             .walPath(root.dir().resolve("ledger").resolve("wal").toString())
             .queuePath(root.dir().resolve("ledger").resolve("queue").toString())
-            .replicationMode(ReplicationConfig.Mode.STANDALONE)
+            .replicationMode(ReplicationConfig.Mode.STANDALONE)     // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
             .build();
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
         return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load);

@@ -198,8 +198,11 @@ listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR roa
   same): it goes PENDING and is tried again every `config.routesphere.pending-root.retry-sec` (default 30 s: the bootstrap read again, the
   tree loaded) until served, or given up after `pending-root.give-up-min` (default 120) — said once each (pending with the reason, served,
   given up: "a restart, or a new tenant_created, serves it"); a later word tries at once. One daemon thread `<app>-pending-roots` per road,
-  stopped by the engine's close (`road.pendingRoots()`, `road.said()`). prime-context's document checker must accept `pending-root` if a
-  deployment sets it.
+  stopped by the engine's close (`road.pendingRoots()`, `road.said()`). A root's roads are all-or-nothing (P1-H): a try that fails
+  half-way closes what it opened — its ledger first, then its CDR road and journal —, takes the tree back, leaves the deployment and the
+  doors as they were; the road never opens a second ledger for a root while one is open. **A deployment must not set `pending-root` yet**:
+  prime-context's document checker (`DeploymentShape`) refuses keys it does not know today — logged for a prime-context round; until it
+  accepts the key, the defaults (30 s, 120 min) are the pace.
 - **A tree never shows a tier its ledger was not handed.** A reseller's provisioning rings the doorbell `config_event_loader_<root>` AND
   sends `tenant_created`; the ring can come first. Every NEW tree passes the road's gate before a session can see it (`spi/TreeGate`,
   `LiveTrees.gateEachNewTree`): each tier its root's ledger was not built over is handed to that ledger first (`tierAdded`), once — the ring
@@ -216,6 +219,9 @@ listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR roa
   home `config.identification` to a deployment (the seed reads only the new home).
 - **`tenant_created`'s `apps` are sorted** (prime-context writes them so); the message names the root (its key) and is sent after the
   provisioning's writes are committed.
+- **A root's switch ledger has ONE writer**: serve each root from ONE process. Its MemLedger is STANDALONE — the only writer of the root's
+  package accounts and reserves; a second process on the same root (or another replication mode) would be a second writer of the same
+  money, and a live tier's merge (its rows beside it) assumes the one writer (`seed-switch-ledger/README.md`).
 - **A root added live needs its door to be a listener the process already has**: Quarkus binds its listeners at the start, so a new root
   whose rule names another address gets no request until the unit listens there — a window step (P2 gap 9).
 - **The pinned samples stay byte-identical with prime-context's** (`src/test/resources/bootstrap/`: `deployment.json` sha256

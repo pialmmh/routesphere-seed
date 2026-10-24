@@ -168,3 +168,8 @@ two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
   onTenantCreated on the event's road; 5 green after (the refused-start test written with the fix, its red shown by its mutant); 8
   mutants, 8 red; direct: seed-sessionflow 226, samples 73, seed-tenant 23, switch-ledger 63. Not covered by a test: the journal's undo
   after a later step (the topics, the doors) fails — no step after the journal fails in the fakes. Next: P1-H 2.
+- 2026-10-24 07:36 · **P1-H item 2 done** — docs: the sessionflow README says a deployment must NOT set `pending-root` yet (prime-context's
+  DeploymentShape refuses unknown keys; logged for a prime-context round; the defaults are the pace until then) and that a root's roads
+  are all-or-nothing; ONE writer per root (STANDALONE) said where a second writer could be configured — the switch ledger's README (a
+  second process on one root, or another ReplicationConfig.Mode: two write-behind consumers of the same money, the ghost guard blind),
+  SwitchLedgerMaker's javadoc and its replicationMode line, and the sessionflow README (serve each root from ONE process). Next: P1-H 3.

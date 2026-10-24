@@ -98,6 +98,12 @@ created live: the pinned mem-ledger (2026-10-07) reads both tables of every tier
 (2026-10-11, P2's fba1346 includes it), the accounts above each schema's high-water mark and the reserve table whole. Only after the
 tier's schema loaded: a tier that did not load merges nothing.
 
+**ONE writer per root (STANDALONE)** — the guard above assumes it, and so does the money: the root's MemLedger is built STANDALONE
+(`SwitchLedgerMaker`), the only writer of its package accounts and reserves. A second writer can be configured in two ways, and both are
+refused by this rule, not by code: a second PROCESS serving the same root (two application instances on one root's switch database), or
+another `ReplicationConfig.Mode`. Either would be two write-behind consumers for the same money, and a ghost reserve could no longer be
+told from another writer's live one. Serve each root from ONE process.
+
 **What P2 must prove on its PostgreSQL lab** (this box has no database server: here the proof is MemLedger on H2 for the gate, the once rule
 and the close, a stand-in for `addDatabase`):
 
