@@ -82,7 +82,7 @@ class PendingRootTest {
         assertThat(w.trees.roots()).containsExactly("btcl");
         assertThat(road().pendingRoots()).containsExactly("link3");
         w.trees.prime.put("link3", BootstrapWorld.root("link3", 5));                       // tenant-master's row, prime-context's next build
-        await(() -> served().contains("link3"));
+        await(() -> served().contains("link3") && road().pendingRoots().isEmpty());       // P1-H 3: the whole word, not its first half
 
         assertThat(served()).containsExactly("btcl", "link3");
         assertThat(road().pendingRoots()).isEmpty();
@@ -103,7 +103,7 @@ class PendingRootTest {
         assertThat(road().pendingRoots()).containsExactly("link3");
         assertThat(road().said()).singleElement().asString().contains("link3").contains("not listed for ad-sphere yet");
         w.source.serve(sample);                                                            // prime-context's document PUT lists it
-        await(() -> served().contains("link3"));
+        await(() -> served().contains("link3") && road().pendingRoots().isEmpty());
         assertThat(road().pendingRoots()).isEmpty();
     }
 
@@ -140,11 +140,12 @@ class PendingRootTest {
 
     private static boolean threadNamed(String name) { return Thread.getAllStackTraces().keySet().stream().anyMatch(t -> t.isAlive() && t.getName().equals(name)); }
 
+    /** P1-H 3 · A condition waited for, never a fixed sleep: a generous deadline (a loaded box's retry runs late, never early). */
     private static void await(BooleanSupplier condition) {
-        long until = System.currentTimeMillis() + 8_000;
+        long until = System.currentTimeMillis() + 30_000;
         while (!condition.getAsBoolean() && System.currentTimeMillis() < until) {
             try { Thread.sleep(20); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
-        assertThat(condition.getAsBoolean()).as("within 8 s").isTrue();
+        assertThat(condition.getAsBoolean()).as("within 30 s").isTrue();
     }
 }

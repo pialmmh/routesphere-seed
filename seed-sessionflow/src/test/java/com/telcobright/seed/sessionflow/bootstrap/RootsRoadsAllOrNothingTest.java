@@ -120,7 +120,7 @@ class RootsRoadsAllOrNothingTest {
         assertThat(w.trees.roots()).as("the tree's serve undone").containsExactly("btcl");
         assertThat(openLedgersOf("link3")).as("the ledger this try made, closed again").isZero();
         assertThat(road().pendingRoots()).containsExactly("link3");
-        await(() -> served().contains("link3"));                                           // the next try
+        await(() -> served().contains("link3") && road().pendingRoots().isEmpty());       // the next try
         assertThat(openLedgersOf("link3")).as("ONE ledger over link3's switch database").isEqualTo(1);
         assertThat(made.get("link3")).as("two made in all, the first closed").hasSize(2);
     }
@@ -183,10 +183,10 @@ class RootsRoadsAllOrNothingTest {
     }
 
     private static void await(BooleanSupplier condition) {
-        long until = System.currentTimeMillis() + 8_000;
+        long until = System.currentTimeMillis() + 30_000;
         while (!condition.getAsBoolean() && System.currentTimeMillis() < until) {
             try { Thread.sleep(20); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
-        assertThat(condition.getAsBoolean()).as("within 8 s").isTrue();
+        assertThat(condition.getAsBoolean()).as("within 30 s").isTrue();
     }
 }

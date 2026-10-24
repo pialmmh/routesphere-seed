@@ -10,13 +10,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DebounceGateTest {
 
+    /** P1-H 3 · A fire waited for with a generous deadline: a loaded box fires late, never early. */
+    static void awaitFired(AtomicInteger fired, int atLeast) throws InterruptedException {
+        long until = System.currentTimeMillis() + 10_000;
+        while (fired.get() < atLeast && System.currentTimeMillis() < until) Thread.sleep(10);
+    }
+
     @Test
     void burstOfRingsFiresOnce() throws Exception {
         AtomicInteger fired = new AtomicInteger();
         CountDownLatch latch = new CountDownLatch(1);
         try (DebounceGate gate = new DebounceGate(120, () -> { fired.incrementAndGet(); latch.countDown(); })) {
             for (int i = 0; i < 25; i++) { gate.ring("test"); Thread.sleep(3); }
-            assertTrue(latch.await(2, TimeUnit.SECONDS), "action should fire after the quiet period");
+            assertTrue(latch.await(10, TimeUnit.SECONDS), "action should fire after the quiet period");
             Thread.sleep(250);   // no late second fire
             assertEquals(1, fired.get(), "a burst must collapse to exactly one fire");
             assertEquals(25, gate.ringCount());
@@ -28,9 +34,9 @@ class DebounceGateTest {
         AtomicInteger fired = new AtomicInteger();
         try (DebounceGate gate = new DebounceGate(60, fired::incrementAndGet)) {
             gate.ring("a");
-            Thread.sleep(200);
+            awaitFired(fired, 1);                                                  // P1-H 3: the first fire waited for, never a fixed sleep
             gate.ring("b");
-            Thread.sleep(200);
+            awaitFired(fired, 2);
             assertEquals(2, fired.get(), "rings separated by more than the quiet period each fire");
         }
     }
@@ -42,9 +48,9 @@ class DebounceGateTest {
             if (fired.incrementAndGet() == 1) throw new RuntimeException("boom");
         })) {
             gate.ring("x");
-            Thread.sleep(150);
+            awaitFired(fired, 1);
             gate.ring("y");
-            Thread.sleep(150);
+            awaitFired(fired, 2);
             assertEquals(2, fired.get(), "the gate must survive a throwing action");
         }
     }
@@ -59,7 +65,7 @@ class DebounceGateTest {
                 .build();
         try (bell) {
             bell.ring();
-            Thread.sleep(150);
+            awaitFired(fired, 1);
             assertEquals(1, fired.get());
             assertTrue(bell.fireCount() >= 1);
         }

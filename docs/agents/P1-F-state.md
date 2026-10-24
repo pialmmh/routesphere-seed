@@ -173,3 +173,21 @@ two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
   are all-or-nothing; ONE writer per root (STANDALONE) said where a second writer could be configured — the switch ledger's README (a
   second process on one root, or another ReplicationConfig.Mode: two write-behind consumers of the same money, the ghost guard blind),
   SwitchLedgerMaker's javadoc and its replicationMode line, and the sessionflow README (serve each root from ONE process). Next: P1-H 3.
+- 2026-10-24 07:51 · **P1-H item 3 done** — the timing tests hold under load. Proof: an 8-thread CPU hog (scratch Hog.java, one busy thread per
+  core, stopped by PID; load 6–13), each class 20 times, no recompiling between runs:
+
+  | class | before (the old tests) | after |
+  |---|---|---|
+  | PendingRootTest | **16 of 20 runs red** — 20 of 80 tests: "Expecting empty but was: [link3]" (the gate's failure: served seen before pending cleared) and "Expected size: 1 but was: 0" (the give-up line not yet written when the root left pending) | **0 of 20** — 80 run, 0 failed |
+  | OrchestrixLedgerTest | **1 of 20 runs red** — aTimeoutRetriesTheSameReferenceOnce: "timed out twice" (a quick answer later than the 300 ms read timeout) | **0 of 20** — 240 run, 0 failed |
+  | DebounceGateTest (hardened too) | — | 0 of 10 under the hog, 40 run |
+
+  Fixes: PendingRootTest waits on the WHOLE condition (served AND not pending), 30 s deadline, never a fixed sleep; PendingRoots says
+  "given up" BEFORE the root leaves pending (a root no longer pending was said — the one product change). OrchestrixLedgerTest keeps
+  three clocks apart: connect 30 s (a slow local accept never fires it), read 1 s (a quick answer stays under it), the slow answer 3 s
+  (a late client timer still fires first); the repeats get 10 s of admission time; the "not its own 5 s" bound 4.8 s. Also hardened
+  (cheap): RootsRoadsAllOrNothingTest and TenantCreatedLiveTest's waits 30 s; seed-config-client's DebounceGateTest (3 presence checks
+  after fixed sleeps → waits for the fire) and DebounceGateCapTest (the trailing fire waited for). Listed, not changed (the report).
+  Tests touched: PendingRootTest, OrchestrixLedgerTest (constants, one as() text, slowestAnswerMs 300 → READ_TIMEOUT_MS),
+  RootsRoadsAllOrNothingTest, TenantCreatedLiveTest, DebounceGateTest, DebounceGateCapTest — assertions' meaning unchanged.
+  seed-sessionflow 226/0/0/0, seed-config-client debounce 5/0 direct. Next: the whole reactor + the clean copy, the report's P1-H section.

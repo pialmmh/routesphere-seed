@@ -171,10 +171,10 @@ class TenantCreatedLiveTest {
     }
 
     private static void await(BooleanSupplier condition) {
-        long until = System.currentTimeMillis() + 5_000;
+        long until = System.currentTimeMillis() + 30_000;                                // P1-H 3: generous — the listener polls on its own thread
         while (!condition.getAsBoolean() && System.currentTimeMillis() < until) {
             try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
-        assertThat(condition.getAsBoolean()).as("within 5 s").isTrue();
+        assertThat(condition.getAsBoolean()).as("within 30 s").isTrue();
     }
 }

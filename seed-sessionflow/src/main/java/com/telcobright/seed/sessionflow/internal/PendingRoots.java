@@ -98,8 +98,8 @@ public final class PendingRoots implements AutoCloseable {
     private void giveUpWhenItsTimeIsOver(String root) {
         Long at = since.get(root);
         if (at == null || clock.millis() - at < TimeUnit.MINUTES.toMillis(pace.giveUpMin())) return;
-        since.remove(root);
         say("the root " + root + " of " + app + " was given up after " + pace.giveUpMin() + " min not served: a restart, or a new tenant_created, serves it", true);
+        since.remove(root);                                                // said BEFORE it leaves: a root no longer pending was said
     }
 
     private void say(String line, boolean warn) {

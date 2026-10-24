@@ -57,6 +57,11 @@ class OrchestrixLedgerTest {
     volatile int returnStatus = 200;
     volatile String returnAnswer = "{\"account\":587,\"uom\":\"BDT\",\"units\":0,\"bdt\":0.50,\"balanceBefore\":9.50,\"balanceAfter\":10.00}";
     final AtomicInteger slowCalls = new AtomicInteger();
+    /**
+     * P1-H 3 · Three clocks kept apart, so a loaded box cannot let one hide another's word: the connect (30 s — a slow local accept never
+     * fires it), the read timeout (1 s — a quick answer stays under it), the slow answer (3 s — a late client timer still fires first).
+     */
+    static final long CONNECT_TIMEOUT_MS = 30_000, READ_TIMEOUT_MS = 1_000, SLOW_ANSWER_MS = 3_000;
     final Function<String, String> env = Map.of("PORTAL_API_TOKEN", "t0ken-not-a-secret")::get;
 
     @BeforeEach
@@ -76,7 +81,7 @@ class OrchestrixLedgerTest {
         seen.add(new Seen(x.getRequestURI().getPath(), x.getRequestHeaders().getFirst("Authorization"), x.getRequestHeaders().getFirst("X-Tenant-Id"), body));
         boolean theReturnRoad = x.getRequestURI().getPath().endsWith("/charge/return");
         if (!theReturnRoad && slowCalls.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) {
-            try { Thread.sleep(700); } catch (InterruptedException ignored) { }
+            try { Thread.sleep(SLOW_ANSWER_MS); } catch (InterruptedException ignored) { }
         }
         byte[] out = (theReturnRoad ? returnAnswer : answer).getBytes(StandardCharsets.UTF_8);
         x.getResponseHeaders().add("Content-Type", "application/json");
@@ -100,11 +105,12 @@ class OrchestrixLedgerTest {
 
     private Path owedFile() { return dir.resolve("owed-ledger.jsonl"); }
 
-    /** The ledger with a read timeout of 300 ms: shorter than the fake road's slow answer (700 ms). */
-    private LedgerPort ledger() { return ledger(300); }
+    /** The ledger with a read timeout of {@link #READ_TIMEOUT_MS}: shorter than the fake road's slow answer ({@link #SLOW_ANSWER_MS}). */
+    private LedgerPort ledger() { return ledger(READ_TIMEOUT_MS); }
 
     private LedgerPort ledger(long readTimeoutMs) {
-        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit", 500, readTimeoutMs, "ad-sphere");
+        LedgerSettings settings = new LedgerSettings("http://127.0.0.1:" + server.getAddress().getPort() + "/", "PORTAL_API_TOKEN", "btcl", "ad-credit",
+            CONNECT_TIMEOUT_MS, readTimeoutMs, "ad-sphere");
         return Ledgers.orchestrix(settings, env, owedFile(), Clock.fixed(Instant.parse("2026-10-03T04:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -219,7 +225,7 @@ class OrchestrixLedgerTest {
         assertThatThrownBy(() -> patient.reserve(level("9001"), new BigDecimal("0.50"), "ad-11#L0", 200))
             .isInstanceOf(LedgerPort.LedgerFault.class).hasMessageContaining("200 ms the admission had left");
 
-        assertThat(System.currentTimeMillis() - startedMs).as("given up at the 200 ms it was given, not at its own 5 s").isLessThan(2000);
+        assertThat(System.currentTimeMillis() - startedMs).as("given up at the 200 ms it was given, not at its own 5 s").isLessThan(4_800);
         assertThat(charges()).as("no time was left for the repeat").hasSize(1);
     }
 
@@ -228,9 +234,9 @@ class OrchestrixLedgerTest {
         LedgerPort ledger = ledger();
         slowCalls.set(1);
 
-        Optional<LedgerPort.Reservation> held = ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-12#L0", 3000);
+        Optional<LedgerPort.Reservation> held = ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-12#L0", 10_000);   // time left for the repeat, loaded or not
 
-        assertThat(held).as("the first try got no answer in 300 ms, the repeat was answered").isPresent();
+        assertThat(held).as("the first try got no answer in its read timeout, the repeat was answered").isPresent();
         assertThat(seen).hasSize(2);
         assertThat(seen.get(1).body()).isEqualTo(seen.get(0).body());
     }
@@ -240,7 +246,7 @@ class OrchestrixLedgerTest {
         LedgerPort ledger = ledger();
         slowCalls.set(2);
 
-        assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-13#L0", 3000)).isInstanceOf(LedgerPort.LedgerFault.class);
+        assertThatThrownBy(() -> ledger.reserve(level("9001"), new BigDecimal("0.50"), "ad-13#L0", 10_000)).isInstanceOf(LedgerPort.LedgerFault.class);
 
         List<String> lines = journalLines(3);
         assertThat(lines).as("unsure; then asked back on the return road; then what the road answered").hasSize(3);
@@ -257,7 +263,7 @@ class OrchestrixLedgerTest {
 
     @Test
     void theLedgerSaysHowSlowOneAnswerMayBe() {
-        assertThat(ledger().slowestAnswerMs()).isEqualTo(300);
+        assertThat(ledger().slowestAnswerMs()).isEqualTo(READ_TIMEOUT_MS);
         assertThat(LedgerSettings.of("http://127.0.0.1:1", "PORTAL_API_TOKEN", "btcl").readTimeoutMs()).as("the default read timeout").isEqualTo(1500);
         assertThat(LedgerSettings.of("http://127.0.0.1:1", "PORTAL_API_TOKEN", "btcl").connectTimeoutMs()).as("the default connect timeout").isEqualTo(500);
     }

@@ -17,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DebounceGateCapTest {
 
+    private static void awaitTheTrailingFire(List<Long> fires, int count) throws InterruptedException {
+        long until = System.currentTimeMillis() + 15_000;
+        while (fires.size() < count && System.currentTimeMillis() < until) Thread.sleep(20);
+    }
+
     @Test
     void aDenseStream_firesAboutEveryTwiceTheDebounce_thenOnceAfterTheSilence() throws Exception {
         List<Long> fires = new CopyOnWriteArrayList<>();
@@ -29,7 +34,8 @@ class DebounceGateCapTest {
             int duringTheStream = fires.size();
             assertTrue(duringTheStream >= 4, "a dense stream must not starve the gate: fires during 30 s of rings every 1 s = " + duringTheStream + " at " + fires);
 
-            Thread.sleep(3600);                                                      // the silence: the last ring's trailing fire
+            awaitTheTrailingFire(fires, duringTheStream + 1);                        // the silence: the last ring's trailing fire (P1-H 3: waited for)
+            Thread.sleep(500);                                                       // and no second one
             assertEquals(duringTheStream + 1, fires.size(), "exactly one trailing fire after the silence: " + fires);
 
             List<Long> gaps = new ArrayList<>();
