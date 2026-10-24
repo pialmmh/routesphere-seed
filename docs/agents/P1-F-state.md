@@ -194,3 +194,33 @@ two doc lines. On this branch from 9d97760 (the architect gates 9d97760).
 - 2026-10-24 08:01 · **P1-H DONE** — items 1–3; the head 9f6873b from clean in the worktree **562/0/0/3** (136 s) and on a git-archive clean
   copy **562/0/0/3** (136 s), one lock hold 07:56–08:01 (offline, no install); +5 tests (RootsRoadsAllOrNothingTest), 8 mutants red; the
   timing proof under the hog in item 3's line. The report's P1-H section: `docs/agents/P1-F-report.md`.
+
+## P1-I
+
+The architect's brief: `docs/agents/P1-I-brief.md` (a connect cut by the admission's budget says so; the budget test holds under load;
+the root's source guarded). On this branch, fast-forwarded by the architect to routesphere-flow 97afef3 (the owner's readable shape R14;
+its gate 569/0/0/3).
+
+- 2026-10-24 13:51 · START — from 97afef3. Running: item 1 (the words of a connect the budget cut).
+- 2026-10-24 13:59 · **P1-I item 1 done** — a connect that did not complete says WHICH clock cut it (`OrchestrixLedger.noConnectionWithin`):
+  Java's HttpClient applies the request's own timeout (waitMs = min(read timeout, the time left)) to the connect phase too, so — the
+  admission's budget: "no connection within the <waitMs> ms the admission had left"; the read timeout, when it is the shorter clock:
+  "within its <waitMs> ms read timeout"; the configured connect timeout: today's words. Always a LedgerFault (nothing was sent: no unsure
+  line). Red first with a connect that cannot complete — a local port whose accept queue is full (backlog 1, never accepted: the kernel
+  drops the SYN): OrchestrixLedgerConnectTest red 2 of 3, both "no connection within 30000 ms" (the architect's finding reproduced);
+  3 green after; 5 mutants, 5 red (one turns the cut connect into a NoAnswer: an unsure line appears). seed-sessionflow direct green.
+  Next: item 2.
+- 2026-10-24 14:11 · **P1-I item 2 done** — the budget test's clocks far apart: the budget 1 s (`BUDGET_MS`: a loaded local connect finishes
+  inside it), the answer 3 s (`SLOW_ANSWER_MS`), its own read timeout 5 s; the words matched as "within the <n> ms the admission had left"
+  (a loaded box can leave 999 of 1000); the elapsed bound between the budget and its own timeout (1 s − 50 ms … 4 s); one hand to the
+  server (the repeat had no time). Under an 8-thread CPU hog (stopped by PID), OrchestrixLedgerTest 20 runs each: BEFORE (the 200 ms
+  budget, item 1's code) **0 of 20 red**, 240 run, load 9→18 — the cut connect the architect's gates saw twice did not come in these 20
+  (item 1's test reproduces it at will); AFTER **0 of 20 red**, 240 run, load 13–17. A mutant (the budget not applied: its own read
+  timeout only) red. Next: item 3.
+- 2026-10-24 14:12 · **P1-I item 3 done** — docs only: `RoutesphereFacts.root()`'s javadoc and the sessionflow README (§4, "The root's source"):
+  the root is the lane's rule over the INGRESS (`engine.identifyRootLevelTenant`), NEVER a value the request carries (a body field, a
+  header, a query) — a caller that could name the root could bill another operator; `root()` carries only what that rule answered. The
+  ad's round (P2c) pins it with a test on its side. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 14:17 · **P1-I DONE** — items 1–4; the head 4650da7 from clean in the worktree **572/0/0/3** (142 s) and on a git-archive clean
+  copy **572/0/0/3** (138 s), two short lock holds 14:12–14:17 (offline, no install); +3 tests; 6 mutants red; the hog runs in item 2's
+  line. The report's P1-I section: `docs/agents/P1-F-report.md`.

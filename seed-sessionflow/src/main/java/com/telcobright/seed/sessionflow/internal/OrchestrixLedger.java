@@ -205,11 +205,12 @@ public final class OrchestrixLedger implements LedgerPort {
     private HttpResponse<String> post(String url, ObjectNode body, String reference, long withinMs) {
         long startedNs = System.nanoTime();
         for (int attempt = 1; ; attempt++) {
-            long waitMs = Math.max(1, Math.min(settings.readTimeoutMs(), leftOf(withinMs, startedNs)));
+            long leftMs = leftOf(withinMs, startedNs);
+            long waitMs = Math.max(1, Math.min(settings.readTimeoutMs(), leftMs));
             try {
                 return http.send(requestOf(url, body, waitMs), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (HttpConnectTimeoutException e) {
-                throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": no connection within " + settings.connectTimeoutMs() + " ms", e);
+                throw new LedgerFault(noConnectionWithin(waitMs, leftMs), e);           // nothing was sent: the money is certain
             } catch (HttpTimeoutException e) {
                 long left = leftOf(withinMs, startedNs);
                 if (attempt > 1) throw new NoAnswer("the ledger timed out twice on " + url + " (ref " + reference + ")", e);
@@ -225,6 +226,18 @@ public final class OrchestrixLedger implements LedgerPort {
                 throw new NoAnswer("interrupted while calling the ledger (ref " + reference + ")", e);
             }
         }
+    }
+
+    /**
+     * P1-I · Which clock cut a connect that did not complete: Java's HttpClient applies the request's own timeout ({@code waitMs}) to the
+     * connect phase too, so the admission's budget — or the read timeout, when it is the shorter clock — can cut it before the configured
+     * connect timeout does. Each is said in its own words; nothing was sent in any of them.
+     */
+    private String noConnectionWithin(long waitMs, long leftMs) {
+        String unreachable = "the ledger is unreachable at " + settings.baseUrl() + ": no connection within ";
+        if (waitMs >= settings.connectTimeoutMs()) return unreachable + settings.connectTimeoutMs() + " ms";
+        if (leftMs <= settings.readTimeoutMs()) return unreachable + "the " + waitMs + " ms the admission had left";
+        return unreachable + "its " + waitMs + " ms read timeout";
     }
 
     private HttpRequest requestOf(String url, ObjectNode body, long waitMs) {

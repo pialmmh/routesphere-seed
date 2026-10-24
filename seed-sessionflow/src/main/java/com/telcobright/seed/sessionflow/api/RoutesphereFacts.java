@@ -16,6 +16,10 @@ public interface RoutesphereFacts extends SessionFacts {
     /**
      * The ROOT operator the ingress already identified ({@code engine.identifyRootLevelTenant(facts)}, the ingress's first line): the
      * machine takes it and asks the lane nothing. Null (the default) = the machine identifies the root itself at its start.
+     *
+     * <p>P1-I · The root is ALWAYS the lane's rule over the ingress — the door the session came in at — and NEVER a value the request
+     * carries: not a body field, not a header, not a query parameter. A caller that could name the root could bill another operator. An
+     * implementation fills it only with what {@code identifyRootLevelTenant} answered for this ingress.
      */
     default String root() { return null; }
 }
