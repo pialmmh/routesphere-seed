@@ -52,26 +52,18 @@ public record RootResources(String root, SwitchDb switchDb, KafkaRoad kafka, Str
         }
 
         /**
-         * P1-J · The password from the PROCESS environment only ({@code env:<NAME>}) — never the envelope's {@code secrets} (the secrets
-         * ruling: secreteer's env file); refused in words when the variable is not there.
+         * The password by reference ({@code env:<NAME>}), from the PROCESS environment only — switch-db's and the ledger's own login alike
+         * (P1-J; P1-K, the owner's ruling of 2026-10-24 "Environment only": secreteer fills the box's environment file, an application reads
+         * only its environment). The bootstrap envelope's {@code secrets} are never read. Refused in words naming the VARIABLE — never a
+         * value — when it is not there; a password-ref that is not {@code env:<NAME>} is refused without its text (it may be a password).
+         * Null when the login names no password.
          */
         public String passwordFromTheEnvironment(Function<String, String> environment) {
             if (passwordRef == null || passwordRef.isBlank()) return null;
-            if (!passwordRef.startsWith("env:")) throw new IllegalStateException("the switch ledger's password-ref '" + passwordRef + "' is not env:<NAME> — a password is never written in the config");
+            if (!passwordRef.startsWith("env:")) throw new IllegalStateException("the password-ref of the login '" + username + "' is not env:<NAME> (its text is not repeated: it may be a password) — a password is never written in the config");
             String name = passwordRef.substring(4);
             String value = environment.apply(name);
-            if (value == null || value.isBlank()) throw new IllegalStateException("the switch ledger's password " + name + " is not in the process environment (never read from the bootstrap's secrets)");
-            return value;
-        }
-
-        /** The password: {@code env:<NAME>} from the process environment, else from the envelope's {@code secrets}; refused in words when neither has it. */
-        public String password(Function<String, String> environment, Map<String, String> secrets) {
-            if (passwordRef == null || passwordRef.isBlank()) return null;
-            if (!passwordRef.startsWith("env:")) throw new IllegalStateException("the switch database's password-ref '" + passwordRef + "' is not env:<NAME> — a password is never written in the config");
-            String name = passwordRef.substring(4);
-            String value = environment.apply(name);
-            if (value == null || value.isBlank()) value = secrets.get(name);
-            if (value == null || value.isBlank()) throw new IllegalStateException("the switch database's password " + name + " is in neither the environment nor the bootstrap's secrets");
+            if (value == null || value.isBlank()) throw new IllegalStateException("the password " + name + " of the login '" + username + "' is not in the process environment — a password is read from the environment only (the box's environment file), never from the bootstrap");
             return value;
         }
     }

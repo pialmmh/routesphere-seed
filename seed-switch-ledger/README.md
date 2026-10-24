@@ -70,7 +70,11 @@ schedule(() -> tree.schemas().forEach(ledger.reaper()::reap), everySlotReconcile
 
 `dependencies.SwitchLedgerMaker` is the `switch` kind of `RoutesphereKit.fromBootstrap` (found on the classpath): per served root a
 MemLedger over its `switch-db` (url, user, password by reference) with every tier schema of the root's tree, its WAL and queue in the root's
-own directory (`<journal.dir>/ledger`), STANDALONE. The port it answers (`internal.OwnedMemLedgerPort`) OWNS that MemLedger:
+own directory (`<journal.dir>/ledger`), STANDALONE. **The password from the PROCESS environment only** (P1-K, the owner's ruling of
+2026-10-24, "Environment only"): `password-ref: env:<NAME>` reads the variable the box's environment file sets (the secreteer), never the
+bootstrap envelope's `secrets` (before P1-K it fell back to them); a variable not there refuses the root's ledger in words naming it and the
+login, never a value, and nothing is connected (`PasswordFromTheEnvironmentOnlyTest`; `SwitchLedgerMakerTest`'s pin moved with it). The
+port it answers (`internal.OwnedMemLedgerPort`) OWNS that MemLedger:
 
 - **closed with the engine** — the bootstrap road closes the ledgers it made; a closed engine leaves no MemLedger thread
   (`SwitchLedgerOnTheBootstrapKitTest`);
@@ -121,8 +125,8 @@ switch ledger — its url and schema switch-db's where it says none; absent = sw
 day). Why two logins: separation of duties at the database — prime-context grants the app's role (`ad_sphere`: the app's tables) and the
 ledger's role (the money tables: `packageaccount`, `packageaccountreserve`) separately, and never one role for both ("a role is never
 another's"); with the app's login the ledger's write-through was refused ("permission denied for table packageaccountreserve", P2c run 5).
-ONE writer of money per root: the ledger's role. Its password is read from the PROCESS environment only (secreteer's env file), never the
-bootstrap's `secrets`. **Until prime-context accepts the keys (PC-0023, on the owner's word), a deployment document cannot carry
+ONE writer of money per root: the ledger's role. Its password, like switch-db's (P1-K), is read from the PROCESS environment only
+(secreteer's env file), never the bootstrap's `secrets`. **Until prime-context accepts the keys (PC-0023, on the owner's word), a deployment document cannot carry
 `ledger.db` — nor `ledger.merge-spacing-sec`** (prime-context's `DeploymentShape` refuses keys it does not know): switch-db's login and
 the 5 s spacing apply. The shape is in the NEW sample `seed-sessionflow/src/test/resources/bootstrap/deployment-with-ledger-login.json`.
 

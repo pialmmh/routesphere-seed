@@ -52,7 +52,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         RootResources.SwitchDb db = requireTheDatabase(root);
         Set<String> tiers = tierSchemasOf(root, context);
         MemLedger memLedger = MemLedger.builder()
-            .dataSource(dataSources.of(db, passwordOf(root, db, context)))
+            .dataSource(dataSources.of(db, passwordOf(db, context)))
             .databases(tiers.toArray(String[]::new))
             .registerEntity(Books.ACCOUNT, PackageAccount.class)
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
@@ -74,12 +74,13 @@ public final class SwitchLedgerMaker implements LedgerMaker {
     }
 
     /**
-     * P1-J · The ledger's own login ({@code ledger.db}) reads its password from the process environment only; switch-db's as before
-     * (the environment, then the bootstrap's secrets).
+     * P1-K · The login's password from the PROCESS environment only — switch-db's and the ledger's own ({@code ledger.db}) alike: the
+     * owner's ruling of 2026-10-24 ("Environment only"), which re-affirms his rule of 2026-09-24 (secreteer fills the box's environment
+     * file). The bootstrap's {@code secrets} are never read: a variable not in the environment refuses the root's ledger in words naming
+     * it, never a value — and nothing is connected.
      */
-    private static String passwordOf(RootResources root, RootResources.SwitchDb login, Context context) {
-        if (root.ledgerDb() != null) return login.passwordFromTheEnvironment(context.environment());
-        return login.password(context.environment(), context.deployment().secrets());
+    private static String passwordOf(RootResources.SwitchDb login, Context context) {
+        return login.passwordFromTheEnvironment(context.environment());
     }
 
     /** The login the ledger connects with — its own ({@code ledger.db}) or switch-db's — refused in words without its database. */

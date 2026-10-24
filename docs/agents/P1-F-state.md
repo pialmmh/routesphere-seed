@@ -259,3 +259,46 @@ ledger's own login — G3). On this branch, fast-forwarded to routesphere-flow 2
 - 2026-10-24 16:32 · **P1-J DONE** — items 1–4; the head cc7e90b from clean in the worktree **580/0/0/3** (148 s) and on a git-archive clean
   copy **580/0/0/3** (148 s), two short lock holds 16:26–16:31 (offline, no install); +8 tests; 12 mutants red; the merge tests 20 runs
   under the hog green. The report's P1-J section: `docs/agents/P1-F-report.md`.
+
+## P1-K
+
+- 2026-10-24 16:58 · START — p1-follow at routesphere-flow c17ffaa (the architect's merge of P1-J, fast-forwarded by him); the brief
+  `docs/agents/P1-K-brief.md` (the owner's ruling of 16:51, "Environment only": a password from the process environment only). The one
+  road from the envelope's `secrets` to a credential in main code: `SwitchLedgerMaker.passwordOf` (`login.password(environment,
+  deployment.secrets())`); its record method `SwitchDb.password(env, secrets)` has no caller outside the seed's own test (ad-sphere
+  p2-adflow 514d37a read: none) and no public signature needs it — it goes. Next: item 1, red first.
+- 2026-10-24 17:06 · item 1 DONE — switch-db's password from the PROCESS environment only: `SwitchLedgerMaker.passwordOf` reads
+  `SwitchDb.passwordFromTheEnvironment` for both logins (the ledger's own, P1-J, and switch-db's); `SwitchDb.password(env, secrets)` removed
+  (no caller left; none in ad-sphere p2-adflow; no public signature needs it). The refusal names the variable and the login, never a value;
+  a password-ref that is not `env:<NAME>` is refused WITHOUT repeating its text (it may be a password — it was echoed before). Red first:
+  PasswordFromTheEnvironmentOnlyTest (2; a password only in the envelope's secrets connected — "Expecting code to raise a throwable") and
+  SwitchLedgerMakerTest's pin moved (P1-E's "the environment, then the secrets" → the environment only; the echo red). Passwords in tests
+  are generated (UUID). Mutants 3/3 red (the fallback put back, the variable not named, the ref repeated). Direct: switch-ledger 70,
+  sessionflow 239. Next: item 2.
+- 2026-10-24 17:11 · item 2 DONE — the seed reads no secret from the bootstrap, said in `Deployment`'s javadoc and the README's bootstrap
+  section (§4.2: the environment file, the secreteer). `Deployment.secrets()` is read by nobody after item 1 (grep; javac -Xlint:deprecation
+  on sessionflow and switch-ledger main: no use) → deprecated, the signature kept, the reader still parses. A `Deployment`'s text said the
+  secrets' VALUES (the record's own toString): now their names only (an override; every other part as before). Red first:
+  NoSecretFromTheBootstrapTest (1). Mutants 3/3 red (the values said, the override taken away, the names dropped — this one SURVIVED first:
+  "AD_SWITCH_DB_PASSWORD" is also the sample's password-ref; the test now names AD_REPORTS_DB_PASSWORD, named nowhere else). Direct:
+  sessionflow 240, switch-ledger 70. Next: item 3 (docs), then item 5 (the coordinator's: the door refuses without a root, in words).
+- 2026-10-24 17:12 · item 3 DONE — docs: the switch-ledger README (on a kit from the bootstrap: the password from the process environment
+  only, the refusal's words; the ledger's own login "like switch-db's") and the sessionflow README's history line. SwitchLedgerMakerTest's
+  pin of P1-E's "the environment, then the secrets" moved to the new behaviour IN item 1's commit (2a5a919: the removed method would not
+  compile in it): `aPasswordByReference_isReadFromTheEnvironmentOnly_neverWritten_neverRepeated`. Next: item 5, red first.
+- 2026-10-24 17:32 · item 5 DONE (the coordinator's, on the owner's ruling: "if we fail to identify the root level tenant at the ingress
+  points, the request shall be rejected and logs shall be generated") — the seed's door `RoutesphereEngine.identifyRootLevelTenant`: a rule
+  that names no root (null, or it throws) → a WARN line (the app = `flow.name()`, the ingress's kind and value, the session id when the
+  facts carry one, the reason in words; a failed rule's stack), `refusedNoRoot` counted (FlowCounters; PoolStats' 12th number, the ten- and
+  eleven-number constructors kept → NOT_COUNTED), and still null. `internal/NoRootAtTheDoor`: per door a 60 s window (the first refusal in
+  full, the rest counted, ONE summary line at the door's next refusal after the window, no timer thread; at most 1024 doors held apart,
+  then "other doors"); debug on = every refusal said. `engine.saidAtTheDoor()` = the last 64 lines. README: the ingress's two lines and the
+  guard. Red first (the old door: no line, count 0, a throwing rule escaped): NoRootAtTheDoorTest (6) + NoRootAtTheDoorWindowTest (6,
+  ManualClock). The burst: 1000 refusals from 8 threads → 1 line, count 1000; 1000 then the window's end → 3 lines, "… and 999 more",
+  1001; a second window "… and 10 more", 1012. Mutants 13/13 red (the log, the count, the window gone / never closing / its boundary / its
+  count not reset, one window for every door, no bound, rule one, a throwing rule escaping, the old door, the session id, the summary).
+  Under the 8-thread hog (load 12 → 22): the door test 20 runs, the window test 10 runs, 0 red; the hog stopped by PID. Direct:
+  sessionflow 251, seed-tenant 23, samples 73, switch-ledger 70. Next: item 4 (the reactor, a clean copy, the report).
+- 2026-10-24 17:38 · **P1-K DONE** — items 1–5; the head 94e00c1 from clean in the worktree **595/0/0/3** (147 s) and on a git-archive clean
+  copy **595/0/0/3** (159 s), two short lock holds 17:33–17:38 (offline, no install); +15 tests; 19 mutants red; the door tests 20 + 10
+  runs under the hog green. The report's P1-K section: `docs/agents/P1-F-report.md`.

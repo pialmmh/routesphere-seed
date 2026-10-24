@@ -82,13 +82,35 @@ RoutesphereEngine<AdContext> engine = RoutesphereEngine.of(new AdSupervisor(new 
     .signaling(AdPlayback.spec(...)).channel(httpChannel, AdFrames::decode).start();
 ```
 
+**The ingress — two lines and the guard** (the owner's shape of 2026-10-24; the guard, P1-K): every ingress — an HTTP resource, an ESL
+listener, an SMPP bind, a Kafka consumer — reads the same lines for every request:
+
+```java
+String root = engine.identifyRootLevelTenant(facts);       // 1 · which root operator owns this door: the lane's rule over the ingress
+if (root == null) return rejectNoRoot(request);             //   the guard: the ingress's OWN protocol answer (an HTTP status, an ESL
+                                                            //   hangup, an SMPP error) — the door has already said it and counted it
+engine.launchStateMachine(new AdFacts(…, root));            // 2 · the session; its root rides in RoutesphereFacts.root()
+```
+
+**No root = refused, and said** (P1-K — the owner's ruling of 2026-10-24: "if we fail to identify the root level tenant at the ingress
+points, the request shall be rejected and logs shall be generated"). When the lane's rule names no root — null, or the rule throws — the
+door, for every lane, writes a WARN line (`[<app>] no root at listen 10.10.188.2:7070 (session s-1): no rule names this door — the request
+is refused`: the app, the ingress's kind and value, the session id when the facts carry one, the reason in words; a failed rule's words
+and its stack), counts it (`PoolStats.refusedNoRoot`) and answers null. Flood-safe, per door: the first refusal in each 60 s window is
+said in full; the rest are counted and said as ONE summary line at the door's next refusal after the window (`… and N more refused at
+<door> in the 60 s window from <its start> (no root)`) — no timer thread; at most 1024 doors are held apart, a further door shares one
+window. With debug on (`config.routesphere.debug`), every refusal is said. The rejection itself is the ingress's own: the door only says
+and counts. `engine.saidAtTheDoor()` gives the last 64 lines (the operations' view; a test's). A lane whose facts carry no root keeps the
+old road (the machine asks the rule at its start and refuses `NO_TENANT`): that road is noted in the session's history, not by this line.
+
 The engine's numbers (`engine.stats()`, a `PoolStats`), each counted where it happens (P1-F): `machinesBuilt` is the supervisors
 statewalk's pool built (the base builds no machine; it never passes `size` unless a reset failed); `busy` is a NEW session refused
 because every machine was live (statewalk's `CAPACITY_EXCEEDED`), counted at the lane's channel's inbound and at
 `engine.launch(id, firstFrame)` — `engine.deliver` counts nothing, so a lane that counts its own refusals there keeps doing so;
 `sessions` is the sessions live now, `live` the registry's live CELLS (kept as it was: two per session — its supervisor and its
 signaling machine — three with the budget child). A `PoolStats` made with the ten numbers of 2.0 still builds; its `sessions` is
-`PoolStats.NOT_COUNTED` (-1).
+`PoolStats.NOT_COUNTED` (-1). `refusedNoRoot` (P1-K) is the requests the door refused because no root owns their door; a `PoolStats`
+made with the ten numbers of 2.0 or the eleven of P1-F still builds, its `refusedNoRoot` `NOT_COUNTED`.
 
 ## 3 · The contract (R2–R4)
 
@@ -186,6 +208,14 @@ MicroProfile / SmallRye Config through **seed-bootstrap-config** (a `ConfigSourc
 so the application's yml is the two lines above and nothing else. See `seed-bootstrap-config/README.md` — and its "When the values are
 visible": from RUNTIME_INIT on (P1-G, proven on Quarkus 3.26.1); a bean Quarkus REST builds at STATIC_INIT (one a resource or filter
 injects by its type) sees the jar's own values — reach it through `Instance<…>`.
+
+**No secret from the bootstrap** (P1-K — the owner's ruling of 2026-10-24, "Environment only", re-affirming his rule of 2026-09-24): the
+seed reads NO secret from prime-context's envelope. A password by reference (`password-ref: env:<NAME>` — switch-db's, and the switch
+ledger's own `ledger.db`) is read from the PROCESS environment only, which the box's environment file fills (the secreteer: SOPS + age →
+`/etc/secreteer/<tenant>/<app>.env` → the unit's `EnvironmentFile=`). A variable not in the environment refuses the root's start in words
+naming the variable and the login, never a value; a `password-ref` that is not `env:<NAME>` is refused without repeating its text. The
+envelope's `secrets` are still parsed into `Deployment.secrets()` — deprecated, read by nobody, kept for the record's signature — and a
+`Deployment`'s text names them, never their values. Before P1-K, switch-db's password fell back to the envelope's `secrets`.
 
 Live: the engine listens to `tenant_created` (§C.2) on the platform's Kafka. A new ROOT this application serves → the bootstrap read again,
 the root's tree, doors, ledger, CDR road, journal and topics made, and it is served — no restart. A new reseller TIER → its root's tree
@@ -314,6 +344,14 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-24, evening — P1-K (the owner's ruling of 16:51, "Environment only", re-affirming his rule of 2026-09-24): a password comes
+  from the process environment only — switch-db's no longer falls back to the bootstrap envelope's `secrets` (`SwitchDb.password(env,
+  secrets)` removed; `passwordFromTheEnvironment` for both logins; a refusal names the variable, never a value, nor a written
+  `password-ref`); `Deployment.secrets()` deprecated (read by nobody) and a `Deployment`'s text names the secrets, never their values.
+  And the owner's ruling of the same evening: a request whose door no rule names is refused AND said — the door
+  (`engine.identifyRootLevelTenant`) writes a WARN line and counts `refusedNoRoot` for every lane, flood-safe per door (a 60 s window, one
+  summary line, no timer thread; every refusal with debug on), and still answers null: the ingress's guard line rejects in its own
+  protocol. State: `docs/agents/P1-F-state.md`.
 - 2026-10-24, afternoon — P1-J (ad-sphere P2c's end-to-end run against prime-context 8f8d922): every reload of a root's tree merges its
   new rows into its switch ledger (`LedgerPort.treeReloaded`, coalesced: at most one merge per `ledger.merge-spacing-sec`, default 5 s) —
   an account written after its tier exists pays at the next ring; the switch ledger's OWN login `ledger.db` (optional; the app's and the
