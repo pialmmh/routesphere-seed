@@ -121,7 +121,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
         String own = ctx.tree == null ? null : ctx.tree.rootDbName();
         if (own == null || own.equals(root.dbName())) return false;
         RoutesphereFlow.log.error("[{}] {} | the entry partner {} was found in tenant '{}', a tier of the tree of '{}', but this session's root is '{}':"
-            + " a session never leaves its own tree — refused {}", flow.name(), ctx.sessionId(), leaf.partner().getIdPartner(), leaf.dbName(),
+            + " a session never leaves its own tree — refused {}", flow.name(), LogText.clean(ctx.sessionId()), leaf.partner().getIdPartner(), leaf.dbName(),
             root.dbName(), own, SessionCause.PARTNER_NOT_FOUND);
         ctx.history.note(flow.name(), "the entry partner was found in the tree of '" + root.dbName() + "', not in this session's own ('" + own + "')");
         return true;
@@ -250,8 +250,8 @@ final class AdmissionChain<C extends RoutesphereContext> {
 
     private String ledgerFault(C ctx, int levelIndex, String dbName, Integer partnerId, RuntimeException fault) {
         ctx.systemFault = SessionCause.BILLING_SYSTEM_ERROR;
-        RoutesphereFlow.log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), ctx.sessionId(),
-            levelIndex, dbName, partnerId, fault.getMessage());
+        RoutesphereFlow.log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), LogText.clean(ctx.sessionId()),
+            levelIndex, dbName, partnerId, LogText.failureText(fault.getMessage()));
         return SessionCause.BILLING_SYSTEM_ERROR;
     }
 
@@ -291,8 +291,8 @@ final class AdmissionChain<C extends RoutesphereContext> {
         } catch (RuntimeException e) {
             flow.kit().counters().owed.incrementAndGet();
             RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} was NOT released ({}): {}", flow.name(),
-                ctx.sessionId(), level.getDebitReference(), level.getTotalReserved(), level.getUom(), level.getLevelIndex(),
-                level.getDbName(), level.getPartnerId(), why, e.toString());
+                LogText.clean(ctx.sessionId()), LogText.clean(level.getDebitReference()), level.getTotalReserved(), level.getUom(), level.getLevelIndex(),
+                level.getDbName(), level.getPartnerId(), LogText.clean(why), LogText.failureText(e));
         }
     }
 
@@ -319,7 +319,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
             journal.released(ctx.sessionId(), level.getDebitReference());
         } catch (RuntimeException e) {
             RoutesphereFlow.log.warn("[{}] {} | the journal did not take the release of {} (the ledger moves money once per reference): {}",
-                flow.name(), ctx.sessionId(), level.getDebitReference(), e.toString());
+                flow.name(), LogText.clean(ctx.sessionId()), LogText.clean(level.getDebitReference()), LogText.failureText(e));
         }
     }
 

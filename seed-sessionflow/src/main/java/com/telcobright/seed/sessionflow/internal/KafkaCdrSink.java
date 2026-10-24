@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -59,7 +60,7 @@ public final class KafkaCdrSink implements CdrSink {
     @Override
     public void publish(String callId, List<CdrEvent> tiers) {
         if (topic == null) {
-            log.error("the CDR of session {} names no root and this sink's topic is per root ({}<root>): NOT published", callId, rootTopicPrefix);
+            log.error("the CDR of session {} names no root and this sink's topic is per root ({}<root>): NOT published", LogText.clean(callId), rootTopicPrefix);
             return;
         }
         send(topic, callId, tiers);
@@ -75,10 +76,10 @@ public final class KafkaCdrSink implements CdrSink {
     private void send(String to, String callId, List<CdrEvent> tiers) {
         try {
             producer.send(new ProducerRecord<>(to, callId, CdrJson.ofCall(tiers)), (metadata, failure) -> {
-                if (failure != null) log.error("the CDR of session {} was NOT published to {}: {}", callId, to, failure.toString());
+                if (failure != null) log.error("the CDR of session {} was NOT published to {}: {}", LogText.clean(callId), to, LogText.failureText(failure));
             });
         } catch (RuntimeException e) {
-            log.error("the CDR of session {} could NOT be sent to {}: {}", callId, to, e.toString());
+            log.error("the CDR of session {} could NOT be sent to {}: {}", LogText.clean(callId), to, LogText.failureText(e));
         }
     }
 

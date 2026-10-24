@@ -86,7 +86,7 @@ final class SessionCdr<C extends RoutesphereContext> {
     private List<CdrEvent> lost(C ctx, String cause) {
         flow.kit().counters().cdrLost.incrementAndGet();
         RoutesphereFlow.log.warn("[{}] {} | the CDR has NO tenant to be written on (cause {}, root: {}) — not published", flow.name(),
-            ctx.sessionId(), cause, ctx.root);
+            LogText.clean(ctx.sessionId()), LogText.clean(cause), ctx.root);
         return List.of();
     }
 
@@ -196,7 +196,7 @@ final class SessionCdr<C extends RoutesphereContext> {
                 owed++;
                 flow.kit().counters().owed.incrementAndGet();
                 RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} ({} {}) of tier {} ({}) partner {} of a call left in the air was NOT closed as reserved: {}",
-                    flow.name(), left.callId(), first.reference(), reserved, first.uom(), first.tier(), first.tenant(), first.partnerId(), e.toString());
+                    flow.name(), LogText.clean(left.callId()), LogText.clean(first.reference()), reserved, first.uom(), first.tier(), first.tenant(), first.partnerId(), LogText.failureText(e));
             }
         }
         return new int[] {closed, owed};
@@ -209,7 +209,7 @@ final class SessionCdr<C extends RoutesphereContext> {
         } catch (RuntimeException e) {
             flow.kit().counters().owed.incrementAndGet();
             RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} of a call a stopped process left before its hand-over was NOT given back: {}",
-                flow.name(), callId, held.reference(), held.amount(), held.uom(), held.tier(), held.tenant(), held.partnerId(), e.toString());
+                flow.name(), LogText.clean(callId), LogText.clean(held.reference()), held.amount(), held.uom(), held.tier(), held.tenant(), held.partnerId(), LogText.failureText(e));
             return false;
         }
     }
@@ -239,7 +239,7 @@ final class SessionCdr<C extends RoutesphereContext> {
             return tiers;
         } catch (RuntimeException e) {
             RoutesphereFlow.log.error("[{}] {} | the record a stopped process left in the air could not be read — it stays in {} for the next start: {}",
-                flow.name(), left.callId(), flow.kit().journal().where(), e.toString());
+                flow.name(), LogText.clean(left.callId()), flow.kit().journal().where(), LogText.failureText(e));
             return List.of();
         }
     }
@@ -249,7 +249,7 @@ final class SessionCdr<C extends RoutesphereContext> {
             flow.kit().journal().done(callId);
         } catch (RuntimeException e) {
             RoutesphereFlow.log.warn("[{}] {} | its record is published; its line in {} could not be marked done (a restart publishes it again, billing-core takes it once): {}",
-                flow.name(), callId, flow.kit().journal().where(), e.toString());
+                flow.name(), LogText.clean(callId), flow.kit().journal().where(), LogText.failureText(e));
         }
     }
 }

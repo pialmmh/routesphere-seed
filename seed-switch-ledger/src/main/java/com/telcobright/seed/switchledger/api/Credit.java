@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.api;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.switchledger.internal.AccountLocks;
 import com.telcobright.seed.switchledger.internal.Books;
@@ -47,7 +48,7 @@ public final class Credit {
             PackageAccount live = heldAccount(dbName, accountId);
             BigDecimal before = Books.balanceOf(live);
             PackageAccount updated = books.moveBalance(dbName, live, before.add(delta), delta);
-            log.info("CREDIT {} | account {} of {}: +{} {} → {}", reference, accountId, dbName, delta, live.getUom(), updated.getBalanceAfter());
+            log.info("CREDIT {} | account {} of {}: +{} {} → {}", LogText.clean(reference), accountId, dbName, delta, live.getUom(), updated.getBalanceAfter());
             return new Credited(accountId, before, updated.getBalanceAfter(), updated.getIdpackagePurchase());
         }
     }

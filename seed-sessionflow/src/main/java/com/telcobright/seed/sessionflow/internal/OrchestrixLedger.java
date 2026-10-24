@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -120,7 +121,7 @@ public final class OrchestrixLedger implements LedgerPort {
             owed.unsure(level, reference, amount, why);
             returns.later(OwedJournal.Entry.of(level, reference, amount), "the reserve got no answer: whatever the ledger took under it goes back", true);
         } catch (RuntimeException e) {
-            log.error("ledger: the unsure reserve {} could not be written to {} — the line is in the log above: {}", reference, owed.file(), e.toString());
+            log.error("ledger: the unsure reserve {} could not be written to {} — the line is in the log above: {}", LogText.clean(reference), owed.file(), LogText.failureText(e));
         }
     }
 
@@ -189,7 +190,8 @@ public final class OrchestrixLedger implements LedgerPort {
     }
 
     private Optional<Reservation> cannotPay(LevelAdmission level, BigDecimal amount, String reference, HttpResponse<String> answer) {
-        log.debug("ledger: partner {} cannot pay {} (ref {}): {}", level.getPartnerId(), amount, reference, errorMessage(answer.body()));
+        if (log.isDebugEnabled()) log.debug("ledger: partner {} cannot pay {} (ref {}): {}", level.getPartnerId(), amount, LogText.clean(reference),
+            LogText.failureText(errorMessage(answer.body())));
         return Optional.empty();
     }
 
@@ -215,7 +217,7 @@ public final class OrchestrixLedger implements LedgerPort {
                 long left = leftOf(withinMs, startedNs);
                 if (attempt > 1) throw new NoAnswer("the ledger timed out twice on " + url + " (ref " + reference + ")", e);
                 if (left <= 0) throw new NoAnswer("the ledger did not answer within the " + waitMs + " ms the admission had left on " + url + " (ref " + reference + ")", e);
-                log.warn("ledger: {} did not answer within {} ms (ref {}) — repeating the same reference once, {} left", url, waitMs, reference,
+                log.warn("ledger: {} did not answer within {} ms (ref {}) — repeating the same reference once, {} left", url, waitMs, LogText.clean(reference),
                     left == Long.MAX_VALUE ? "no limit" : left + " ms");
             } catch (ConnectException | SSLHandshakeException e) {
                 throw new LedgerFault("the ledger is unreachable at " + settings.baseUrl() + ": " + e.getMessage(), e);

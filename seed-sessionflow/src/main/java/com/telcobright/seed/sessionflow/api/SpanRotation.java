@@ -63,7 +63,7 @@ final class SpanRotation<C extends RoutesphereContext> {
                 flow.kit().journal().released(ctx.sessionId(), reference);
             } catch (RuntimeException e) {
                 RoutesphereFlow.log.warn("[{}] {} | the journal of the calls in the air did not take the settled reserve {} (a restart would try to give it back; the ledger moves money once per reference): {}",
-                    flow.name(), ctx.sessionId(), reference, e.toString());
+                    flow.name(), LogText.clean(ctx.sessionId()), LogText.clean(reference), LogText.failureText(e));
             }
         }
     }

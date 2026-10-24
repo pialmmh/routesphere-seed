@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.dependencies.SwitchLedgerSettings;
 import org.slf4j.Logger;
@@ -65,7 +66,7 @@ public final class OrphanReaper {
             books.returnRow(dbName, still);
             return true;
         } catch (RuntimeException e) {
-            log.error("the reaper could not give back the reserve {} of {}: {}", row.getChannelCallUuid(), dbName, e.toString());
+            log.error("the reaper could not give back the reserve {} of {}: {}", LogText.clean(row.getChannelCallUuid()), dbName, LogText.failureText(e));
             return false;
         }
     }

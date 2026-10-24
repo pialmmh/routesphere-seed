@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import org.slf4j.Logger;
@@ -35,7 +36,7 @@ public final class FanOutCdrSink implements CdrSink {
         try {
             publish.run();
         } catch (RuntimeException e) {
-            log.error("the CDR of call {} was NOT taken by {}: {}", callId, sink.getClass().getSimpleName(), e.toString());
+            log.error("the CDR of call {} was NOT taken by {}: {}", LogText.clean(callId), sink.getClass().getSimpleName(), LogText.failureText(e));
         }
     }
 

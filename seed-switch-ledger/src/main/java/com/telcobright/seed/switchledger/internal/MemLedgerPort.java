@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
@@ -83,7 +84,8 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     }
 
     private static Optional<Reservation> refused(LevelAdmission level, long accountId, BigDecimal balance, BigDecimal amount, String reference) {
-        log.debug("{} | account {} of {} cannot fund {} {}: balance {}", reference, accountId, level.getDbName(), amount, level.getUom(), balance);
+        if (log.isDebugEnabled()) log.debug("{} | account {} of {} cannot fund {} {}: balance {}", LogText.clean(reference), accountId, level.getDbName(), amount,
+            level.getUom(), balance);
         return Optional.empty();
     }
 
@@ -129,13 +131,13 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private static void noteADisagreement(LevelAdmission level, PackageAccountReserve row, String tier) {
         BigDecimal held = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
         if (held.compareTo(TierSettlement.reservedOf(level)) != 0) {
-            log.warn("{} | the reserve row holds {} but the tier reserved {}: the tier's total settles", tier, held, TierSettlement.reservedOf(level));
+            log.warn("{} | the reserve row holds {} but the tier reserved {}: the tier's total settles", LogText.clean(tier), held, TierSettlement.reservedOf(level));
         }
     }
 
     /** No row is open under the tier: it was settled, released or reaped before. Nothing moves; the base is told it is owed, in words. */
     private static TierSettlement nothingOpen(LevelAdmission level, String tier, BigDecimal charged) {
-        log.error("{} | no reserve row is open in {} for account {}: settled, released or reaped before — nothing moved", tier, level.getDbName(), level.getPackageAccountId());
+        log.error("{} | no reserve row is open in {} for account {}: settled, released or reaped before — nothing moved", LogText.clean(tier), level.getDbName(), level.getPackageAccountId());
         return TierSettlement.owed(level, charged, "no reserve row open under " + tier + " (settled, released or reaped before): nothing moved");
     }
 

@@ -349,3 +349,87 @@ On this branch, fast-forwarded by the architect to routesphere-flow c17ffaa (his
    whose password lived only in the envelope's `secrets` now refuses the root at its start, naming the variable.
 2. ad-sphere's ingress keeps its two lines and its guard. The door now says and counts the no-root refusals, so ad-sphere's own DEBUG
    line for that case is a duplicate (keep it or drop it). `PoolStats.refusedNoRoot` is the number to watch.
+
+## P1-L
+
+The architect's brief (`docs/agents/P1-L-brief.md`), written after his review of P1-K's door: the no-root log must be injection-safe,
+the machine's NO_TENANT road must be said too (P1-K's open point 1), and a written password-ref must never be printed. On this branch,
+fast-forwarded by the architect to routesphere-flow ab91c44 (his merge of P1-K). Additive.
+
+### Commits
+
+| item | commit | what |
+|---|---|---|
+| 1 | b1ea8f8 | ONE cleaner, `api/LogText`. It escapes every control character (C0, DEL, C1, U+2028/2029: `\n` `\r` `\t`, the others `\uXXXX`). A value keeps at most 200 characters and a failure's text 1000, with "…" when cut, never inside an escape or a character. `cleaned(throwable)` keeps the stack and cleans every text in its chain. The door cleans its door (also the window's key), the session id, and a failed rule's words and stack. 40 more lines in 18 files go through it. |
+| 2 | b5c7a44 | The machine's NO_TENANT start is said through the SAME sayer. The sayer now lives in the kit (`kit.noRootAtTheDoor()`), beside the counters, and the app is named per call. The rule's question (`askTheLanesRule`) moved into the flow, so the door and the start share it. |
+| 3 | 46fb183 | No record prints a written password-ref. `SwitchDb.toString` and the ledger's words (its `ledger.db` block) show it as "<not an env: reference — hidden>". An `env:` reference is printed as it is. |
+| 4 | 060b500 | Docs: the README's ingress section (the cleaner, the caps, the start road), the class table, the bootstrap section, the history line. |
+
+### Numbers
+
+- **Head 060b500**: the worktree from clean **615/0/0/3** (162 s, 18:36) and a git-archive clean copy of the head **615/0/0/3** (155 s,
+  18:50), two short lock holds (18:36–18:39 and 18:50–18:52; PC-0023's and P2's holds between them), offline, no install;
+  ab91c44 was 595/0/0/3.
+- **20 new tests**: LogTextTest 8, NoForgedLogLinesTest 4, NoTenantAtTheStartTest 5, NoWrittenPasswordRefIsPrintedTest 3.
+  NoRootAtTheDoorWindowTest (P1-K's) now names the app per call; its assertions are unchanged.
+- **Red first**:
+  - item 1: a session id with "\n[app] forged" gave two log lines at the door, and a failed rule's "\n" gave two as well;
+  - item 2: the start's NO_TENANT refusal had no line, and the count stayed 0;
+  - item 3: all three records printed the written refs.
+- **25 mutants, 25 red**:
+  - item 1, 13: the cleaning (LF, U+2028, C1); the cap (a long clean value passing whole, never cut, off by one, an escape cut in half); the door's session id, its ingress, a failed rule's text and stack left raw; a cleaned stack keeping the raw text; the step line's id raw.
+  - item 2, 7: the start saying nothing, the start using a sayer of its own, the start counting twice, the door counting twice, the start's window kept per session, a throw not noted, the door's words used at the start.
+  - item 3, 5: SwitchDb's override gone, the env: check inverted, the ledger's words printed raw, nested words not walked, the key missed.
+- **No double count, proven**: an ingress that follows the two lines refuses at the door and launches nothing (launched 0, no context made), and the count is 1. A door refusal and a start refusal at the same door in one window give a count of 2 and one line.
+- A whole session with debug on and a forged id wrote 14 lines. None starts with the forged text, and 10 carry the escaped id.
+
+### The lines cleaned (item 1)
+
+Each takes a session id or call id, a reference built from one, a lane's cause, or a ledger's or a failure's words. Line numbers are at 060b500.
+
+- `seed-sessionflow` AdmissionChain: 124,253,254,294,295,322
+- `seed-sessionflow` RoutesphereFlow: 685,828,834,844
+- `seed-sessionflow` SessionCdr: 89,199,212,242,252
+- `seed-sessionflow` SessionSettlement: 95,96
+- `seed-sessionflow` SpanRotation: 66
+- `seed-sessionflow` ChannelSlots: 72
+- `seed-sessionflow` FanOutCdrSink: 39
+- `seed-sessionflow` FileCdrJournal: 60
+- `seed-sessionflow` KafkaCdrSink: 63,79,82
+- `seed-sessionflow` NoRootAtTheDoor: 65,119,138,141,144
+- `seed-sessionflow` OncePerSessionCdrSink: 45
+- `seed-sessionflow` OrchestrixLedger: 124,193,194,220
+- `seed-sessionflow` OwedJournal: 95,105,141
+- `seed-sessionflow` PerRootCdrSink: 37
+- `seed-sessionflow` ReturnRoad: 121,157,167,171,176,181
+- `seed-switch-ledger` Credit: 51
+- `seed-switch-ledger` MemLedgerPort: 87,134,140
+- `seed-switch-ledger` OrphanReaper: 69
+
+### Not cleaned, and why
+
+- **seed-campaign, 5 lines**: `DefaultCampaignService:206` and `JdbcCampaignStore:260` (the task id); `QueuedCampaignStore:177` and `:431` (the change's text); `ChangeJournal:201` (a journal line). A session's task id and text come from the lane. But seed-campaign sits BELOW sessionflow, so it cannot reach `api.LogText`. To clean them, the helper must move to a module both can reach: a tiny module of its own, or seed-campaign itself. That is your call; I did not add a module or a copy.
+- `TenantCreatedListener:74`: a platform message's key and error, from prime-context's own Kafka, not a request.
+- statewalk's own lines (another library): with debug on, at INFO, a forged id reached none of them. Its DEBUG lines are statewalk's side.
+- Every other seed line logs config or tree values only: tenants, tiers, partners, files, urls, counts.
+
+### Decisions
+
+1. `LogText` lives in `api`, not `internal`, so a lane can clean its own lines with it (ad-sphere's MAC).
+2. There are two caps: 200 per value, and 1000 for a failure's text (exception texts are longer by nature). A failure's stack is kept as a cleaned chain (its own text and up to 8 causes); its suppressed exceptions are not carried.
+3. The door's window is kept under its CLEANED name, so memory stays bounded even for a huge door value.
+4. Debug lines are guarded (`isDebugEnabled`), so nothing is cleaned while debug is off. A clean value is given back as it is, with no copy.
+5. A throwing rule at the start used to give one ERROR line per session (`safely`). It now gives the sayer's windowed WARN with its cleaned stack. The history note is unchanged.
+6. Backslashes are not escaped. A value's own literal "\n" text reads like an escaped LF, but it can never make a second line.
+7. The reader still passes the whole ledger map to `Ledger` (no data change). Only the printing hides the refs in it.
+
+### Open points
+
+- seed-campaign's 5 lines (above) wait for your ruling.
+- URLs with userinfo or a password query (a redis url, a JDBC url) are printed as written: by the start line `BootstrapRoad.describe` and by the records. The bootstrap should never carry one. If you want, the seed could hide the userinfo part.
+- Unicode format characters (the bidi controls U+202A–U+202E and U+2066–U+2069, zero-width characters) are not escaped. They cannot break a line, but they can reorder what a terminal shows.
+
+### For P2
+
+1. ad-sphere's own lines that log the MAC or the session id should use `LogText.clean`. Better still, ad-sphere's ingress should check the MAC's shape at the door (hex and colons). Then no control character ever reaches a session id.
+2. `PoolStats.refusedNoRoot` now also counts the sessions the machine refused NO_TENANT at their start. A lane that follows the two lines sees no change.

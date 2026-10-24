@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import org.slf4j.Logger;
@@ -41,7 +42,7 @@ public final class OncePerSessionCdrSink implements CdrSink {
 
     private synchronized boolean firstTime(String callId) {
         if (published.putIfAbsent(callId, Boolean.TRUE) == null) return true;
-        log.warn("{} | its CDR was published already: the second end of the session (a restore from an older row) publishes nothing", callId);
+        log.warn("{} | its CDR was published already: the second end of the session (a restore from an older row) publishes nothing", LogText.clean(callId));
         return false;
     }
 

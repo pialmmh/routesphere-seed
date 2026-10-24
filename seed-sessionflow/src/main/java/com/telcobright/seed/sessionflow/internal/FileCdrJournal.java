@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.internal;
 
+import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import org.slf4j.Logger;
@@ -56,7 +57,7 @@ public final class FileCdrJournal implements CdrSink {
             out.newLine();
             out.flush();
         } catch (IOException | RuntimeException e) {
-            log.error("the CDR of call {} was NOT written to the journal {}: {}", callId, directory, e.toString());
+            log.error("the CDR of call {} was NOT written to the journal {}: {}", LogText.clean(callId), directory, LogText.failureText(e));
         }
     }
 
