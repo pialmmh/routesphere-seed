@@ -121,3 +121,13 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   `{pbkdf2}` one still verify; the legacy compare; the measured cost: `{sha256}` 1.9 µs p50 / 6.3 µs p99 (a wrong secret 1.7 / 3.7, the decoy 0.9 / 4.2, the legacy compare 0.1 / 1.7) against 98 ms per `{pbkdf2}` check at 210 000 iterations), RouteLayerHelpersTest (a `{pbkdf2}` row still admits; a known
   user's wrong secret does no decoy, an unknown user exactly one; the testkit stores `{sha256}`). Mutants 2, 2 red: no decoy for an unknown
   user (RouteLayerHelpersTest 1/5), the `{sha256}` check without its salt (SecretsTest); restored with a fresh mtime.
+- 2026-10-25 06:32 · **item 1b done** (prime-context's PC-0025 finding: on the SERVED tree a `usernameVsRouteMetaData` row has no route —
+  its `RouteMetadata.route` is `@JsonIgnore`) — `ServedTreeRoundTripTest` 3: a testkit tree serialized as prime-context serves it (a Jackson
+  mapper with mix-ins: the row's route `@JsonIgnore`, the tree's index and chains off the wire, the route's partner off or on as a copy),
+  read back by `Trees.parse`, installed: `byRouteCredentials` (the `{sha256}` row and the legacy row), `byIp`, `bySipAccount` name the right
+  tier and the tier's OWN partner instance on four wires (partner off/on × `partnerVsRoutes` kept/dropped); with only `idVsRoute` the
+  parsed row has NO route (rtc-domain's deserializer wires rows from `partnerVsRoutes` only) and the index still finds it by the row's id.
+  No main-code change: item 1's `RootIndexBuild` already resolved a row's route by its id among the tier's routes (`partnerVsRoutes`,
+  `idVsRoute`, `ipOrDomainWiseRoute`, built once per tier) and skipped an unserved one with one WARN — so the new test is GREEN on the
+  previous head, not red as the finding expected; its red is the mutant (a row's route only by its back reference: ServedTreeRoundTripTest 2/3 and RouteLayerHelpersTest 3/5). Restored with a
+  fresh mtime.
