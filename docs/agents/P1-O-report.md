@@ -21,9 +21,31 @@ shared lock (queued behind the other agents' holds, never broken); nothing insta
 
 ## Numbers
 
-- Base f7539a1: 640/0/0/3 (the architect's gate).
-- Item 1: the whole reactor from the worktree 650/0/0/3; item 2: 660/0/0/3; item 3: 662/0/0/3.
-- (the final head's numbers, worktree and clean copy, below when run)
+- **Base f7539a1**: 640/0/0/3 (run/failed/errors/skipped; the architect's gate).
+- **Head f843c1b** (every code item; the report's commit adds docs only): the worktree from clean **673/0/0/3** (3:00 min) and a git-archive
+  clean copy of f843c1b **673/0/0/3** (3:06 min), ONE lock hold 06:33:29–06:39:43, offline, no install (`~/.m2` holds no seed
+  2.0.0-SNAPSHOT). On the way: item 1 650, item 2 660, item 3 662 (the worktree's reactor).
+- **statewalk 4.1.0 only** (`dependency:tree` on the clean copy): seed-sessionflow direct; seed-bootstrap-config, seed-tenant,
+  seed-switch-ledger through seed-sessionflow; seed-sessionflow-samples test scope — no state-walk v1, no statewalk-v2.
+- **The named proofs, on the clean copy**: the R-1 proofs `RestoreLostUpTest` 4/0/0/0; the 1 000-session one-build proof
+  `OneIndexPerSnapshotTest` 1/0/0/0 (and seed-tenant's `IndexPerSnapshotTest` 2/0/0/0); `HotPathHasNoListScanTest` 2/0/0/0;
+  `NoWalkAfterInstallTest` 2/0/0/0; `ServedTreeRoundTripTest` 3/0/0/0; `SecretsTest` 6/0/0/0; `TreeRoadBearerTest` 2/0/0/0;
+  `StatewalkPinTest` 2/0/0/0.
+- **+33 tests, all new**: SnapshotIndexTest 2, RootIndexTest 6, IndexPerSnapshotTest 2, OneIndexPerSnapshotTest 1, SecretsTest 6,
+  RouteLayerHelpersTest 5, NoWalkAfterInstallTest 2, HotPathHasNoListScanTest 2, VoiceFlowTest +1, SmsFlowTest +1, TreeRoadBearerTest 2,
+  ServedTreeRoundTripTest 3.
+- **Existing tests touched** (each named in its commit): IdentifyPartnerTest and ResellerPartnerRuleTest (a name is exact, A2); SmsFlowTest's
+  unknown user (now CREDENTIALS_REJECTED + 401 — item 5's acceptance); the samples' constructions (VoiceFlow and SmsFlow lost their private
+  maps: VoiceFlowTest, VoiceFlowDoorbellTest, RestoreLostUpTest, SmsPrepaidPieceTest, SmsSubmitTest, SupervisorClassPerLaneTest); the
+  test lookups VersionedTrees and FakeLiveTrees moved onto the install step.
+- **Red first** for every item: by compile (no index / counter / helper / cause / Secrets / bearer) and on behaviour where a test could be
+  red on the old code (the climb's loop under the armed maps; the guard with an empty allow-list listed 52 walks). Item 1b's test is green on
+  the head before it (decision 13).
+- **Mutants: 24, 24 red**, each restored with a fresh mtime: item 1: 4 (the per-session build, a lazy install twice, a shared key kept);
+  item 2: 5; item 3: 3; item 4: 3; item 5: 4; item 6: 2; item 2b: 2; item 1b: 1. The constant-time compare's mutant (a plain `equals`) is not
+  provable by a test (A4): read `Secrets.verify` by eye.
+- **The cost of a check** (SecretsTest, this box, p50 / p99 per check): `{sha256}` right 1.9 / 6.3 µs, wrong 1.7 / 3.7 µs, the unknown
+  user's decoy 0.9 / 4.2 µs, the legacy plaintext 0.1 / 1.7 µs — against 98 ms per `{pbkdf2}` check at 210 000 iterations (compatibility only).
 
 ## Decisions (defendable defaults, the owner asleep)
 

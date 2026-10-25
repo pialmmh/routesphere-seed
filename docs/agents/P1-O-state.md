@@ -131,3 +131,9 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   `idVsRoute`, `ipOrDomainWiseRoute`, built once per tier) and skipped an unserved one with one WARN — so the new test is GREEN on the
   previous head, not red as the finding expected; its red is the mutant (a row's route only by its back reference: ServedTreeRoundTripTest 2/3 and RouteLayerHelpersTest 3/5). Restored with a
   fresh mtime.
+- 2026-10-25 06:41 · **P1-O DONE** — items 1, 1b, 2, 2b, 3, 4, 5, 6, 7, 7b; the code head f843c1b from clean in the worktree **673/0/0/3**
+  (3:00 min) and on a git-archive clean copy **673/0/0/3** (3:06 min), one lock hold 06:33:29–06:39:43 (offline, no install); statewalk
+  4.1.0 only (dependency:tree); the R-1 proofs RestoreLostUpTest 4/0/0/0, the 1 000-session proof OneIndexPerSnapshotTest 1/0/0/0,
+  HotPathHasNoListScanTest 2/0/0/0; base f7539a1 640/0/0/3; +33 tests; 24 mutants red. Two review findings taken in on the way: the
+  architect's A4′ (machine secrets: `{sha256}`, a decoy; item 2b) and prime-context's served-tree finding (a round-trip test; green on the
+  head before it — item 1's index already resolved a row's route by its id; item 1b). Report: `docs/agents/P1-O-report.md`.
