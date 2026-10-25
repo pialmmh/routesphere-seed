@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,6 +41,9 @@ final class RootIndexBuild {
     private final Map<String, EntryPartner> byPrefix = new HashMap<>();
     /** {@code "<map> <key>"} → its holders, in the order found: the keys that name nobody, each said once. */
     private final Map<String, List<String>> heldByTwo = new LinkedHashMap<>();
+    /** Each tier's partners by exact name — the reseller fallback asks the PARENT tier only (a name another tier also holds does not matter there). */
+    private final Map<String, Map<String, Partner>> namesByTier = new HashMap<>();
+    private final Set<String> twiceInTier = new HashSet<>();
     /** The routes left out: their tier does not hold their partner, or their user name's route is not served. */
     private final List<String> leftOut = new ArrayList<>();
 
@@ -69,6 +73,7 @@ final class RootIndexBuild {
             EntryPartner entry = new EntryPartner(tier, partner);
             hold(byPartnerId, "partner-id", held.getKey(), entry);
             if (partner.getPartnerName() != null && !partner.getPartnerName().isBlank()) hold(byPartnerName, "partner-name", partner.getPartnerName(), entry);
+            holdNameInTier(tier, partner);
         }
     }
 
@@ -113,6 +118,19 @@ final class RootIndexBuild {
             Partner partner = partnerOfTier(tier, prefix.getValue() == null ? null : prefix.getValue().getIdPartner(), "the prefix '" + prefix.getKey() + "'");
             if (partner != null) hold(byPrefix, "prefix", prefix.getKey(), new EntryPartner(tier, partner));
         }
+    }
+
+    /** The tier's own name map: a name two partners of ONE tier share names nobody there; a name another tier also holds is still this tier's. */
+    private void holdNameInTier(Tenant tier, Partner partner) {
+        String name = partner.getPartnerName();
+        if (name == null || name.isBlank()) return;
+        String twice = tier.getDbName() + " " + name;
+        if (twiceInTier.contains(twice)) return;
+        Map<String, Partner> names = namesByTier.computeIfAbsent(tier.getDbName(), db -> new HashMap<>());
+        Partner first = names.putIfAbsent(name, partner);
+        if (first == null || Objects.equals(first.getIdPartner(), partner.getIdPartner())) return;
+        names.remove(name);
+        twiceInTier.add(twice);
     }
 
     // ── the rules ─────────────────────────────────────────────────────────
@@ -195,7 +213,13 @@ final class RootIndexBuild {
     private RootIndex frozen() {
         return new RootIndex(Collections.unmodifiableMap(byPartnerId), Collections.unmodifiableMap(byPartnerName), Collections.unmodifiableMap(byRouteKey),
             Collections.unmodifiableMap(byRouteUsername), Collections.unmodifiableMap(bySipAccount), byLength(byPrefix),
-            Collections.unmodifiableSet(new LinkedHashSet<>(heldByTwo.keySet())));
+            Collections.unmodifiableSet(new LinkedHashSet<>(heldByTwo.keySet())), frozenNames());
+    }
+
+    private Map<String, Map<String, Partner>> frozenNames() {
+        Map<String, Map<String, Partner>> frozen = new HashMap<>();
+        namesByTier.forEach((tier, names) -> frozen.put(tier, Collections.unmodifiableMap(names)));
+        return Collections.unmodifiableMap(frozen);
     }
 
     /** The prefixes grouped by their length: a lookup makes one get per length present, the longest first. */

@@ -40,10 +40,12 @@ public final class RootIndex {
     private final Map<String, EntryPartner> bySipAccount;
     private final NavigableMap<Integer, Map<String, EntryPartner>> byPrefixLength;
     private final Set<String> heldByTwo;
+    private final Map<String, Map<String, Partner>> namesByTier;
 
     RootIndex(Map<Integer, EntryPartner> byPartnerId, Map<String, EntryPartner> byPartnerName, Map<String, EntryPartner> byRouteKey,
               Map<String, RouteEntry> byRouteUsername, Map<String, EntryPartner> bySipAccount,
-              NavigableMap<Integer, Map<String, EntryPartner>> byPrefixLength, Set<String> heldByTwo) {
+              NavigableMap<Integer, Map<String, EntryPartner>> byPrefixLength, Set<String> heldByTwo,
+              Map<String, Map<String, Partner>> namesByTier) {
         this.byPartnerId = byPartnerId;
         this.byPartnerName = byPartnerName;
         this.byRouteKey = byRouteKey;
@@ -51,6 +53,7 @@ public final class RootIndex {
         this.bySipAccount = bySipAccount;
         this.byPrefixLength = byPrefixLength;
         this.heldByTwo = heldByTwo;
+        this.namesByTier = namesByTier;
     }
 
     /** One walk of every tier of {@code tree} — the install's, never a session's. */
@@ -62,10 +65,14 @@ public final class RootIndex {
     /** The ONE partner of the tree with exactly this name, with its tier; null = none, or two partners share the name. */
     public EntryPartner partnerNamed(String name) { return name == null ? null : byPartnerName.get(name); }
 
-    /** The partner of {@code tier} with exactly this name; null = none there (or the name names nobody: two holders). */
+    /**
+     * The partner of {@code tier} with exactly this name — the tier's OWN name map, so a name another tier also holds still names this
+     * tier's partner (the reseller fallback asks the parent tier only, as before P1-O); null = none there, or two partners of this tier share it.
+     */
     public Partner partnerNamedIn(Tenant tier, String name) {
-        EntryPartner named = partnerNamed(name);
-        return named != null && named.tenant() == tier ? named.partner() : null;
+        if (tier == null || name == null) return null;
+        Map<String, Partner> names = namesByTier.get(tier.getDbName());
+        return names == null ? null : names.get(name);
     }
 
     /** The partner whose route is served under this key — an ip, an {@code ip:port}, a domain, exactly as served; null = none. */
