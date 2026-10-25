@@ -1,5 +1,6 @@
 package com.telcobright.seed.sessionflow.samples.sms;
 
+import com.telcobright.seed.sessionflow.api.SessionCause;
 import com.telcobright.seed.sessionflow.samples.sms.SmsEvents.*;
 import com.telcobright.statewalk.event.StatemachineEvent;
 import com.telcobright.statewalk.event.TimeoutEvent;
@@ -59,7 +60,7 @@ public final class SmsSubmit {
     }
 
     /** The request the spec's {@code SessionStart} sample is made of: the base checks its facts at build (they name the ingress). */
-    static final SmsRequest SAMPLE = new SmsRequest("sample", "listen", "10.10.188.7:7480", "sample-user", "BRAND", "8801700000000", "hello", 0);
+    static final SmsRequest SAMPLE = new SmsRequest("sample", "listen", "10.10.188.7:7480", "sample-user", null, null, "BRAND", "8801700000000", "hello", 0);
 
     private SmsSubmit() {}
 
@@ -148,7 +149,10 @@ public final class SmsSubmit {
         send(self, SmsOut.toClient("DLR " + d.stat()));
     };
 
-    private static final BiConsumer<Object, StatemachineEvent> REFUSE_THE_CLIENT = (self, e) -> send(self, SmsOut.toClient("REJECTED " + commandCause(e)));
+    private static final BiConsumer<Object, StatemachineEvent> REFUSE_THE_CLIENT = (self, e) -> send(self, SmsOut.toClient(refusalOf(commandCause(e))));
+
+    /** P1-O · the HTTP door's answer: refused credentials are its 401, every other refusal its REJECTED word. */
+    static String refusalOf(String cause) { return SessionCause.CREDENTIALS_REJECTED.equals(cause) ? "401 " + cause : "REJECTED " + cause; }
 
     private static final BiFunction<Object, StatemachineEvent, StatemachineEvent> FAILED_WITH_THE_COMMANDS_CAUSE =
         (self, e) -> new SignalingFailed(now(), commandCause(e), 0);

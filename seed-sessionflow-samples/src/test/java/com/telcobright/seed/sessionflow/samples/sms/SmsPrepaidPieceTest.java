@@ -26,7 +26,7 @@ class SmsPrepaidPieceTest {
     void tearDown() throws Exception { for (AutoCloseable c : open) c.close(); }
 
     private FlowBed<SmsContext, SmsOut, SmsFrame> bed() {
-        RoutesphereFlow<SmsContext> flow = SmsFlow.of(w.kit(World.settings()), SmsFlowTest.USERS, World.RATES, SmsFlowTest.SMSCS, true);
+        RoutesphereFlow<SmsContext> flow = SmsFlow.of(w.kit(World.settings()), World.RATES, SmsFlowTest.SMSCS, true);
         FlowBed<SmsContext, SmsOut, SmsFrame> b = new FlowBed<>(c -> new SmsSupervisor(flow, c), SmsContext::new,
             SmsSubmit.spec(SmsFlowTest.SMPP, SmsSubmitContext::new), new SmsChannel(), SmsFrames::decode);
         open.add(b);

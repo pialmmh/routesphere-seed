@@ -20,7 +20,8 @@ the application                            its forced answers ■ + the hooks it
 | `api.RoutesphereFlow<C>` | **The base.** statewalk's `SessionHandler<C>`: every library call implemented, final. A big lane extends it |
 | `api.RoutesphereApp` | **The builder** (R5): the same questions as lambdas — a small lane is a handful of lines |
 | `api.RoutesphereSupervisor<C>` | The lane's own named class (R6): `AdSupervisor`, `CallSupervisor`, `SmsSupervisor` — its name and statewalk's spec, no logic |
-| `api.Lookups` | The one-line helpers: a root by its door, a payer inside the session's own tree |
+| `api.Lookups` | The one-line helpers: a root by its door; a payer inside the session's own tree — by id, by exact name, and (P1-O) through its ROUTE: route credentials, address, SIP account, prefix — each a get on the snapshot's index |
+| `api.RootTree` / `api.RootIndex` | One root's snapshot as a session takes it, and its index: every key a partner is found by, built ONCE at the snapshot's install (P1-O) |
 | `api.RoutesphereContext` | Everything one session knows (persisted: ids and amounts only). Your context extends it |
 | `api.RoutesphereFacts` / `api.Ingress` | The facts your signaling machine stamps — with the INGRESS the root is found by (`listen` · `esl` · `vlan` · `topic`) |
 | `api.RoutesphereEngine<C>` | statewalk's registry: your supervisor class + your signaling machine + the budget child + your channel |
@@ -148,8 +149,8 @@ made with the ten numbers of 2.0 or the eleven of P1-F still builds, its `refuse
 | | `name()` · `serviceGroup(ctx)` | ■ | `CallSupervisor` · 0 (billing detects a voice call) |
 | (a) | `identifyRootLevelTenant(facts)` | ■ | `byEslSocket(…)`; the helpers `byListener` · `byEslSocket` · `byVlan` · `byTopic` · `byIngress`; null → `NO_TENANT` |
 | (b) | `iterateResellerTenants(leaf)` | final | leaf → reseller → … → root, inside the session's own tree |
-| (c) | `identifyPartner(ctx, candidate)` | ■ | the caller's partner; the helpers `byPartnerId` · `byPartnerName`; null → `PARTNER_NOT_FOUND` |
-| (c) | `partnerAbove(tier)` | default | `res_<id>` → partner `<id>` of the tier above, else the partner named as the tenant |
+| (c) | `identifyPartner(ctx, candidate)` | ■ | the caller's partner; the helpers (§4.0) `byRouteCredentials` · `byIp` · `byDomain` · `bySipAccount` · `byPrefix` · `bySystemId` · `byPartnerId` · `byPartnerName`; null → `PARTNER_NOT_FOUND` (or the helper's cause: `CREDENTIALS_REJECTED`) |
+| (c) | `partnerAbove(tier)` | default | `res_<id>` → partner `<id>` of the tier above; only when no partner has that id, the partner named EXACTLY as the tenant (one get, no loop) |
 | (d) | `route(ctx)` | ■ | the dialplan's hops, in order (made once at admission; route by `ctx.candidateBeingAdmitted()`) |
 | (e) | `rateAtLevel(ctx, tier, partner)` | ■ | one talk minute at the tier's rate |
 | (e) | `reserveBalance` · `finalizeTier` | default | the prepaid piece (§5.1): reserve one unit per tier; finalize = rate × billed units, the rest back |
@@ -179,6 +180,65 @@ Every lookup of a session is scoped to the root its ingress named: the entry par
 map; an id two tiers hold names nobody), the tier walk (a chain that ends at another root is refused `PARTNER_NOT_FOUND`), the
 rates, the CDR's topic. The session takes its root's snapshot at its start (`ctx.tree`, `ctx.treeVersion`) and keeps it to its end;
 the doorbell (`config_event_loader_<root>`) reloads that root only. A restored session takes its root's snapshot again.
+
+## 4.0 · Identification — the partner through its route, one get each (P1-O)
+
+The owner, 2026-10-25: *"The DynamicContext holds the partner entities AND the route entities, transformed into hashmaps by the key the
+business logic needs … the client passes a param (e.g. route username+password) matched with the routes key indexed in the DynamicContext;
+route → partner; one partner may own many routes. Avoiding a LIST lookup on the hot path is a STRICT rule for partner and tenant
+identification."*
+
+**One index per snapshot, never per session.** When a root's snapshot is INSTALLED — its first load and every reload, the cell's swap in
+seed-context (`SnapshotIndexer`), or `TenantLookup.of` at its construction — `RootTreeInstaller` makes its `RootTree`, whose constructor
+walks every tier ONCE into `RootIndex`: flat maps key → the tier and the partner (`EntryPartner`):
+
+| map | key, as prime-context serves it | helper |
+|---|---|---|
+| `byPartnerId` | the partner id (every tier's `partners`) | `byPartnerId(ctx, id)` |
+| `byPartnerName` | the partner name, EXACT (no case-blind fallback loop) | `byPartnerName(ctx, name)`, `partnerAbove`'s name road |
+| `byRouteKey` | `route.field5`: an ip, an `ip:port`, a domain (`routeWisePartners` + `ipOrDomainWiseRoute`) | `byIp(ctx, ip)` (the bare key) · `byIp(ctx, ip, port)` (`ip:port`, then the bare ip; no `:5060` default — the lane passes the port it saw) · `byDomain` |
+| `byRouteUsername` | `route_metadata.extra1` → `RouteEntry(tier, metadata, route, partner)` (`usernameVsRouteMetaData`) | `byRouteCredentials(ctx, user, password)` · `routeOfCredentials` (the route itself) · `bySystemId` (the SMPP name) |
+| `bySipAccount` | the SIP user name (`sipAccountWisePartners`) | `bySipAccount(ctx, account)` |
+| `byPrefixLength` | length → (prefix → …) (`prefixWisePartners`) | `byPrefix(ctx, number)`: one get per length present, the longest first |
+
+A route's partner is the one its tier's `partners` holds under `route.idPartner` — the SAME instance `byPartnerId` answers; never
+`route.getPartner()` (rtc-domain's is `@Transient`). A user name's route is its row's back reference, else the tier's route that carries the
+row (by the row's id). **A key two holders share names nobody** (seed-tenant's D5 rule, kept for every key): two tiers, or two partners of
+one tier — it leaves its map, `RootIndex.heldByTwo()` lists it, ONE WARN at the build; a route whose tier does not hold its partner is left
+out, said once. `routesOf(leaf)` gives a partner's routes (`partnerVsRoutes`: one partner, many routes). The counter
+`rootIndexBuilds` (`TenantLookup`, `RoutesphereKit`, `PoolStats`) reads roots × loads — never sessions.
+
+**Route credentials.** `byRouteCredentials` takes the user name and the secret a client sends (the aggregator SMS API's, the ad App's) and
+checks it against `route_metadata.extra2` through `internal/Secrets` (the architect's A4 as amended by A4′): a route's credentials are
+MACHINE secrets the system generates (`Secrets.newMachineSecret()`: 32 random bytes, base64url) and stores as
+`{sha256}<base64 salt>$<base64 SHA-256(salt ‖ UTF-8 secret)>` (`Secrets.hashMachineSecret`, a 16-byte salt) — the check is ONE SHA-256 and a
+constant-time compare, microseconds. `{pbkdf2}<iterations>$<salt>$<hash>` is still verified for compatibility but written by nothing: a slow KDF
+must not guard a credential checked on every request (~0.1 s of CPU each, and a CPU amplifier for wrong secrets). Anything else is the
+LEGACY plaintext of the SMS rows, compared in constant time on its UTF-8 bytes; a blank value verifies nothing. An unknown user name, a wrong
+or missing secret: null, and the session's `identificationCause` is `CREDENTIALS_REJECTED` — one cause for both, and the same work (an
+unknown user name is checked against a decoy, `Secrets.compareWithNobody`), distinct from `PARTNER_NOT_FOUND`; the base refuses the
+candidate with it (an HTTP lane answers 401, an SMPP lane its bind error). The secret is never kept, logged or put in a text. The testkit's
+`routeCredentials` writes the `{sha256}` form; `legacyRouteCredentials` a plaintext row; `routeCredentialsStoredAs` any value a test pins.
+
+**On the served tree.** prime-context serves a `usernameVsRouteMetaData` row WITHOUT its route (its `RouteMetadata.route` is
+`@JsonIgnore`): rtc-domain's deserializer wires a row's route from `partnerVsRoutes`, and the index finds it by the row's id among the
+tier's routes (`partnerVsRoutes`, `idVsRoute`, `ipOrDomainWiseRoute`) when it is not wired; a row whose route is not served is left out with
+one WARN. `ServedTreeRoundTripTest` proves it on a tree serialized as prime-context serves it and read back by `Trees.parse`.
+
+**The climb.** Above the leaf, `partnerAbove` takes the id at the end of the child's database name in the PARENT's `partners`; only when no
+partner has that id, the parent's partner named exactly as the child (its name, else its database name) — a get on the session's index (a
+tier the lookups found carries it), never a walk of the parent's partners.
+
+**The guard.** `HotPathHasNoListScanTest` scans the main sources of seed-sessionflow, seed-tenant and seed-routing for a `for (…)` over
+`partners()` / `routes()` / `children()` / `tiers()` / `tenants()` (without case: `getPartners()` counts) and for every `.stream(` and
+`.forEach(`; each must stand in `docs/agents/hot-path-allowlist.txt` as `Class#method — reason` (the index builder, the install, the start
+and close roads, a session's own few lines, the testkit). A new walk in a flow class is red. `NoWalkAfterInstallTest` proves it at run time:
+after the install every map of every tier refuses to be walked, and every helper and a three-tier climb still answer.
+
+**A lane's own lookup** (one that implements `TenantLookup` itself) gets each tree object installed once by the default `snapshot`
+(`installOnce`: the first session of a new tree pays the build); a lookup that serves sessions should hand out its own installed snapshot
+(seed-tenant's `TenantTrees.snapshot` does). Never print a `Route` or a `RouteMetadata` whole: rtc-domain's Lombok `toString` walks route →
+row → route and prints the row's password; `RouteEntry`'s own text names the tier, the route and the partner only.
 
 ## 4.1 · Naming (R9) — `seed-naming`
 
@@ -341,13 +401,14 @@ before statewalk 4.0). Which road each lane takes is its own round's decision (P
 
 ```
 api/           RoutesphereFlow · RoutesphereApp · AppFlow · RoutesphereSupervisor · Lookups · RoutesphereContext · RoutesphereFacts · Ingress
-               Tier · Candidate · RootTree · TierLine · RoutePlan · RoutesphereEngine · AdmissionChain · SessionSettlement · SessionCdr
+               Tier · Candidate · RootTree · RootIndex · RouteEntry · RootTreeInstaller · TierLine · RoutePlan · RoutesphereEngine · AdmissionChain
+               SessionSettlement · SessionCdr
                Deployment · RootResources · TenantCreated · CdrEvent · TierRate …
 spi/           LedgerPort · CdrSink · SdrSink · TaskSink · TenantLookup · TenantResolver · SessionJournal   (the host implements these)
                BootstrapSource · KafkaClients · TreesMaker · LiveTrees · LedgerMaker                         (the bootstrap's makers)
 dependencies/  RoutesphereKit · KitMakers · BootstrapSources · TopicProvisioner · RoutesphereSettings · CdrSinks · Ledgers
                TenantResolvers · IdentificationRules · RefundPolicy …
-internal/      BudgetChild · ChannelSlots · CdrAssembler · KafkaCdrSink · OncePerSessionCdrSink · OrchestrixLedger · FileCdrJournal
+internal/      BudgetChild · ChannelSlots · CdrAssembler · KafkaCdrSink · OncePerSessionCdrSink · OrchestrixLedger · FileCdrJournal · Secrets
                BootstrapRoad · DeploymentReader · HttpBootstrapSource · PerRootLedger · PerRootCdrSink · PerRootJournal · LiveRules
                TenantCreatedListener · RealKafkaClients · OrchestrixLedgerMaker …
 testkit/       InMemoryLedger · RecordingCdrSink · TenantTreeBuilder · ManualClock · MapBootstrapSource · FakeKafka
@@ -375,6 +436,14 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-25, night — P1-O (the owner's identification rules of 2026-10-25; the architect's decisions A1–A9): the partner through its ROUTE
+  — `byRouteCredentials` / `routeOfCredentials` / `bySystemId` (one cause `CREDENTIALS_REJECTED`, one decoy compare for an unknown user;
+  `internal/Secrets`: a machine secret's `{sha256}` form — A4′ —, `{pbkdf2}` verified only, the legacy plaintext), `byIp` (the port first, no default), `byDomain`, `bySipAccount`, `byPrefix`, `routesOf` — every one a get on the `RootIndex`
+  built ONCE at the snapshot's install (seed-context's `SnapshotIndexer`, `RootTreeInstaller`, the counter `rootIndexBuilds`), never per
+  session; `byPartnerName` and the climb's name road EXACT and one get; the climb's loop, the per-session partner walk and the served-root
+  loops gone; seed-routing's longest prefix by length; `HotPathHasNoListScanTest` + `docs/agents/hot-path-allowlist.txt`; the samples find
+  their partners through the served route maps (voice `byIp` then `bySipAccount`, the SMS HTTP door `byRouteCredentials` → 401); the tree
+  road sends the bootstrap's bearer. State: `docs/agents/P1-O-state.md`, report `docs/agents/P1-O-report.md`.
 - 2026-10-24, evening (4) — P1-N (the architect's probe of P1-M's `maskPassword`): three url forms it printed raw are masked — a userinfo
   without ':' whole (Lettuce's `redis://password@host`, a bare token), a userinfo password carrying ';' or '/' (the userinfo runs to the
   last '@' before '?' or '#'), Connector/J's `(password=…)` blocks; an over-mask beats a leak. State: `docs/agents/P1-F-state.md`.

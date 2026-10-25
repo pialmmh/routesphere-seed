@@ -19,6 +19,12 @@ public final class SessionCause {
 
     // ── ADMITTING ──
     public static final String PARTNER_NOT_FOUND = "PARTNER_NOT_FOUND";
+    /**
+     * P1-O · The client's route credentials were refused — an unknown user name and a wrong password alike (one cause: an unknown user
+     * name must not be told from a wrong password). Recorded by {@code Lookups.byRouteCredentials}; an HTTP lane answers 401, an SMPP lane
+     * its bind error. Never carries the password.
+     */
+    public static final String CREDENTIALS_REJECTED = "CREDENTIALS_REJECTED";
     public static final String PARTNER_DEACTIVATED = "PARTNER_DEACTIVATED";
     public static final String CHANNEL_LIMIT_REACHED = "CHANNEL_LIMIT_REACHED";
     /** A tier has no rate for this call. */

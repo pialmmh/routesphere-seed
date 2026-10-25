@@ -34,6 +34,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * A session of 9 has one tier (btcl); of 701 two (res_44, btcl); of 801 three (res_44_7, res_44, btcl). One rate table for every lane
  * by {@code tier#partner}: the unit is the lane's own (a minute of talk, a view, a segment, a minute of WiFi).
+ *
+ * <p>P1-O · each partner is found THROUGH ITS ROUTE, as the switch serves them (the lanes keep no private map): the voice call's source
+ * addresses ({@code route.field5} — 10.0.0.9 → 9, 10.0.0.7 → 701, 10.0.0.2/.3/.4 → 702/703/704, 10.0.0.8 → 801; 10.0.0.17:7023 → 701 only
+ * at that port; 10.0.0.5 → 705 once NewCo exists; in ccl 10.0.0.9 → 9 and 10.0.0.7 → 701, the same addresses in another tree), Walton's
+ * SIP account {@code sip-walton}, and the SMS's route credentials ({@code direct}, {@code unilever} hashed; {@code walton} a legacy
+ * plaintext row) — {@link #SMS_PASSWORDS}.
  */
 public final class World {
 
@@ -57,6 +63,9 @@ public final class World {
         Map.entry("ccl#9", new BigDecimal("0.55")), Map.entry("ccl#44", new BigDecimal("0.45")),
         Map.entry("ccl_44#701", new BigDecimal("0.70")));
 
+    /** The SMS route credentials of btcl's three users (test fixtures): the password each one's route keeps. */
+    public static final Map<String, String> SMS_PASSWORDS = Map.of("direct", "direct-pw", "unilever", "unilever-pw", "walton", "walton-pw");
+
     public final Tenant btcl = btclTree(false);
     public final Tenant ccl = cclTree();
 
@@ -73,20 +82,24 @@ public final class World {
     public static Tenant btclTree(boolean withNewCo) {
         TenantTreeBuilder b = new TenantTreeBuilder();
         TenantTreeBuilder.TenantSpec res44 = b.root("btcl").partner(9, "DirectCo", PartnerType.CUSTOMER)
+                .route(9, "10.0.0.9").routeCredentials(9, "DirectCo-sms", "direct", SMS_PASSWORDS.get("direct"))
             .reseller(44, "Res44")
                 .partner(701, "Unilever", PartnerType.CUSTOMER)
                 .partner(702, "Poorco", PartnerType.CUSTOMER)
                 .partner(703, "OneLine", PartnerType.CUSTOMER, 1)
-                .partner(704, "Closed", PartnerType.CUSTOMER).deactivate(704);
-        if (withNewCo) res44.partner(705, "NewCo", PartnerType.CUSTOMER);
-        res44.reseller(7, "Sub7").partner(801, "Walton", PartnerType.CUSTOMER);
+                .partner(704, "Closed", PartnerType.CUSTOMER).deactivate(704)
+                .route(701, "10.0.0.7", "10.0.0.17:7023").route(702, "10.0.0.2").route(703, "10.0.0.3").route(704, "10.0.0.4")
+                .routeCredentials(701, "Unilever-sms", "unilever", SMS_PASSWORDS.get("unilever"));
+        if (withNewCo) res44.partner(705, "NewCo", PartnerType.CUSTOMER).route(705, "10.0.0.5");
+        res44.reseller(7, "Sub7").partner(801, "Walton", PartnerType.CUSTOMER)
+            .route(801, "10.0.0.8").sipAccount(801, "sip-walton").legacyRouteCredentials(801, "Walton-sms", "walton", SMS_PASSWORDS.get("walton"));
         return b.build();
     }
 
     public static Tenant cclTree() {
         TenantTreeBuilder b = new TenantTreeBuilder();
-        b.root("ccl").partner(9, "CCL Direct", PartnerType.CUSTOMER).partner(44, "CCL Res", PartnerType.RESELLER)
-            .and().tenant("ccl_44", "ccl").partner(701, "CCL Unilever", PartnerType.CUSTOMER);
+        b.root("ccl").partner(9, "CCL Direct", PartnerType.CUSTOMER).partner(44, "CCL Res", PartnerType.RESELLER).route(9, "10.0.0.9")
+            .and().tenant("ccl_44", "ccl").partner(701, "CCL Unilever", PartnerType.CUSTOMER).route(701, "10.0.0.7");
         return b.build();
     }
 

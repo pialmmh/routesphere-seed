@@ -11,9 +11,14 @@ public final class SmsEvents {
      * The client's message — the first event of an SMS: the registry takes the kit for it. The ingress is {@code listen <ip>:<port>} for
      * the HTTP door or {@code topic <name>} for the Kafka door (its kind and match); {@code user} names the entry partner.
      */
-    public record SmsRequest(String sessionId, String ingressKind, String ingressMatch, String user, String sender, String receiver,
-                             String text, long atMs) implements StatemachineEvent {
+    public record SmsRequest(String sessionId, String ingressKind, String ingressMatch, String user, String password, Integer partnerId,
+                             String sender, String receiver, String text, long atMs) implements StatemachineEvent {
         @Override public boolean isFirst() { return true; }
+
+        /** P1-O · never the password. */
+        @Override public String toString() {
+            return "SmsRequest[" + sessionId + " " + ingressKind + " " + ingressMatch + " user=" + user + (partnerId == null ? "" : " partner=" + partnerId) + "]";
+        }
     }
     /** {@code submit_sm_resp}: status 0 = accepted with the SMSC's message id, else the SMSC refused (its command_status). */
     public record SubmitResp(int status, String messageId, long atMs) implements StatemachineEvent {}

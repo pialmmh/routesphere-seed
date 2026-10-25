@@ -112,6 +112,12 @@ public final class RoutesphereKit {
     /** The base's one-line lookups — a root by its door, a partner inside the session's own tree (R2). */
     public Lookups lookups() { return lookups; }
 
+    /**
+     * P1-O · The root indexes the kit's trees built: one per served root per load (the snapshot's install) — never one per session.
+     * {@code TenantLookup.NOT_COUNTED} when the trees do not count them. The engine's stats carry it.
+     */
+    public long rootIndexBuilds() { return tenants.rootIndexBuilds(); }
+
     /** The ONE money road (§E): reserve, settle, release — idempotent per (session, tier). */
     public LedgerPort ledger() { return ledger; }
 

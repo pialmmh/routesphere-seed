@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.spi;
 
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootTree;
+import com.telcobright.seed.sessionflow.api.RootTreeInstaller;
 
 import java.util.Optional;
 
@@ -35,22 +36,36 @@ public interface TenantLookup {
     Optional<Tenant> rootOfCode(String code);
 
     /**
-     * The lookup over one or more served trees (each root with its index rebuilt and its chains computed). Each root gets its OWN map
-     * partner id → its owning tenant, built once — the call switch's {@code GlobalTenantRegistry.partnerIdVsLookupDb}, per tree (a reload
-     * hands in new trees and so makes a new lookup). Two roots of one name cannot be told apart: refused.
+     * The lookup over one or more served trees (each root with its index rebuilt and its chains computed). Each root is installed ONCE,
+     * here (P1-O): its {@link RootTree} with its own index — partner id, name, route key, user name, SIP account, prefix → its tier — the
+     * call switch's {@code GlobalTenantRegistry}, per tree (a reload hands in new trees and so makes a new lookup). Two roots of one name
+     * cannot be told apart: refused.
      */
     static TenantLookup of(Tenant... roots) { return new ServedTrees(roots); }
+
+    /** {@link #rootIndexBuilds()} of a lookup that does not count its installs. */
+    long NOT_COUNTED = -1;
+
+    /**
+     * P1-O · How many root indexes this lookup built: one per root per load (the install), never one per session. {@link #NOT_COUNTED}
+     * for a lookup that does not count them.
+     */
+    default long rootIndexBuilds() { return NOT_COUNTED; }
 
     /**
      * §D · The ROOT's current snapshot, by the root the ingress rule named (its code, or its database name): the immutable tree a session
      * takes at its start and keeps to its end — every lookup of the session is scoped to it. Empty = this process serves no such root (the
-     * session fails {@code TENANT_UNAVAILABLE}). The default wraps {@link #rootOfCode} / {@link #root} at version 0; a versioned source
-     * (seed-tenant's {@code TenantTrees}) answers the snapshot's own version.
+     * session fails {@code TENANT_UNAVAILABLE}). A versioned source (seed-tenant's {@code TenantTrees}) answers the snapshot it installed,
+     * with its own version; {@link #of} the trees it installed at its construction.
+     *
+     * <p>P1-O · The default — for a lookup of a lane's own that installs nothing — wraps {@link #rootOfCode} / {@link #root} at version 0
+     * and installs each tree object ONCE ({@link RootTreeInstaller#installOnce}): the first session of a new tree pays the index, every
+     * later one gets the same instance. A lookup that serves sessions should answer its own installed snapshot instead.
      */
     default Optional<RootTree> snapshot(String root) {
         if (root == null) return Optional.empty();
         Optional<Tenant> tree = rootOfCode(root);
         if (tree.isEmpty()) tree = root(root);
-        return tree.map(t -> RootTree.of(root, 0, t));
+        return tree.map(t -> InstalledOnFirstAsk.TREES.installOnce(root, 0, t));
     }
 }

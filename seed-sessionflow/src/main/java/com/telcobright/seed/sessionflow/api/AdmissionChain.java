@@ -81,6 +81,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
     // ── one candidate: the call switch's runAdmission ───────────────────────
 
     private String walkCandidate(C ctx, Candidate candidate) {
+        ctx.identificationCause = null;                          // P1-O: this candidate's own helper says why it found nobody
         Tier leaf = flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, candidate));
         String refusal = leaf == null ? admitWithoutPartner(ctx, candidate) : admitThroughTheTiers(ctx, leaf);
         if (refusal == null) refusal = routeAtTheRoot(ctx);
@@ -88,9 +89,13 @@ final class AdmissionChain<C extends RoutesphereContext> {
         return refusal;
     }
 
-    /** Only a free candidate may run with no partner: it has no tier and pays nothing. */
+    /**
+     * Only a free candidate may run with no partner: it has no tier and pays nothing. Any other is refused with the cause its helper recorded
+     * (P1-O: {@code CREDENTIALS_REJECTED}), else {@code PARTNER_NOT_FOUND}.
+     */
     private String admitWithoutPartner(C ctx, Candidate candidate) {
-        return flow.isFree(ctx, candidate) ? null : SessionCause.PARTNER_NOT_FOUND;
+        if (flow.isFree(ctx, candidate)) return null;
+        return ctx.identificationCause != null ? ctx.identificationCause : SessionCause.PARTNER_NOT_FOUND;
     }
 
     private String admitThroughTheTiers(C ctx, Tier leaf) {

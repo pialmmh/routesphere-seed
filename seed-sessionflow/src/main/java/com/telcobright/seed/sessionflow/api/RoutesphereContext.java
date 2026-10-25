@@ -85,6 +85,11 @@ public class RoutesphereContext extends SessionContext {
     public volatile boolean admitted;
     /** The refusal admission saw last — the reject cause when nothing was admitted. */
     public volatile String lastRefusal;
+    /**
+     * P1-O · Why the candidate being admitted has no leaf, when the lane's helper knew it better than {@code PARTNER_NOT_FOUND}: the route
+     * credentials refused ({@code CREDENTIALS_REJECTED}). Cleared before each candidate's {@code identifyPartner}; never a password.
+     */
+    public volatile String identificationCause;
     /** The ledger itself failed while a tier was reserved. Never a customer cause. */
     public volatile String systemFault;
     /** When this session's admission budget ends (epoch ms, the kit's clock). 0 = not admitting yet. */

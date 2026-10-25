@@ -7,6 +7,7 @@ import com.telcobright.seed.context.publishes.ContextEvent;
 import com.telcobright.seed.context.publishes.ContextListener;
 import com.telcobright.seed.context.spi.ContextLoader;
 import com.telcobright.seed.context.spi.SecretResolver;
+import com.telcobright.seed.context.spi.SnapshotIndexer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * One tenant: its snapshot, its debounce gate, its single-flight reload, its counters. A load runs on a
  * virtual thread; the swap is one reference write; a failed load keeps the last good snapshot; a load
  * that outlives the timeout is failed, and its late result can never swap (the load's future is already
- * settled by then).
+ * settled by then). P1-O: the swap builds the snapshot's index first ({@link SnapshotIndexer}) — the install
+ * is one step; an index that cannot be built fails the load like the loader's own throw.
  */
 final class TenantCell<T> implements AutoCloseable {
 
@@ -34,6 +36,7 @@ final class TenantCell<T> implements AutoCloseable {
     private final SecretResolver secrets;
     private final ContextListener listener;
     private final Duration loadTimeout;
+    private final SnapshotIndexer<T> indexer;
     private final DebounceGate gate;
 
     private final AtomicReference<Snapshot<T>> current = new AtomicReference<>();
@@ -52,12 +55,13 @@ final class TenantCell<T> implements AutoCloseable {
     private boolean closed;
 
     TenantCell(String tenantId, ContextLoader<T> loader, SecretResolver secrets, ContextListener listener,
-               long debounceMs, Duration loadTimeout) {
+               long debounceMs, Duration loadTimeout, SnapshotIndexer<T> indexer) {
         this.tenantId = tenantId;
         this.loader = loader;
         this.secrets = secrets;
         this.listener = listener;
         this.loadTimeout = loadTimeout;
+        this.indexer = indexer;
         this.gate = new DebounceGate(debounceMs, () -> reload("doorbell"));
     }
 
@@ -111,7 +115,7 @@ final class TenantCell<T> implements AutoCloseable {
         String nextReason;
         synchronized (this) {
             if (closed || seq != sequence) { callers.completeExceptionally(new IllegalStateException("tenant " + tenantId + " dropped")); return; }
-            if (error == null) callers.complete(swap(context, reason, ms));
+            if (error == null) installOrFail(callers, context, reason, ms);
             else callers.completeExceptionally(fail(error, reason));
             inFlight = null;
             next = queued; nextReason = queuedReason;
@@ -120,8 +124,20 @@ final class TenantCell<T> implements AutoCloseable {
         }
     }
 
+    /** P1-O · the install: the index built, then the swap; an index that cannot be built is the load's failure (the last snapshot stays). */
+    private void installOrFail(CompletableFuture<Snapshot<T>> callers, T context, String reason, long ms) {
+        try {
+            callers.complete(swap(context, reason, ms));
+        } catch (RuntimeException indexFailed) {
+            callers.completeExceptionally(fail(indexFailed, reason));
+        }
+    }
+
     private Snapshot<T> swap(T context, String reason, long ms) {
-        Snapshot<T> stamped = new Snapshot<>(tenantId, version.incrementAndGet(), Instant.now(), context);
+        long next = version.get() + 1;
+        Object index = indexer.index(tenantId, next, context);   // built ONCE, here, before any reader can see the snapshot
+        Snapshot<T> stamped = new Snapshot<>(tenantId, next, Instant.now(), context, index);
+        version.set(next);
         current.set(stamped);                                   // the one write every reader sees
         loads.incrementAndGet();
         lastLoadMs = ms;

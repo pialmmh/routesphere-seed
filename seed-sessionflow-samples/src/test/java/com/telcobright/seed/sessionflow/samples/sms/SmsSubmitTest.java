@@ -35,7 +35,7 @@ class SmsSubmitTest {
 
     private SmsSubmitContext newMachineContext() { SmsSubmitContext c = new SmsSubmitContext(); machines.add(c); return c; }
 
-    private static SmsFrame request(String text) { return SmsFrame.http("10.10.188.7:7480", "unilever", "BRAND", "8801711000002", text); }
+    private static SmsFrame request(String text) { return SmsFrame.http("10.10.188.7:7480", "unilever", "unilever-pw", "BRAND", "8801711000002", text); }
 
     @Test
     void a_message_submitted_accepted_and_delivered_then_the_pooled_machines_are_clean() throws Exception {
@@ -62,7 +62,7 @@ class SmsSubmitTest {
         assertEquals(List.of("IDLE", "INIT", "SUBMITTING", "SUBMITTED", "TERMINATED"), machines.get(0).road);
         b.assertBackInThePools("m-1");
 
-        b.frame("m-2", SmsFrame.kafka("sms_in_btcl", "unilever", "BRAND", "8801711000003", "hi"));   // the Kafka door, one segment
+        b.frame("m-2", SmsFrame.kafka("sms_in_btcl", 701, "BRAND", "8801711000003", "hi"));   // the Kafka door, one segment
         assertEquals("topic", ((SmsFacts) b.script.last().facts).ingressKind());
         assertEquals(List.of("IDLE", "INIT", "SUBMITTING"), machines.get(1).road);
         assertNull(machines.get(1).messageId, "nothing of m-1 on m-2's machine");

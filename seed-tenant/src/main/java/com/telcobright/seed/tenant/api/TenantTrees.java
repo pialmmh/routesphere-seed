@@ -1,6 +1,5 @@
 package com.telcobright.seed.tenant.api;
 
-import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.context.api.Snapshot;
 import com.telcobright.seed.context.api.TenantContexts;
@@ -9,16 +8,12 @@ import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.tenant.dependencies.TenantTreesBuilder;
 import com.telcobright.seed.tenant.internal.PartnerTiers;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.telcobright.seed.tenant.internal.RootInstall;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The tenant trees a product walks — routesphere's shape on the seed's cache (the owner, 2026-10-09: "each sibling-level tenant
@@ -39,17 +34,28 @@ import java.util.concurrent.atomic.AtomicLong;
  * inside one tree only — every operator's root starts at partner 1) and answered from the CURRENT snapshot, so a session admitted after
  * a reload walks the new tree and one admitted before keeps the tiers it was given. A tenant the directory does not list, or whose every
  * load failed, is absent — never a sibling's tree, never a default. An id two tiers of one tree hold names nobody (D5,
- * {@link PartnerTiers}): one partner map per snapshot version, built once per reload.
+ * {@link PartnerTiers}).
+ *
+ * <p><b>Built once per snapshot, never per session</b> (P1-O): seed-context's swap installs every loaded tree through {@link RootInstall} —
+ * the base's {@link RootTree} with its index and the D5 map, carried ON the snapshot — so {@link #snapshot} hands every session the same
+ * instance, and a served root named by its code or its database name is found by one get, never by a walk of the served roots.
  */
 public final class TenantTrees implements TenantLookup, AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(TenantTrees.class);
-
     private final TenantContexts<Tenant> contexts;
-    private final Map<String, PartnerTiers> partnerTiers = new ConcurrentHashMap<>();
-    private final AtomicLong walks = new AtomicLong();
+    private final RootInstall install;
 
-    public TenantTrees(TenantContexts<Tenant> contexts) { this.contexts = contexts; }
+    /** Trees over contexts built by {@link TenantTreesBuilder} with {@code install} as their indexer: every snapshot comes installed. */
+    public TenantTrees(TenantContexts<Tenant> contexts, RootInstall install) {
+        this.contexts = contexts;
+        this.install = install;
+    }
+
+    /**
+     * Trees over contexts of one's own, built without the install step: each snapshot is installed at its first ask (said once). Use
+     * {@link #builder()}: it installs every snapshot at its load.
+     */
+    public TenantTrees(TenantContexts<Tenant> contexts) { this(contexts, new RootInstall()); }
 
     public static TenantTreesBuilder builder() { return new TenantTreesBuilder(); }
 
@@ -79,36 +85,25 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
     // ── a served tenant's own tree: what a product's flow asks ──
 
     /**
-     * The partner's entry INSIDE THE SERVED TENANT's tree: the tier that holds it, from that snapshot's partner map (built once per
-     * snapshot, never a walk per session), and the partner row of that tier. Null = no such tenant, or its tree holds no such partner
-     * in exactly one tier: for this session the partner does not exist.
+     * The partner's entry INSIDE THE SERVED TENANT's tree: the tier that holds it, from that snapshot's index (built at its install, never a
+     * walk per session), and the partner row of that tier. Null = no such tenant, or its tree holds no such partner in exactly one tier: for
+     * this session the partner does not exist.
      */
     public EntryPartner entryIn(String servedTenant, int partnerId) {
-        Optional<Snapshot<Tenant>> snap = find(servedTenant);
-        if (snap.isEmpty()) return null;
-        Tenant tier = partnerTiersOf(servedTenant, snap.get()).byPartner().get(partnerId);
-        Partner partner = tier == null || tier.getContext() == null || tier.getContext().getPartners() == null ? null : tier.getContext().getPartners().get(partnerId);
-        return partner == null ? null : new EntryPartner(tier, partner);
+        return find(servedTenant).map(snap -> install.of(snap).tree().entryOf(partnerId)).orElse(null);
     }
 
     /** The tiers that hold the id when MORE THAN ONE tier of the served tenant's tree does (schema order): such an id names nobody. */
     public List<String> tiersHoldingTwice(String servedTenant, int partnerId) {
-        Optional<Snapshot<Tenant>> snap = find(servedTenant);
-        if (snap.isEmpty()) return List.of();
-        return partnerTiersOf(servedTenant, snap.get()).heldByTwo().getOrDefault(partnerId, List.of());
+        return find(servedTenant).map(snap -> install.of(snap).partnerTiers().heldByTwo().getOrDefault(partnerId, List.of())).orElse(List.of());
     }
 
-    private PartnerTiers partnerTiersOf(String tenantId, Snapshot<Tenant> snap) {
-        PartnerTiers known = partnerTiers.get(tenantId);
-        if (known != null && known.version() == snap.version()) return known;
-        walks.incrementAndGet();
-        PartnerTiers fresh = PartnerTiers.of(tenantId, snap.version(), snap.context(), log);
-        partnerTiers.put(tenantId, fresh);
-        return fresh;
-    }
+    /** How many partner maps were built: one per loaded snapshot (its install), none on any ask (a test reads it). */
+    public long walks() { return install.rootIndexBuilds(); }
 
-    /** How many partner maps were built: one per loaded snapshot, none on a second ask (a test reads it). */
-    public long walks() { return walks.get(); }
+    /** P1-O · The root indexes built: one per served root per load — never one per session. */
+    @Override
+    public long rootIndexBuilds() { return install.rootIndexBuilds(); }
 
     // ── TenantLookup: the base's questions, each inside the tree of the root it names ──
 
@@ -123,35 +118,27 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
     }
 
     /**
-     * The served root whose tenant CODE ({@code Tenant.name}) is {@code code} — a handful of served roots compared by name, no tree walked;
-     * two served ids serving ONE tree answer the same root. The base's identification rules name a tenant by code and never see a schema
-     * name; the facade makes every served root's name its code (ARCH-0077-E).
+     * The served root whose tenant CODE ({@code Tenant.name}) is {@code code} — one get on the codes the installs saw, no tree walked; two
+     * served ids serving ONE tree answer the same root. The base's identification rules name a tenant by code and never see a schema name;
+     * the facade makes every served root's name its code (ARCH-0077-E).
      */
     @Override
     public Optional<Tenant> rootOfCode(String code) {
-        if (code == null) return Optional.empty();
-        return contexts.tenants().stream().map(this::find).flatMap(Optional::stream).map(Snapshot::context)
-                .filter(root -> code.equals(root.getName())).findFirst();
+        return Optional.ofNullable(install.servedIdOfCode(code)).flatMap(this::find).map(Snapshot::context)
+            .filter(root -> code.equals(root.getName()));
     }
 
     /**
-     * §D · The served root's CURRENT snapshot with its own version — what a session of the base takes at its start and keeps to its end.
-     * The doorbell ({@code config_event_loader_<root>}) reloads THAT root only: the next session takes the new version, a running one
-     * finishes on the tree it started with (the snapshot is immutable, swapped whole). The root is the served id (the tenant code the
-     * identification rule names), else a served root's code or database name. Empty = not served, or never loaded.
+     * §D · The served root's CURRENT snapshot with its own version — what a session of the base takes at its start and keeps to its end:
+     * the instance installed at its load (P1-O), the same for every session of that snapshot. The doorbell ({@code config_event_loader_<root>})
+     * reloads THAT root only: the next session takes the new version, a running one finishes on the tree it started with (the snapshot is
+     * immutable, swapped whole). The root is the served id (the tenant code the identification rule names), else a served root's code or
+     * database name. Empty = not served, or never loaded.
      */
     @Override
     public Optional<RootTree> snapshot(String root) {
         if (root == null) return Optional.empty();
-        Optional<Snapshot<Tenant>> own = find(root);
-        if (own.isPresent()) return own.map(s -> RootTree.of(root, s.version(), s.context()));
-        for (String id : contexts.tenants()) {
-            Optional<Snapshot<Tenant>> s = find(id);
-            if (s.isPresent() && (root.equals(s.get().context().getName()) || root.equals(s.get().context().getDbName()))) {
-                return s.map(snap -> RootTree.of(root, snap.version(), snap.context()));
-            }
-        }
-        return Optional.empty();
+        return servedSnapshotNamed(root).map(snap -> install.of(snap).tree());
     }
 
     @Override
@@ -160,19 +147,24 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
         return root(rootDbName).map(tree -> tree.findTenantByDbName(dbName));
     }
 
+    /** The snapshot of the root named by its served id, else by its code, else by its database name — gets only. */
+    private Optional<Snapshot<Tenant>> servedSnapshotNamed(String root) {
+        Optional<Snapshot<Tenant>> own = find(root);
+        if (own.isPresent()) return own;
+        Optional<Snapshot<Tenant>> byCode = Optional.ofNullable(install.servedIdOfCode(root)).flatMap(this::find).filter(s -> root.equals(s.context().getName()));
+        if (byCode.isPresent()) return byCode;
+        return Optional.ofNullable(install.servedIdOfRootDb(root)).flatMap(this::find).filter(s -> root.equals(s.context().getDbName()));
+    }
+
     /**
      * The served tenant whose tree has that root: the served id itself when it names the root (the common case), else the served tenant
-     * whose root's database name is it (two served tenants may serve ONE tree: the first answers — it is the same tree). A handful of
-     * root names compared; no tree walked.
+     * whose root's database name is it (two served tenants may serve ONE tree: the last installed answers — it is the same tree). Gets only.
      */
     private Optional<String> servingTheTreeOf(String rootDbName) {
         if (rootDbName == null) return Optional.empty();
         Optional<Snapshot<Tenant>> own = find(rootDbName);
         if (own.isPresent() && rootDbName.equals(own.get().context().getDbName())) return Optional.of(rootDbName);
-        for (String id : contexts.tenants()) {
-            Optional<Snapshot<Tenant>> s = find(id);
-            if (s.isPresent() && rootDbName.equals(s.get().context().getDbName())) return Optional.of(id);
-        }
-        return Optional.empty();
+        String id = install.servedIdOfRootDb(rootDbName);
+        return Optional.ofNullable(id).filter(served -> find(served).filter(s -> rootDbName.equals(s.context().getDbName())).isPresent());
     }
 }

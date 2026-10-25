@@ -20,7 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * P1-E item 2 · (c) {@code identifyPartner} — who pays at the leaf, every lane's own answer (R2), written with the base's helpers that find
  * a partner INSIDE the session's own tree: {@code byPartnerId} (the ad's advertiser, the lab's dial) and {@code byPartnerName}. A partner
- * of another root, a name two partners share, no id — nobody (refused PARTNER_NOT_FOUND by the base).
+ * of another root, a name two partners share, no id — nobody (refused PARTNER_NOT_FOUND by the base). P1-O (the architect's A2): a name is
+ * EXACT — one get on the snapshot's index, no case-blind fallback loop — so {@code twin} and {@code Twin} are two names.
  */
 class IdentifyPartnerTest {
 
@@ -28,7 +29,7 @@ class IdentifyPartnerTest {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("btcl").partner(1, "btcl-client", PartnerType.CUSTOMER).partner(44, "res_44", PartnerType.RESELLER);
         b.tenant("res_44", "btcl").partner(5, "Unilever", PartnerType.CUSTOMER).partner(6, "Twin", PartnerType.CUSTOMER).partner(7, "res_44_7", PartnerType.RESELLER);
-        b.tenant("res_44_7", "res_44").partner(3, "twin", PartnerType.CUSTOMER);
+        b.tenant("res_44_7", "res_44").partner(3, "Twin", PartnerType.CUSTOMER).partner(4, "twin", PartnerType.CUSTOMER);
         return b.build();
     }
 
@@ -65,15 +66,17 @@ class IdentifyPartnerTest {
     }
 
     @Test
-    void byPartnerName_findsTheOnePartnerWithThatName_withoutCase() {
+    void byPartnerName_findsTheOnePartnerWithExactlyThatName() {
         assertThat(flow.byPartnerName(onBtcl(), "Unilever").dbName()).isEqualTo("res_44");
-        assertThat(flow.byPartnerName(onBtcl(), "unilever").partner().getIdPartner()).isEqualTo(5);
+        assertThat(flow.byPartnerName(onBtcl(), "Unilever").partner().getIdPartner()).isEqualTo(5);
+        assertThat(flow.byPartnerName(onBtcl(), "unilever")).as("P1-O: exact — no case-blind fallback").isNull();
+        assertThat(flow.byPartnerName(onBtcl(), "twin").partner().getIdPartner()).as("exact: one partner has this name").isEqualTo(4);
         assertThat(flow.byPartnerName(onBtcl(), "btcl-client").dbName()).isEqualTo("btcl");
     }
 
     @Test
     void byPartnerName_thatTwoPartnersShare_orNobodyHas_isNobody() {
-        assertThat(flow.byPartnerName(onBtcl(), "twin")).as("Twin of res_44 and twin of res_44_7: a name two partners share names nobody").isNull();
+        assertThat(flow.byPartnerName(onBtcl(), "Twin")).as("Twin of res_44 and Twin of res_44_7: a name two partners share names nobody").isNull();
         assertThat(flow.byPartnerName(onBtcl(), "tele2-client")).as("another root's").isNull();
         assertThat(flow.byPartnerName(onBtcl(), null)).isNull();
         assertThat(flow.byPartnerName(onBtcl(), " ")).isNull();

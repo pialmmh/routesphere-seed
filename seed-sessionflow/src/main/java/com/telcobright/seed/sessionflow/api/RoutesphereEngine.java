@@ -226,7 +226,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
         var c = flow.kit().counters();
         return new PoolStats(flow.kit().settings().pool(), registry.activeCellCount(), supervisorsBuilt(), c.launched.get(), c.busy.get(),
             c.ended.get(), c.cdrPublished.get(), c.cdrLost.get(), c.owed.get(), flow.kit().slots().held(), registry.activeIdCount(),
-            c.refusedNoRoot.get());
+            c.refusedNoRoot.get(), flow.kit().rootIndexBuilds());
     }
 
     /** P1-K · What the door said of the requests it refused for no root — the last lines (the operations' view; a test's). */

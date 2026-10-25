@@ -3,6 +3,7 @@ package com.telcobright.seed.sessionflow.samples.sms;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.campaign.api.CampaignKind;
 import com.telcobright.seed.campaign.api.CampaignTask;
+import com.telcobright.seed.sessionflow.api.Candidate;
 import com.telcobright.seed.sessionflow.api.Ingress;
 import com.telcobright.seed.sessionflow.api.Lookups;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
@@ -24,21 +25,20 @@ import java.util.Map;
 
 /**
  * The SMS on the base, written with the builder (R5: "big lanes subclass; small lanes use the builder") — decisions only, each a small
- * lambda or a method of this class: the root by the door (the HTTP listener or the Kafka topic), the entry partner by the user inside that
- * root, every segment reserved at each tier's per-segment rate, the root's SMSCs in failover order, a refused submit failed over by cause;
+ * lambda or a method of this class: the root by the door (the HTTP listener or the Kafka topic), the entry partner inside that root — P1-O:
+ * the HTTP door through the client's ROUTE credentials ({@code byRouteCredentials}: a wrong or unknown one is refused
+ * {@code CREDENTIALS_REJECTED}, the client answered 401), the Kafka door by the partner its campaign names ({@code byPartnerId}) — every
+ * segment reserved at each tier's per-segment rate, the root's SMSCs in failover order, a refused submit failed over by cause;
  * the receipt decides the money (design §5 and §7, the owner's rule of 2026-10-16: refund optional by config per lane): delivered pays its
  * reserve, an accepted message that was not delivered takes the lane's refund rule, a message no SMSC accepted gives every reserve back.
  */
 public final class SmsFlow {
 
-    private final Map<String, Integer> partnerByUser;
     private final Map<String, BigDecimal> ratePerSegment;
     private final Map<String, List<Smsc>> smscsByRoot;
     private final boolean refundOnNonDelivery;
 
-    private SmsFlow(Map<String, Integer> partnerByUser, Map<String, BigDecimal> ratePerSegment, Map<String, List<Smsc>> smscsByRoot,
-                    boolean refundOnNonDelivery) {
-        this.partnerByUser = Map.copyOf(partnerByUser);
+    private SmsFlow(Map<String, BigDecimal> ratePerSegment, Map<String, List<Smsc>> smscsByRoot, boolean refundOnNonDelivery) {
         this.ratePerSegment = Map.copyOf(ratePerSegment);
         this.smscsByRoot = Map.copyOf(smscsByRoot);
         this.refundOnNonDelivery = refundOnNonDelivery;
@@ -47,18 +47,17 @@ public final class SmsFlow {
     /**
      * The SMS lane on this kit.
      *
-     * @param partnerByUser        the entry partner by {@code <root>|<user>}
      * @param ratePerSegment       a tier's partner's rate per segment, by {@code <tier>#<partner>}
      * @param smscsByRoot          each root's SMSCs, in failover order
      * @param refundOnNonDelivery  the lane's config: an accepted message that was not delivered is refunded (true) or charged (false)
      */
-    public static RoutesphereFlow<SmsContext> of(RoutesphereKit kit, Map<String, Integer> partnerByUser, Map<String, BigDecimal> ratePerSegment,
-                                                Map<String, List<Smsc>> smscsByRoot, boolean refundOnNonDelivery) {
-        SmsFlow sms = new SmsFlow(partnerByUser, ratePerSegment, smscsByRoot, refundOnNonDelivery);
+    public static RoutesphereFlow<SmsContext> of(RoutesphereKit kit, Map<String, BigDecimal> ratePerSegment, Map<String, List<Smsc>> smscsByRoot,
+                                                boolean refundOnNonDelivery) {
+        SmsFlow sms = new SmsFlow(ratePerSegment, smscsByRoot, refundOnNonDelivery);
         return RoutesphereApp.<SmsContext>builder("SmsSupervisor")
             .serviceGroup(0)
             .identifyRootLevelTenant(SmsFlow::rootByTheDoor)
-            .identifyPartner((m, candidate, find) -> find.byPartnerId(m, sms.partnerByUser.get(m.root + "|" + m.user)))
+            .identifyPartner(SmsFlow::thePayer)
             .rateAtLevel(sms::everySegment)
             .route(sms::theRootsSmscs)
             .delivered((m, outcome) -> SmsSubmit.DELIVERED.equals(m.endCause))
@@ -73,6 +72,15 @@ public final class SmsFlow {
     static String rootByTheDoor(RoutesphereFacts facts, Lookups find) {
         SmsFacts f = (SmsFacts) facts;
         return Ingress.TOPIC.equals(f.ingressKind()) ? find.byTopic(f.ingressMatch()) : find.byListener(f.ingressMatch());
+    }
+
+    /**
+     * (c) Who pays: the HTTP door — the client's route credentials (the route's {@code route_metadata}: user name + password); the Kafka
+     * door — the partner the campaign names.
+     */
+    static Tier thePayer(SmsContext m, Candidate candidate, Lookups find) {
+        SmsFacts f = (SmsFacts) m.facts;
+        return Ingress.TOPIC.equals(f.ingressKind()) ? find.byPartnerId(m, f.partnerId()) : find.byRouteCredentials(m, f.user(), f.password());
     }
 
     /** The message → its task: the user, the numbers, the segments; an empty message is refused. */

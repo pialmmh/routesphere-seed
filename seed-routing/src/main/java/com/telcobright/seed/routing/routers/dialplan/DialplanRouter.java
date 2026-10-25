@@ -11,10 +11,10 @@ import com.telcobright.seed.routing.spi.DialplanSource;
 import com.telcobright.seed.routing.spi.DialplanSource.DialplanShare;
 import com.telcobright.seed.routing.spi.DialplanSource.Prefix;
 import com.telcobright.seed.routing.spi.DialplanSource.RouteEntry;
+import com.telcobright.seed.routing.spi.PrefixTable;
 import com.telcobright.seed.routing.spi.RouteDirectory;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -34,6 +34,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * Attributes read: {@code called}, {@code calling}, {@code match} (strict | blank). What routesphere's five copies
  * of this walk never had comes free with the shared group selection: a route that is DOWN is skipped, and the
  * decision carries the failover order. With {@link RouteDirectory#ALL_UP} the pick is exactly today's.
+ *
+ * <p>P1-O · the longest match is one get per prefix length present on the source's {@link PrefixTable} — never a walk of its rows.
  */
 public final class DialplanRouter implements RequestRouter {
     public static final String TYPE = "dialplan";
@@ -55,7 +57,7 @@ public final class DialplanRouter implements RequestRouter {
         String called = request.get("called");
         String calling = request.get("calling");
         boolean strict = "strict".equalsIgnoreCase(request.get("match"));
-        List<Prefix> prefixes = source.prefixesOf(request);
+        PrefixTable prefixes = source.prefixTableOf(request);
         if (prefixes == null || prefixes.isEmpty()) {
             if (trace) lines.add("the request's source has no dialplan prefixes (unknown partner or call source)");
             return refused(RoutingRefusal.NO_RULE_MATCHED, "no dialplan prefixes for the source", null, null, lines);
@@ -87,31 +89,20 @@ public final class DialplanRouter implements RequestRouter {
         return RoutingDecision.refused(why, detail, TYPE, dialplan, 0, rule, lines);
     }
 
-    /** The three-step longest-prefix match of {@code BaseDialplanRoutingService}, unchanged. */
-    static Prefix longest(List<Prefix> prefixes, String called, String calling, boolean strict, List<String> lines) {
-        Prefix both = prefixes.stream()
-            .filter(p -> !p.calledPrefix().isEmpty() && !p.callingPrefix().isEmpty()
-                && called != null && called.startsWith(p.calledPrefix())
-                && calling != null && calling.startsWith(p.callingPrefix()))
-            .max(Comparator.comparingInt((Prefix p) -> p.calledPrefix().length()).thenComparingInt(p -> p.callingPrefix().length()))
-            .orElse(null);
+    /** The three-step longest-prefix match of {@code BaseDialplanRoutingService}, unchanged — each step a get per prefix length (P1-O). */
+    static Prefix longest(PrefixTable prefixes, String called, String calling, boolean strict, List<String> lines) {
+        Prefix both = prefixes.both(called, calling);
         if (both != null || strict) {
             if (lines != null) lines.add(both == null ? "strict match: no prefix matches BOTH called and calling"
                 : "prefix " + both.id() + ": called " + both.calledPrefix() + " AND calling " + both.callingPrefix() + " match");
             return both;
         }
-        Prefix byCalled = prefixes.stream()
-            .filter(p -> !p.calledPrefix().isEmpty() && called != null && called.startsWith(p.calledPrefix()))
-            .max(Comparator.comparingInt(p -> p.calledPrefix().length()))
-            .orElse(null);
+        Prefix byCalled = prefixes.calledOnly(called);
         if (byCalled != null) {
             if (lines != null) lines.add("prefix " + byCalled.id() + ": called " + byCalled.calledPrefix() + " matches (longest)");
             return byCalled;
         }
-        Prefix byCalling = prefixes.stream()
-            .filter(p -> !p.callingPrefix().isEmpty() && calling != null && calling.startsWith(p.callingPrefix()))
-            .max(Comparator.comparingInt(p -> p.callingPrefix().length()))
-            .orElse(null);
+        Prefix byCalling = prefixes.callingOnly(calling);
         if (lines != null) lines.add(byCalling == null ? "no prefix matches called=" + called + " or calling=" + calling
             : "prefix " + byCalling.id() + ": calling " + byCalling.callingPrefix() + " matches (longest)");
         return byCalling;

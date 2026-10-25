@@ -281,21 +281,54 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —
      * the caller's partner (by its ip or number prefix); the ad — the chosen campaign's advertiser (the candidate names it); the WiFi — the
      * subscriber; the SMS — the bind's account. The helpers find a partner inside the session's tree: {@link #byPartnerId},
-     * {@link #byPartnerName}. Null = nobody: {@code PARTNER_NOT_FOUND} (a free candidate runs with no tier).
+     * {@link #byPartnerName} and, P1-O, through its route: {@link #byRouteCredentials}, {@link #byIp}, {@link #byDomain},
+     * {@link #bySipAccount}, {@link #byPrefix}, {@link #bySystemId}. Null = nobody: {@code PARTNER_NOT_FOUND}, or the cause the helper
+     * recorded ({@code CREDENTIALS_REJECTED}) (a free candidate runs with no tier).
      */
     protected abstract Tier identifyPartner(C ctx, Candidate candidate);
 
     /** (c) helper · The leaf of a partner whose id is known, INSIDE THE SESSION'S OWN TREE; null = no id, or this tree holds no such partner. */
     protected final Tier byPartnerId(C ctx, Integer partnerId) { return kit.lookups().byPartnerId(ctx, partnerId); }
 
-    /** (c) helper · The leaf of the ONE partner of the session's own tree with this name (no case); null = none, or two partners share it. */
+    /** (c) helper · The leaf of the ONE partner of the session's own tree with exactly this name; null = none, or two partners share it. */
     protected final Tier byPartnerName(C ctx, String partnerName) { return kit.lookups().byPartnerName(ctx, partnerName); }
 
     /**
-     * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}
-     * → partner {@code <id>} of this tier, else the partner named as the tenant below ({@link #resellerPartnerOf}).
+     * (c) helper · P1-O · The leaf of the route a client authenticates on (user name + password, the SMS lane's {@code route_metadata}); an
+     * unknown user name or a wrong password → null and the session refused {@code CREDENTIALS_REJECTED}. The password is never kept or logged.
      */
-    protected Partner partnerAbove(Tier tier) { return resellerPartnerOf(tier.below().tenant(), tier.tenant()); }
+    protected final Tier byRouteCredentials(C ctx, String username, String password) { return kit.lookups().byRouteCredentials(ctx, username, password); }
+
+    /** (c) helper · P1-O · The same check answering the route itself (its name names the lane's caller); null = refused as above. */
+    protected final RouteEntry routeOfCredentials(C ctx, String username, String password) { return kit.lookups().routeOfCredentials(ctx, username, password); }
+
+    /** (c) helper · P1-O · {@link #byRouteCredentials} under the SMPP bind's name. */
+    protected final Tier bySystemId(C ctx, String systemId, String password) { return kit.lookups().bySystemId(ctx, systemId, password); }
+
+    /** (c) helper · P1-O · The leaf of the route served at this address, as served; null = none. */
+    protected final Tier byIp(C ctx, String ip) { return kit.lookups().byIp(ctx, ip); }
+
+    /** (c) helper · P1-O · The leaf of the route served at {@code ip:port}, else at the bare ip — the port the lane saw, no default. */
+    protected final Tier byIp(C ctx, String ip, int port) { return kit.lookups().byIp(ctx, ip, port); }
+
+    /** (c) helper · P1-O · The leaf of the route served at this domain; null = none. */
+    protected final Tier byDomain(C ctx, String domain) { return kit.lookups().byDomain(ctx, domain); }
+
+    /** (c) helper · P1-O · The leaf of a SIP account's partner; null = none. */
+    protected final Tier bySipAccount(C ctx, String account) { return kit.lookups().bySipAccount(ctx, account); }
+
+    /** (c) helper · P1-O · The leaf of the partner of the longest prefix of the number the tree serves; null = none. */
+    protected final Tier byPrefix(C ctx, String number) { return kit.lookups().byPrefix(ctx, number); }
+
+    /** (c) helper · P1-O · Every route of the leaf's partner in its tier (one partner, many routes). */
+    protected final List<com.telcobright.rtc.domainmodel.mysqlentity.Route> routesOf(Tier leaf) { return kit.lookups().routesOf(leaf); }
+
+    /**
+     * (c) Above the leaf: the partner that pays at {@code tier} for the tenant below it — the call switch's live rule: {@code res_<id>}
+     * → partner {@code <id>} of this tier; only when this tier has no partner of that id, the partner named EXACTLY as the tenant below
+     * ({@link #resellerPartnerOf}) — a get on the session's snapshot index (P1-O), never a walk of the tier's partners.
+     */
+    protected Partner partnerAbove(Tier tier) { return partnerStandingFor(tier.below().tenant(), tier.tenant(), tier.index()); }
 
     /**
      * (d) Where the session goes: a call — the dialplan at the root, hops in order; an ad — the creative of the candidate; an SMS — the
@@ -594,32 +627,33 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /**
      * The parent's partner that stands for the child tenant — the call switch's LIVE rule
      * ({@code CallAdmissionController.identifyPartnerAtParentLevel}): the partner whose id the child's database name ENDS with
-     * ({@code res_233} → partner 233 of the root, {@code res_233_2} → partner 2 of {@code res_233}), else the partner NAMED as the child
-     * tenant (its name or database name, without case). When both answer and disagree, the id wins (logged). No partner type is asked
-     * (the call's data types a reseller 4, the ad's {@link PartnerType#RESELLER} = 100).
+     * ({@code res_233} → partner 233 of the root, {@code res_233_2} → partner 2 of {@code res_233}); ONLY when the parent has no partner of
+     * that id, the partner of the parent named EXACTLY as the child (its name, else its database name). No partner type is asked (the
+     * call's data types a reseller 4, the ad's {@link PartnerType#RESELLER} = 100). P1-O: gets only — the id, then at most two names; for a
+     * tier made by hand the names are rtc-domain's own map of the parent's context ({@code partnerNameWisePartners}).
      */
-    public static Partner resellerPartnerOf(Tenant child, Tenant parent) {
-        if (child == null || parent == null || parent.getContext() == null || parent.getContext().getPartners() == null) return null;
+    public static Partner resellerPartnerOf(Tenant child, Tenant parent) { return partnerStandingFor(child, parent, null); }
+
+    /** The same rule, the names asked of the session's snapshot index when the tier was found through it (null = a tier made by hand). */
+    static Partner partnerStandingFor(Tenant child, Tenant parent, RootIndex index) {
+        if (child == null || parent == null || parent.getContext().getPartners() == null) return null;
         Partner byId = parent.getContext().getPartners().get(idAtTheEndOf(child.getDbName()));
-        Partner byName = partnerNamedAs(child, parent);
-        if (byId != null && byName != null && byId != byName) {
-            log.warn("tier {}: partner {} ({}) is NAMED as the tenant below, but its database name ends with partner {} ({}): the id wins",
-                parent.getDbName(), byName.getIdPartner(), byName.getPartnerName(), byId.getIdPartner(), byId.getPartnerName());
-        }
-        return byId != null ? byId : byName;
+        return byId != null ? byId : partnerNamedAs(child, parent, index);
     }
 
-    private static Partner partnerNamedAs(Tenant child, Tenant parent) {
-        String childName = child.getName() == null || child.getName().isBlank() ? child.getDbName() : child.getName();
-        for (Partner p : parent.getContext().getPartners().values()) {
-            if (p != null && namesTenant(p.getPartnerName(), childName, child.getDbName())) return p;
-        }
-        return null;
+    /** Only on a miss of the id: the parent's partner named exactly as the child — its name, else its database name. */
+    private static Partner partnerNamedAs(Tenant child, Tenant parent, RootIndex index) {
+        Partner byName = partnerNamedIn(parent, displayNameOf(child), index);
+        return byName != null ? byName : partnerNamedIn(parent, child.getDbName(), index);
     }
 
-    private static boolean namesTenant(String partnerName, String tenantName, String tenantDbName) {
-        if (partnerName == null) return false;
-        return partnerName.equalsIgnoreCase(tenantName) || partnerName.equalsIgnoreCase(tenantDbName);
+    private static Partner partnerNamedIn(Tenant parent, String name, RootIndex index) {
+        if (name == null) return null;
+        return index != null ? index.partnerNamedIn(parent, name) : parent.getContext().getPartnerNameWisePartners().get(name);
+    }
+
+    private static String displayNameOf(Tenant tenant) {
+        return tenant.getName() == null || tenant.getName().isBlank() ? tenant.getDbName() : tenant.getName();
     }
 
     /** The number a schema name ends with after its last underscore; -1 when it ends with none. */

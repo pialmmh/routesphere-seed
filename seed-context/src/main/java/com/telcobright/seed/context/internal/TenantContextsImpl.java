@@ -9,6 +9,7 @@ import com.telcobright.seed.context.publishes.ContextEvent;
 import com.telcobright.seed.context.publishes.ContextListener;
 import com.telcobright.seed.context.spi.ContextLoader;
 import com.telcobright.seed.context.spi.SecretResolver;
+import com.telcobright.seed.context.spi.SnapshotIndexer;
 import com.telcobright.seed.context.spi.TenantDirectory;
 import com.telcobright.seed.context.spi.TopicNaming;
 import org.slf4j.Logger;
@@ -43,6 +44,7 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
     private final String kafkaBootstrap, topicBase, kafkaGroupId;
     private final TopicNaming naming;
     private final boolean kafkaFailFast;
+    private final SnapshotIndexer<T> indexer;
 
     private final Map<String, TenantCell<T>> cells = new ConcurrentHashMap<>();
     private final Map<String, String> tenantByTopic = new ConcurrentHashMap<>();
@@ -54,6 +56,15 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
                               ContextListener listener, long debounceMs, Duration backstopEvery, Duration loadTimeout,
                               Duration startTimeout, String kafkaBootstrap, String topicBase, TopicNaming naming,
                               String kafkaGroupId, boolean kafkaFailFast) {
+        this(directory, loader, secrets, listener, debounceMs, backstopEvery, loadTimeout, startTimeout, kafkaBootstrap, topicBase, naming,
+            kafkaGroupId, kafkaFailFast, SnapshotIndexer.none());
+    }
+
+    /** P1-O · the same, with the product's {@link SnapshotIndexer}: every snapshot is installed with its index, built once at the swap. */
+    public TenantContextsImpl(TenantDirectory directory, ContextLoader<T> loader, SecretResolver secrets,
+                              ContextListener listener, long debounceMs, Duration backstopEvery, Duration loadTimeout,
+                              Duration startTimeout, String kafkaBootstrap, String topicBase, TopicNaming naming,
+                              String kafkaGroupId, boolean kafkaFailFast, SnapshotIndexer<T> indexer) {
         this.directory = directory;
         this.loader = loader;
         this.secrets = secrets;
@@ -67,6 +78,7 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
         this.naming = naming;
         this.kafkaGroupId = kafkaGroupId;
         this.kafkaFailFast = kafkaFailFast;
+        this.indexer = indexer;
     }
 
     // ── lifecycle ──────────────────────────────────────────────────────────
@@ -157,7 +169,7 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
         List<CompletableFuture<Snapshot<T>>> loads = new ArrayList<>();
         for (String id : active) {
             if (cells.containsKey(id)) continue;
-            TenantCell<T> cell = new TenantCell<>(id, loader, secrets, listener, debounceMs, loadTimeout);
+            TenantCell<T> cell = new TenantCell<>(id, loader, secrets, listener, debounceMs, loadTimeout, indexer);
             cells.put(id, cell);
             listener.on(new ContextEvent.TenantAdded(id));
             loads.add(cell.reload(reason));
