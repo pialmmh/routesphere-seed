@@ -55,3 +55,13 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   real reason", with the three reasons and the lane's contract. LiveTrees implementers (seed-tenant `LiveTenantTrees`, the tests' fakes)
   are unchanged: a nested class, no new abstract method. The whole reactor from clean in the worktree: **698/0/0/3** (13:48–13:50; +3).
   Next: item 3.
+- 2026-10-25 13:52 · **item 3 done**: two notes in the sessionflow README §4.0, after the index's paragraph. (a) "`byIp` asks the port
+  first, with no `:5060` default": the seed's order (`ip:port`, then the bare ip, never `ip:5060`) against the live switch's
+  (`matchRouteKey`, read on routesphere main: the bare ip first, then `ip:<port seen>`, then `ip:5060`). Why: the port the lane saw is the
+  truth (in the live order a trunk served at both the bare ip and `ip:port` for two partners always answers the bare ip's partner, and the
+  `ip:port` route is never reached); a default port names a route nobody declared for this request (a call from `ip:7023` is not the
+  partner of `ip:5060`); a lane without the port asks `byIp(ctx, ip)`. (b) "Legacy MySQL trees repeat partner ids": every `res_*` numbers
+  from 1, so `byPartnerId` names nobody for a repeated id (D5, by design); a lane identifies by route key / SIP account / route credentials;
+  `partnerAbove` reads the parent tier's own `partners` by the id at the end of the child's database name (and, on a miss, the parent tier's
+  own exact name: eee569f), never the tree-wide `byPartnerId`. Both facts checked in the code first (`Lookups.byIp`,
+  `RootIndex.partner`, `RoutesphereFlow.partnerStandingFor`). The §9 history line for P1-P. Docs only: no test reads the README.

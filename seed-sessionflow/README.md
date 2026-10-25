@@ -208,6 +208,22 @@ one tier — it leaves its map, `RootIndex.heldByTwo()` lists it, ONE WARN at th
 out, said once. `routesOf(leaf)` gives a partner's routes (`partnerVsRoutes`: one partner, many routes). The counter
 `rootIndexBuilds` (`TenantLookup`, `RoutesphereKit`, `PoolStats`) reads roots × loads — never sessions.
 
+**`byIp` asks the port first, with no `:5060` default (P1-P).** `byIp(ctx, ip, port)` asks `ip:port` first, then the bare `ip`, and never
+`ip:5060`. The live switch asks the other way round (routesphere-core `IdentifyEntryPartnerStep.matchRouteKey`): the bare ip FIRST, then
+`ip:<the port seen>`, then `ip:5060` as a default for a caller whose port was not captured. The seed's order is on purpose. The port the lane
+saw is the truth: a route served at `ip:port` is declared for exactly that port, so it answers before the bare ip's. In the live order, a
+trunk served at the bare ip AND at `ip:port` for two partners always answers the bare ip's partner, and the `ip:port` route is never
+reached. A default port names a route nobody declared for this request: a call from `ip:7023` must not be taken for the partner of
+`ip:5060`. A lane that could not capture the port asks `byIp(ctx, ip)`, the bare key: no port is assumed.
+
+**Legacy MySQL trees repeat partner ids (P1-P).** On a legacy MySQL tree, each reseller database numbers its own partners: every `res_*`
+starts at 1, 2, …, so one id stands in many tiers. `byPartnerId` names nobody for such a repeated id. That is the D5 rule, by design: an id
+two tiers hold cannot say which tier's partner is meant. A lane on such a tree identifies its partner by a key the root holds once: the
+route key (`byIp`, `byDomain`), the SIP account (`bySipAccount`) or the route credentials (`byRouteCredentials`, `bySystemId`). The climb's
+`partnerAbove` is not affected. It reads the PARENT tier's own `partners` map by the id at the end of the child's database name
+(`res_233` → partner 233 of its parent; on a miss, the parent tier's own partner of the child's exact name), never the tree-wide
+`byPartnerId`.
+
 **Route credentials.** `byRouteCredentials` takes the user name and the secret a client sends (the aggregator SMS API's, the ad App's) and
 checks it against `route_metadata.extra2` through `internal/Secrets` (the architect's A4 as amended by A4′): a route's credentials are
 MACHINE secrets the system generates (`Secrets.newMachineSecret()`: 32 random bytes, base64url) and stores as
@@ -442,6 +458,12 @@ they run on the seed's 3.7.1 only.
 
 ## 9 · History
 
+- 2026-10-25, afternoon — P1-P (the night's follow-ups): seed-campaign's `CampaignService.servable(tenantId, campaignId, view)`, one
+  campaign by the ranking's own rule (written once, `PlacementRanker.mayServe`) and rotation step, one get by its id and no walk, for the ad
+  lane's capped campaign that ranked the tenant per view; the pending-root line names the real reason (`LiveTrees.LaneRefusal` → "the lane
+  `<app>` refused it: …", anything else → "prime-context does not serve its tree yet: …"); §4.0's notes on `byIp`'s order (the port first,
+  no `:5060`, against the live switch's) and on the repeated partner ids of legacy MySQL trees. State: `docs/agents/P1-P-state.md`, report
+  `docs/agents/P1-P-report.md`.
 - 2026-10-25, night — P1-O (the owner's identification rules of 2026-10-25; the architect's decisions A1–A9): the partner through its ROUTE
   — `byRouteCredentials` / `routeOfCredentials` / `bySystemId` (one cause `CREDENTIALS_REJECTED`, one decoy compare for an unknown user;
   `internal/Secrets`: a machine secret's `{sha256}` form — A4′ —, `{pbkdf2}` verified only, the legacy plaintext), `byIp` (the port first, no default), `byDomain`, `bySipAccount`, `byPrefix`, `routesOf` — every one a get on the `RootIndex`
