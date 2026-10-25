@@ -31,7 +31,9 @@ class ResellerPartnerRuleTest {
         .tenant("res_233_2", "res_233").partner(9001, "Leaf", PartnerType.CUSTOMER).and()
         .tenant("res_acme", "btcl").partner(801, "Shop", PartnerType.CUSTOMER).and()
         .tenant("res_beta", "btcl").partner(803, "Stall", PartnerType.CUSTOMER).and()
-        .tenant("res_44", "btcl").partner(802, "Other", PartnerType.CUSTOMER).and()
+        .tenant("res_44", "btcl").partner(802, "Other", PartnerType.CUSTOMER)
+            .partner(804, "res_acme", PartnerType.CUSTOMER)               // review fix: the SAME name as the root's 12, one tier down
+            .and()
         .build();
 
     private Partner standsFor(String child, String parent) {
@@ -67,5 +69,14 @@ class ResellerPartnerRuleTest {
     @Test
     void aPartnerWhoseNameTheDatabaseNameMerelyStartsWith_standsForNothing() {
         assertThat(standsFor("res_44", "btcl")).as("res_4 is not res_44, and the root has no partner 44").isNull();
+    }
+
+    @Test
+    void throughTheIndex_aNameAnotherTierAlsoHolds_stillNamesTheParentsOwnPartner() {
+        RootIndex index = new RootTreeInstaller().install("btcl", 1, root).index();
+        assertThat(index.partnerNamed("res_acme")).as("tree-wide the name is held by two: it names nobody").isNull();
+        Partner above = RoutesphereFlow.partnerStandingFor(root.findTenantByDbName("res_acme"), root, index);
+        assertThat(above).as("the reseller fallback is scoped to the PARENT tier, as before P1-O").isNotNull();
+        assertThat(above.getIdPartner()).isEqualTo(12);
     }
 }
