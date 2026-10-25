@@ -208,14 +208,22 @@ one tier — it leaves its map, `RootIndex.heldByTwo()` lists it, ONE WARN at th
 out, said once. `routesOf(leaf)` gives a partner's routes (`partnerVsRoutes`: one partner, many routes). The counter
 `rootIndexBuilds` (`TenantLookup`, `RoutesphereKit`, `PoolStats`) reads roots × loads — never sessions.
 
-**Route credentials.** `byRouteCredentials` takes the user name and the password a client sends (the aggregator SMS API's, the ad App's) and
-checks it against `route_metadata.extra2` through `internal/Secrets`: `{pbkdf2}<iterations>$<base64 salt>$<base64 hash>`
-(PBKDF2WithHmacSHA256, a 16-byte salt, a 32-byte hash, 210 000 iterations by default — what a route writer stores, `Secrets.hash(char[])`)
-is recomputed; anything else is the LEGACY plaintext of the SMS rows, compared in constant time on its UTF-8 bytes; a blank value verifies
-nothing. An unknown user name, a wrong or missing password: null, and the session's `identificationCause` is `CREDENTIALS_REJECTED` — one
-cause for both, distinct from `PARTNER_NOT_FOUND`; the base refuses the candidate with it (an HTTP lane answers 401, an SMPP lane its bind
-error). The password is never kept, logged or put in a text. The cost: on this box one PBKDF2 verification at 210 000 iterations takes
-~90 ms — every request on a hashed row pays it.
+**Route credentials.** `byRouteCredentials` takes the user name and the secret a client sends (the aggregator SMS API's, the ad App's) and
+checks it against `route_metadata.extra2` through `internal/Secrets` (the architect's A4 as amended by A4′): a route's credentials are
+MACHINE secrets the system generates (`Secrets.newMachineSecret()`: 32 random bytes, base64url) and stores as
+`{sha256}<base64 salt>$<base64 SHA-256(salt ‖ UTF-8 secret)>` (`Secrets.hashMachineSecret`, a 16-byte salt) — the check is ONE SHA-256 and a
+constant-time compare, microseconds. `{pbkdf2}<iterations>$<salt>$<hash>` is still verified for compatibility but written by nothing: a slow KDF
+must not guard a credential checked on every request (~0.1 s of CPU each, and a CPU amplifier for wrong secrets). Anything else is the
+LEGACY plaintext of the SMS rows, compared in constant time on its UTF-8 bytes; a blank value verifies nothing. An unknown user name, a wrong
+or missing secret: null, and the session's `identificationCause` is `CREDENTIALS_REJECTED` — one cause for both, and the same work (an
+unknown user name is checked against a decoy, `Secrets.compareWithNobody`), distinct from `PARTNER_NOT_FOUND`; the base refuses the
+candidate with it (an HTTP lane answers 401, an SMPP lane its bind error). The secret is never kept, logged or put in a text. The testkit's
+`routeCredentials` writes the `{sha256}` form; `legacyRouteCredentials` a plaintext row; `routeCredentialsStoredAs` any value a test pins.
+
+**On the served tree.** prime-context serves a `usernameVsRouteMetaData` row WITHOUT its route (its `RouteMetadata.route` is
+`@JsonIgnore`): rtc-domain's deserializer wires a row's route from `partnerVsRoutes`, and the index finds it by the row's id among the
+tier's routes (`partnerVsRoutes`, `idVsRoute`, `ipOrDomainWiseRoute`) when it is not wired; a row whose route is not served is left out with
+one WARN. `ServedTreeRoundTripTest` proves it on a tree serialized as prime-context serves it and read back by `Trees.parse`.
 
 **The climb.** Above the leaf, `partnerAbove` takes the id at the end of the child's database name in the PARENT's `partners`; only when no
 partner has that id, the parent's partner named exactly as the child (its name, else its database name) — a get on the session's index (a
@@ -429,8 +437,8 @@ they run on the seed's 3.7.1 only.
 ## 9 · History
 
 - 2026-10-25, night — P1-O (the owner's identification rules of 2026-10-25; the architect's decisions A1–A9): the partner through its ROUTE
-  — `byRouteCredentials` / `routeOfCredentials` / `bySystemId` (one cause `CREDENTIALS_REJECTED`; `internal/Secrets`: PBKDF2 or the legacy
-  plaintext), `byIp` (the port first, no default), `byDomain`, `bySipAccount`, `byPrefix`, `routesOf` — every one a get on the `RootIndex`
+  — `byRouteCredentials` / `routeOfCredentials` / `bySystemId` (one cause `CREDENTIALS_REJECTED`, one decoy compare for an unknown user;
+  `internal/Secrets`: a machine secret's `{sha256}` form — A4′ —, `{pbkdf2}` verified only, the legacy plaintext), `byIp` (the port first, no default), `byDomain`, `bySipAccount`, `byPrefix`, `routesOf` — every one a get on the `RootIndex`
   built ONCE at the snapshot's install (seed-context's `SnapshotIndexer`, `RootTreeInstaller`, the counter `rootIndexBuilds`), never per
   session; `byPartnerName` and the climb's name road EXACT and one get; the climb's loop, the per-session partner walk and the served-root
   loops gone; seed-routing's longest prefix by length; `HotPathHasNoListScanTest` + `docs/agents/hot-path-allowlist.txt`; the samples find
