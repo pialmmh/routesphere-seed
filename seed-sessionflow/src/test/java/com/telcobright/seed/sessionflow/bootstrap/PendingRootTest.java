@@ -107,6 +107,56 @@ class PendingRootTest {
         assertThat(road().pendingRoots()).isEmpty();
     }
 
+    /** P1-P item 2 · The tree fetch failed: the line blames prime-context, in its answer, and never the lane. */
+    @Test
+    void aRootWhoseTreeFetchFails_theLineSaysPrimeContextDoesNotServeItsTree_neverThatTheLaneRefusedIt() {
+        upOnBtclAlone(w.makers());
+        w.trees.prime.remove("link3");                                                     // prime-context answers 404 ROOT_NOT_SERVED
+        w.source.serve(sample);
+
+        road().onTenantCreated(rootCreated("link3"));
+
+        assertThat(road().pendingRoots()).containsExactly("link3");
+        assertThat(road().said()).singleElement().asString().contains("the root link3 of ad-sphere is not served yet")
+            .contains("prime-context does not serve its tree yet: prime-context has no tree of 'link3'").doesNotContain("refused");
+    }
+
+    /**
+     * P1-P item 2 · The LANE refused the root (ad-sphere's {@code ROOT_DOOR_UNBOUND}: its door cannot open), though prime-context serves its
+     * tree: the line names the lane and says its words, and never says prime-context does not serve the tree. The root goes pending all the
+     * same and is served once the lane takes it.
+     */
+    @Test
+    void aRootTheLaneRefuses_theLineNamesTheLaneAndItsWords_notPrimeContext() {
+        upOnBtclAlone(w.makers());
+        w.source.serve(sample);                                                            // listed, and prime-context serves its tree
+        w.trees.laneRefuses.put("link3", "ROOT_DOOR_UNBOUND: root link3 not served (10.10.199.7:7180 is taken)");
+
+        road().onTenantCreated(rootCreated("link3"));
+
+        assertThat(served()).as("not half-served").containsExactly("btcl");
+        assertThat(road().pendingRoots()).containsExactly("link3");
+        assertThat(road().said()).singleElement().asString().contains("the root link3 of ad-sphere is not served yet")
+            .contains("the lane ad-sphere refused it: ROOT_DOOR_UNBOUND: root link3 not served (10.10.199.7:7180 is taken)")
+            .doesNotContain("prime-context");
+        w.trees.laneRefuses.remove("link3");                                               // the door is free again
+        await(() -> served().contains("link3") && road().pendingRoots().isEmpty());
+        assertThat(road().said()).filteredOn(line -> line.contains("served from now on")).singleElement().asString().contains("link3");
+    }
+
+    /** P1-P item 2 · A lane's words are said on ONE line: a line break in them is written as an escape, never a forged line of its own. */
+    @Test
+    void aLanesWordsAreCleanedForTheLine() {
+        upOnBtclAlone(w.makers());
+        w.source.serve(sample);
+        w.trees.laneRefuses.put("link3", "ROOT_DOOR_UNBOUND\nWARN the root link3 is served from now on");
+
+        road().onTenantCreated(rootCreated("link3"));
+
+        assertThat(road().said()).singleElement().asString().contains("the lane ad-sphere refused it: ROOT_DOOR_UNBOUND\\nWARN the root link3")
+            .doesNotContain("\n");
+    }
+
     @Test
     void aPendingRoot_isGivenUpAfterItsTime_saidOnce_andANewWordServesIt() {
         ManualClock clock = new ManualClock(Instant.parse("2026-10-24T00:00:00Z"), ZoneId.of("UTC"));

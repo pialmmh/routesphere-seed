@@ -328,6 +328,12 @@ listener, the admins, every root's ledger (a switch ledger's MemLedger), CDR roa
   doors as they were; the road never opens a second ledger for a root while one is open. **A deployment must not set `pending-root` yet**:
   prime-context's document checker (`DeploymentShape`) refuses keys it does not know today — logged for a prime-context round; until it
   accepts the key, the defaults (30 s, 120 min) are the pace.
+- **The pending line names the real reason (P1-P).** It says WHO keeps the root out, on one line (the words cleaned by `LogText`):
+  "not listed for `<app>` yet (its roots …)" when the document does not list it yet; "prime-context does not serve its tree yet: `<its
+  answer>`" when the tree fetch failed; "the lane `<app>` refused it: `<its words>`" when the LANE refused the root for a reason of its own (a
+  door it cannot open, ad-sphere's `ROOT_DOOR_UNBOUND`; a rule the root lacks). **A lane's own `LiveTrees` throws
+  `LiveTrees.LaneRefusal`** with its words for such a refusal, as it is (not wrapped). Anything else a serve throws reads as the tree's
+  failure. The root goes pending and is tried again either way.
 - **A tree never shows a tier its ledger was not handed.** A reseller's provisioning rings the doorbell `config_event_loader_<root>` AND
   sends `tenant_created`; the ring can come first. Every NEW tree passes the road's gate before a session can see it (`spi/TreeGate`,
   `LiveTrees.gateEachNewTree`): each tier its root's ledger was not built over is handed to that ledger first (`tierAdded`), once — the ring

@@ -15,10 +15,14 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** A test's live trees: prime-context's trees by root (swappable), the served roots, every serve and reload written down. */
+/**
+ * A test's live trees: prime-context's trees by root (swappable), the served roots, every serve and reload written down. P1-P: also the
+ * roots the LANE refuses, with its words, as a lane's own trees refuse a root whose door cannot open.
+ */
 final class FakeLiveTrees implements LiveTrees {
 
     final Map<String, Tenant> prime = new ConcurrentHashMap<>();
+    final Map<String, String> laneRefuses = new ConcurrentHashMap<>();
     final Set<String> served = new LinkedHashSet<>();
     final List<String> calls = new CopyOnWriteArrayList<>();
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
@@ -38,6 +42,7 @@ final class FakeLiveTrees implements LiveTrees {
     public synchronized void serve(String root) {
         if (!prime.containsKey(root)) throw new IllegalStateException("prime-context has no tree of '" + root + "'");
         if (served.contains(root)) return;
+        if (laneRefuses.containsKey(root)) throw new LiveTrees.LaneRefusal(laneRefuses.get(root));
         gate.pass(root, prime.get(root));
         served.add(root);
         calls.add("serve " + root);

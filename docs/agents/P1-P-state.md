@@ -39,3 +39,19 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   without ranking (the walk test alone); no tenant check (1). The illustration "the old rotate guard back + servable without the creatives
   predicate" is GREEN, the equivalent mutant: that is why the guard went. The whole reactor from clean in the worktree: **695/0/0/3**
   (13:35–13:38; base 674, +21). Item 2's started files were stashed for that run. Next: item 2.
+- 2026-10-25 13:51 · **item 2 done**: the pending-root line names the real reason. `BootstrapRoad.tryToServe` (still 8 lines) hands the
+  tree step to `loadItsTree(next, root)`. Null means served. A `LiveTrees.LaneRefusal` gives "the lane `<app>` refused it: `<its words>`".
+  Anything else the serve throws gives "prime-context does not serve its tree yet: `<its answer>`" (the old words). Both texts go through
+  `LogText.failureText` (one line, escaped, capped). New in the SPI: `LiveTrees.LaneRefusal` (a nested `RuntimeException`, in the house
+  form of `LedgerPort.LedgerRefusal` / `BootstrapSource.BootstrapUnavailable`). `serve`'s javadoc says a lane throws it, as it is, for a
+  refusal of its own (a door it cannot open, ad-sphere's ROOT_DOOR_UNBOUND; a rule the root lacks). Tests: `FakeLiveTrees.laneRefuses`
+  (root → the lane's words, thrown after the tree is found). `PendingRootTest` +3: the tree fetch failed → the prime-context words and no
+  "refused"; the lane refused (ROOT_DOOR_UNBOUND, the tree served) → "the lane ad-sphere refused it: …", no "prime-context", the root
+  pending and served once the lane takes it; a lane's words with a line break → escaped, one line. Red first ON BEHAVIOUR: with the type
+  and the tests in place and the road unchanged, PendingRootTest went 7/2 (the line said "prime-context does not serve its tree yet:
+  ROOT_DOOR_UNBOUND: …", the bug itself); green 7/0 after the change; HotPathHasNoListScanTest 2/0 (no walk added). Mutants: 3, all red,
+  each restored with a fresh mtime: no classification (the 2 lane tests), every failure blamed on the lane (2: the tree-fetch test and
+  P1-G's own pending test), the lane's words not cleaned (the cleaning test). README §4.2: a new P1-G bullet, "The pending line names the
+  real reason", with the three reasons and the lane's contract. LiveTrees implementers (seed-tenant `LiveTenantTrees`, the tests' fakes)
+  are unchanged: a nested class, no new abstract method. The whole reactor from clean in the worktree: **698/0/0/3** (13:48–13:50; +3).
+  Next: item 3.

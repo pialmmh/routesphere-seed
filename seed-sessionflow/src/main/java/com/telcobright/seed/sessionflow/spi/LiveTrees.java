@@ -16,8 +16,20 @@ public interface LiveTrees extends TenantLookup, AutoCloseable {
      * Serve one more root: its tree is loaded now (a root that cannot be loaded is refused in words). Serving a served root is nothing.
      * P1-G: a serve that fails leaves NOTHING served — the root is not in {@link #roots()} and has no tree — so the next serve loads it
      * (prime-context announces a root BEFORE it serves its tree: 404 ROOT_NOT_SERVED until then). A lane's own LiveTrees undoes the same.
+     * P1-P: a lane that refuses the root for its OWN reasons (a door it cannot open, ad-sphere's {@code ROOT_DOOR_UNBOUND}; a rule the
+     * root lacks) throws {@link LaneRefusal} with its words, and the road's pending line says the lane refused it. Anything else a serve
+     * throws is read as the tree not served yet (prime-context's answer).
      */
     void serve(String root);
+
+    /**
+     * P1-P · A lane's own refusal to serve a root: its doors, its rules, never the tree's fetch. The message is the lane's words, and the
+     * road's pending line names the lane with them. Throw it as it is: wrapped in another exception, it reads as the tree's failure.
+     */
+    final class LaneRefusal extends RuntimeException {
+        public LaneRefusal(String words) { super(words); }
+        public LaneRefusal(String words, Throwable cause) { super(words, cause); }
+    }
 
     /**
      * P1-H · Take a served root out again — its roads could not all be made: nothing of it stays served (not in {@link #roots()}, no tree),
