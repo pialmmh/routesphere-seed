@@ -22,6 +22,25 @@ public interface CampaignService {
     List<Placement> rank(ViewRequest view);
 
     /**
+     * P1-P · ONE campaign's answer to a view, without ranking the tenant: the placement {@link #rank} would give this campaign for this view
+     * (the same rule: runnable, targeted, quota left, the device under its cap, creatives present; the same specificity, the same creative)
+     * or empty when it may not serve the view, or the tenant has no such campaign. The service gets the campaign by its id. It never walks
+     * the tenant's campaigns, and it reads or rotates none of the others.
+     *
+     * <p>The rotation: an answered placement takes the campaign's NEXT creative and moves its rotation on by one, exactly as {@code rank}
+     * does for every campaign it ranks (the two share one rotation). An empty answer moves nothing.
+     *
+     * <p>The default refuses ({@link UnsupportedOperationException}): only a service that keeps its campaigns by id can answer, and ranking
+     * the tenant instead would walk every campaign and rotate them all.
+     *
+     * @param tenantId the view's own tenant ({@code view.tenantId()}); any other is refused with {@link IllegalArgumentException}, because
+     *                 a claim takes the campaign of the view's tenant
+     */
+    default Optional<Placement> servable(String tenantId, int campaignId, ViewRequest view) {
+        throw new UnsupportedOperationException(getClass().getName() + " keeps no campaign by its id: servable() is not answered by ranking the tenant");
+    }
+
+    /**
      * Take one task of the placement — the task is BORN here (its row INSERTed {@code PROCESSING} under its campaign, the campaign's pending
      * +1); empty when the quota or the cap went in the meantime. Since ARCH-0093 the ad does not use it: its task is minted by its runner
      * ({@link #handedToCore}) and takes its campaign at the claim ({@link #assign}). Kept for a client whose task is born at the claim.

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 
 /** One tenant's campaigns in this process, keyed by campaign id, with the tenant's frequency cap. */
 final class TenantCampaigns {
@@ -15,6 +16,7 @@ final class TenantCampaigns {
     final FrequencyCap cap;
     private final ZoneId zone;
     private final Map<Integer, LiveCampaign> byId = new ConcurrentHashMap<>();
+    private final LongAdder walks = new LongAdder();
 
     TenantCampaigns(String tenantId, ZoneId zone) {
         this.tenantId = tenantId;
@@ -36,5 +38,15 @@ final class TenantCampaigns {
 
     LiveCampaign get(int campaignId) { return byId.get(campaignId); }
 
-    List<LiveCampaign> all() { return new ArrayList<>(byId.values()); }
+    /**
+     * Every campaign of the tenant: a WALK (the ranking's, once per view; the counters' road). P1-P: counted, so a proof can show that the
+     * one-campaign check never walks.
+     */
+    List<LiveCampaign> all() {
+        walks.increment();
+        return new ArrayList<>(byId.values());
+    }
+
+    /** How many times {@link #all} walked the tenant's campaigns. */
+    long walks() { return walks.sum(); }
 }
