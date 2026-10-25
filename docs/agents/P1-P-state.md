@@ -1,0 +1,74 @@
+# P1-P · the per-campaign servable check, the pending-root words, two README notes — state
+
+The brief: `~/arch-drafts/launch/P1-P-seed-followups-brief.md` (the architect, 2026-10-25 13:2x; follow-ups of the night). Branch `p1-follow`
+at a1d4440 (= routesphere-flow: P1-O + the review fix; its clean copy 674/0/0/3). Rules: `~/arch-drafts/launch/RULES-2026-10-25.md` + the lane
+brief §0/§A (statewalk 4.1.0 only). Items 1 → 3 in order.
+
+One line per item, newest last. Times are Dhaka (+06), each read with `date` before it was written.
+
+- 2026-10-25 13:26 · START — worktree `p1-follow` at a1d4440, clean. Read: the rules, the brief, the lane brief §0/§A/§K/§L, P1-O's report
+  and state, seed-campaign (`CampaignService`, `DefaultCampaignService`, `PlacementRanker`, `TenantCampaigns`, `LiveCampaign`,
+  `RunnableRule`, `FrequencyCap`, `Targeting`, `CampaignServiceTest`), seed-sessionflow's `BootstrapRoad`, `PendingRoots`, `LiveTrees`,
+  `TreeGate`, `TiersFirst`, `PendingRootTest`, `BootstrapWorld`, `FakeLiveTrees`, seed-tenant's `LiveTenantTrees`, the README §4/§4.0/§4.2,
+  `HotPathHasNoListScanTest` + the allow-list. Read-only at their source: ad-sphere 54d9947 `AdCandidates.Gate.theLibraryWouldServe` (the
+  `rank(view)` per capped view), `AdTrees.serve` + `AdListeners.openForRoot` (ROOT_DOOR_UNBOUND, TwoRootsNeedDoors: thrown as plain
+  RuntimeExceptions), `NoWalkPerRequestStoryTest.CountedRanking` (a test double that implements `CampaignService`); routesphere main
+  `IdentifyEntryPartnerStep.matchRouteKey` (the bare key, then `key:<port seen>`, then `key:5060`). `~/.m2` holds no seed 2.0.0-SNAPSHOT.
+  Running: item 1.
+- 2026-10-25 13:38 · **item 1 done**: one campaign's servability without ranking the tenant. `CampaignService.servable(tenantId,
+  campaignId, view)` → `Optional<Placement>`. It is a `default` that refuses (`UnsupportedOperationException`), because ad-sphere's test
+  double `CountedRanking` implements the interface and must keep compiling. `DefaultCampaignService` answers it: one get of the tenant, then
+  `PlacementRanker.servable`, which is one get of the campaign by id (`TenantCampaigns.get`). A view of another tenant is refused
+  (`IllegalArgumentException`), because the claim takes the campaign of the VIEW's tenant. `PlacementRanker`: the loop body is extracted ONCE
+  into the package-private `mayServe(tenant, live, view)` → `Optional<Hit>` (runnable by `RunnableRule`, specificity ≥ 0, `quotaLeft`, the
+  per-device cap, creatives present; the row read once). `rank` asks it of every campaign, `servable` of one. The rotation step
+  `placementOf(hit)` is the same for both: the next creative of the row the rule judged, rotation +1. `LiveCampaign.rotate(judged)` lost its
+  own emptiness guard: it was a second copy of the fifth predicate and made that predicate's mutant equivalent (shown below). `rank`'s order
+  reads the judged row. `TenantCampaigns.all()` counts its walks; `DefaultCampaignService.campaignWalks` (package-private) reads them for the
+  proof. Red first by compile (no `servable`, no `campaignWalks`). Green: `ServableTest` 20 (the table, 16 rows on two services fed alike: rank
+  and servable answer the same placement or none, for every predicate: open/specificity 2, paused, complete, expired, not started, schedule
+  ended, outside the time band, another zone, a site not allowed, the one bought view live, two bought one live, capped device, another
+  device, once under the cap, no creatives; a capped campaign → empty, the cap's device key case-blind; the rotation: a placement takes the
+  next creative and rank goes on with the same rotation, two empty answers rotate nothing; servable rotates only its campaign while rank
+  rotates every campaign it ranks; unknown campaign / tenant → empty, a view of another tenant refused) and `ServableNeverWalksTheTenantTest`
+  1 (1 001 one-campaign checks over 50 campaigns: 0 walks; one rank: 1 walk). The existing `CampaignServiceTest` is untouched, 12/0. Mutants:
+  10, all red, each restored with a fresh mtime (cp + touch, compared): servable's own copy of the rule without runnable (ServableTest 6
+  rows), without the targeting (2 rows), without the quota (1 row), without the cap (3: a row, the capped test, the rotation test), without
+  the creatives (1 row, an error: the rotation over no creative); servable rotating on an empty answer (the rotation test); answering
+  without rotating (2); servable by ranking the tenant (the neighbour's rotation test, and the walk test); servable walking to the campaign
+  without ranking (the walk test alone); no tenant check (1). The illustration "the old rotate guard back + servable without the creatives
+  predicate" is GREEN, the equivalent mutant: that is why the guard went. The whole reactor from clean in the worktree: **695/0/0/3**
+  (13:35–13:38; base 674, +21). Item 2's started files were stashed for that run. Next: item 2.
+- 2026-10-25 13:51 · **item 2 done**: the pending-root line names the real reason. `BootstrapRoad.tryToServe` (still 8 lines) hands the
+  tree step to `loadItsTree(next, root)`. Null means served. A `LiveTrees.LaneRefusal` gives "the lane `<app>` refused it: `<its words>`".
+  Anything else the serve throws gives "prime-context does not serve its tree yet: `<its answer>`" (the old words). Both texts go through
+  `LogText.failureText` (one line, escaped, capped). New in the SPI: `LiveTrees.LaneRefusal` (a nested `RuntimeException`, in the house
+  form of `LedgerPort.LedgerRefusal` / `BootstrapSource.BootstrapUnavailable`). `serve`'s javadoc says a lane throws it, as it is, for a
+  refusal of its own (a door it cannot open, ad-sphere's ROOT_DOOR_UNBOUND; a rule the root lacks). Tests: `FakeLiveTrees.laneRefuses`
+  (root → the lane's words, thrown after the tree is found). `PendingRootTest` +3: the tree fetch failed → the prime-context words and no
+  "refused"; the lane refused (ROOT_DOOR_UNBOUND, the tree served) → "the lane ad-sphere refused it: …", no "prime-context", the root
+  pending and served once the lane takes it; a lane's words with a line break → escaped, one line. Red first ON BEHAVIOUR: with the type
+  and the tests in place and the road unchanged, PendingRootTest went 7/2 (the line said "prime-context does not serve its tree yet:
+  ROOT_DOOR_UNBOUND: …", the bug itself); green 7/0 after the change; HotPathHasNoListScanTest 2/0 (no walk added). Mutants: 3, all red,
+  each restored with a fresh mtime: no classification (the 2 lane tests), every failure blamed on the lane (2: the tree-fetch test and
+  P1-G's own pending test), the lane's words not cleaned (the cleaning test). README §4.2: a new P1-G bullet, "The pending line names the
+  real reason", with the three reasons and the lane's contract. LiveTrees implementers (seed-tenant `LiveTenantTrees`, the tests' fakes)
+  are unchanged: a nested class, no new abstract method. The whole reactor from clean in the worktree: **698/0/0/3** (13:48–13:50; +3).
+  Next: item 3.
+- 2026-10-25 13:52 · **item 3 done**: two notes in the sessionflow README §4.0, after the index's paragraph. (a) "`byIp` asks the port
+  first, with no `:5060` default": the seed's order (`ip:port`, then the bare ip, never `ip:5060`) against the live switch's
+  (`matchRouteKey`, read on routesphere main: the bare ip first, then `ip:<port seen>`, then `ip:5060`). Why: the port the lane saw is the
+  truth (in the live order a trunk served at both the bare ip and `ip:port` for two partners always answers the bare ip's partner, and the
+  `ip:port` route is never reached); a default port names a route nobody declared for this request (a call from `ip:7023` is not the
+  partner of `ip:5060`); a lane without the port asks `byIp(ctx, ip)`. (b) "Legacy MySQL trees repeat partner ids": every `res_*` numbers
+  from 1, so `byPartnerId` names nobody for a repeated id (D5, by design); a lane identifies by route key / SIP account / route credentials;
+  `partnerAbove` reads the parent tier's own `partners` by the id at the end of the child's database name (and, on a miss, the parent tier's
+  own exact name: eee569f), never the tree-wide `byPartnerId`. Both facts checked in the code first (`Lookups.byIp`,
+  `RootIndex.partner`, `RoutesphereFlow.partnerStandingFor`). The §9 history line for P1-P. Docs only: no test reads the README.
+- 2026-10-25 14:08 · **P1-P DONE**: items 1, 2, 3. The code head 5971206, in ONE lock hold 13:56:03–14:01:10 (offline, no install): from
+  clean in the worktree **698/0/0/3** (2:36 min) and on a git-archive clean copy **698/0/0/3** (2:28 min). statewalk 4.1.0 only
+  (`dependency:tree` on the clean copy, to stdout at 14:01–14:08 after a wait for the lock: seed-sessionflow directly; seed-bootstrap-config,
+  seed-tenant and seed-switch-ledger through it; the samples in test scope). The R-1 proofs RestoreLostUpTest 4/0/0/0,
+  HotPathHasNoListScanTest 2/0/0/0, StatewalkPinTest 2/0/0/0, EslCallRestoreTest 2/0/0/0; ServableTest 20/0, ServableNeverWalksTheTenantTest
+  1/0, CampaignServiceTest 12/0, PendingRootTest 7/0. Base a1d4440 674/0/0/3; +24 tests; 13 mutants red. `~/.m2` holds no seed
+  2.0.0-SNAPSHOT. Report: `docs/agents/P1-P-report.md`.

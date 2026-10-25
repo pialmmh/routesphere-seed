@@ -7,6 +7,7 @@ import com.telcobright.seed.campaign.api.Creative;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -54,11 +55,14 @@ final class LiveCampaign {
         }
     }
 
-    Creative rotate() {
-        var list = row.creatives();
-        if (list.isEmpty()) return null;
-        int i = Math.floorMod(rotation.getAndIncrement(), list.size());
-        return list.get(i);
+    /**
+     * The next creative of {@code judged}, and the rotation moves on by one. {@code judged} is the row the ranking's rule judged, and the
+     * rule's last predicate saw creatives on it (P1-P: the only test of that, so a rule that forgot it fails loudly here). The rotation is
+     * the campaign's, shared by the ranking and the one-campaign check.
+     */
+    Creative rotate(Campaign judged) {
+        List<Creative> creatives = judged.creatives();
+        return creatives.get(Math.floorMod(rotation.getAndIncrement(), creatives.size()));
     }
 
     int servedToday(Instant at, ZoneId zone) {

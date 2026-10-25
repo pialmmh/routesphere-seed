@@ -164,9 +164,25 @@ public final class BootstrapRoad implements AutoCloseable {
         try { next = Deployment.of(source.envelope(), deployment.app()); }
         catch (RuntimeException e) { return "the bootstrap could not be read again: " + e.getMessage(); }
         if (!next.roots().contains(root)) return "not listed for " + next.app() + " yet (its roots " + next.roots() + ")";
-        try { trees.serve(root); }
-        catch (RuntimeException e) { return "prime-context does not serve its tree yet: " + e.getMessage(); }
+        String notLoaded = loadItsTree(next, root);
+        if (notLoaded != null) return notLoaded;
         return serveItsRoads(next, root, why);
+    }
+
+    /**
+     * P1-P · The root's tree served through the trees. Null = served; otherwise the REAL reason, in words, on one line: the LANE refused
+     * the root ({@link LiveTrees.LaneRefusal}: the lane named, its own words: a door it cannot open, a rule the root lacks), or prime-context
+     * does not serve the tree yet (anything else the serve throws: the fetch's answer).
+     */
+    private String loadItsTree(Deployment next, String root) {
+        try {
+            trees.serve(root);
+            return null;
+        } catch (LiveTrees.LaneRefusal refused) {
+            return "the lane " + next.app() + " refused it: " + LogText.failureText(refused.getMessage());
+        } catch (RuntimeException notServed) {
+            return "prime-context does not serve its tree yet: " + LogText.failureText(notServed.getMessage());
+        }
     }
 
     /**

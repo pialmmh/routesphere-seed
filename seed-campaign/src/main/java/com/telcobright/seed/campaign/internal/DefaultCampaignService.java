@@ -19,6 +19,7 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -52,6 +53,26 @@ public final class DefaultCampaignService implements CampaignService {
     public List<Placement> rank(ViewRequest view) {
         TenantCampaigns t = tenants.get(view.tenantId());
         return t == null ? List.of() : ranker.rank(t, view);
+    }
+
+    /** P1-P · One campaign by the ranking's own rule and rotation: a get by its id, never a walk of the tenant (see the interface). */
+    @Override
+    public Optional<Placement> servable(String tenantId, int campaignId, ViewRequest view) {
+        requireTheViewsTenant(tenantId, view);
+        TenantCampaigns t = tenants.get(tenantId);
+        return t == null ? Optional.empty() : ranker.servable(t, campaignId, view);
+    }
+
+    /** P1-P · How many times the tenant's campaigns were walked (the ranking: once per view; the counters' road). {@code servable} never walks them. */
+    long campaignWalks(String tenantId) {
+        TenantCampaigns t = tenants.get(tenantId);
+        return t == null ? 0 : t.walks();
+    }
+
+    private static void requireTheViewsTenant(String tenantId, ViewRequest view) {
+        if (Objects.equals(tenantId, view.tenantId())) return;
+        throw new IllegalArgumentException("servable() asks a campaign of tenant " + LogText.clean(tenantId) + " for a view of tenant "
+            + LogText.clean(view.tenantId()) + ": a claim takes the campaign of the view's own tenant");
     }
 
     @Override
