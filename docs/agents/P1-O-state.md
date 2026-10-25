@@ -108,3 +108,16 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   get for a root by code or db name, the counters, the tree road's bearer); `docs/agents/routesphere-seed-flow-requirements.md` R2's
   helper names = `byRouteCredentials · byIp · byDomain · bySipAccount · byPrefix · bySystemId · byPartnerId` (the architect updates routesphere
   main's copy); this state file; the report `docs/agents/P1-O-report.md`.
+- 2026-10-25 06:32 · **item 2b done** (the architect's review finding: A4′ amends A4 — route credentials are MACHINE secrets) —
+  `internal/Secrets`: the written form is now `{sha256}<base64 salt>$<base64 SHA-256(salt ‖ UTF-8 secret)>` (16-byte salt; ONE SHA-256 +
+  `MessageDigest.isEqual`); `Secrets.newMachineSecret()` (32 SecureRandom bytes, base64url, no padding) and `Secrets.hashMachineSecret(secret)`
+  are what writers use; `{pbkdf2}` stays VERIFIED (compatibility) but nothing writes it — the public `Secrets.hash(char[])` of item 2 is
+  gone, its form only a package-private `pbkdf2(…)` for the compatibility vectors; the javadoc says a slow KDF must not guard a per-request
+  credential; the legacy plaintext stays the constant-time compare. `Lookups.routeOfCredentials`: an unknown user name does ONE decoy
+  `{sha256}` compare (`Secrets.compareWithNobody`, counted `decoyCompares`) before `CREDENTIALS_REJECTED` — equal work for "no such user"
+  and "wrong secret". Testkit: `routeCredentials` writes `{sha256}`; `routeCredentialsStoredAs` keeps a pinned value (the `{pbkdf2}`
+  compatibility row); `TESTKIT_ITERATIONS` gone. Tests: SecretsTest 6 (a `{sha256}` vector pinned from Python's hashlib, a second with a
+  base64url secret; the machine secret's shape and a fresh salt per hash; the decoy counted; the PBKDF2 published vectors and the pinned
+  `{pbkdf2}` one still verify; the legacy compare; the measured cost: `{sha256}` 1.9 µs p50 / 6.3 µs p99 (a wrong secret 1.7 / 3.7, the decoy 0.9 / 4.2, the legacy compare 0.1 / 1.7) against 98 ms per `{pbkdf2}` check at 210 000 iterations), RouteLayerHelpersTest (a `{pbkdf2}` row still admits; a known
+  user's wrong secret does no decoy, an unknown user exactly one; the testkit stores `{sha256}`). Mutants 2, 2 red: no decoy for an unknown
+  user (RouteLayerHelpersTest 1/5), the `{sha256}` check without its salt (SecretsTest); restored with a fresh mtime.

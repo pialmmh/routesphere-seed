@@ -38,13 +38,12 @@ import java.util.Map;
  *
  * <p>P1-O · the route layer as prime-context serves it, so a lane's sample finds its partner the way the switch does — never through a
  * private map of its own: {@code route(partner, key…)} (a route per key: {@code routeWisePartners}, {@code ipOrDomainWiseRoute}),
- * {@code routeCredentials(partner, routeName, user, password)} ({@code usernameVsRouteMetaData}, the password stored hashed as the route
- * writers store it; {@code legacyRouteCredentials} keeps it in plaintext like the SMS rows), {@code sipAccount}, {@code prefix}.
+ * {@code routeCredentials(partner, routeName, user, secret)} ({@code usernameVsRouteMetaData}, the secret stored in the {@code {sha256}}
+ * form the route writers store, A4′; {@code legacyRouteCredentials} keeps it in plaintext like the SMS rows; {@code routeCredentialsStoredAs}
+ * keeps any value a test pins, a {@code {pbkdf2}} one), {@code sipAccount}, {@code prefix}.
  */
 public final class TenantTreeBuilder {
 
-    /** The iterations of the hashed passwords {@code routeCredentials} writes: few, for a test's speed (the form and the check are the real ones). */
-    public static final int TESTKIT_ITERATIONS = 1_000;
 
     /** One tenant under construction. */
     public final class TenantSpec {
@@ -168,15 +167,17 @@ public final class TenantTreeBuilder {
         }
 
         /**
-         * P1-O · A route a client authenticates on (the architect's B5): the route {@code routeName} of the partner, its
-         * {@code route_metadata} row with {@code extra1} = the user name and {@code extra2} = the password in the HASHED form a route
-         * writer stores ({@code {pbkdf2}…}, {@link Secrets}) — at {@link #TESTKIT_ITERATIONS} iterations for a test's speed (a writer's
-         * {@code Secrets.hash} uses {@link Secrets#DEFAULT_ITERATIONS}; the verifier reads the count from the row).
+         * P1-O · A route a client authenticates on (the architect's B5, as A4′ amends it): the route {@code routeName} of the partner, its
+         * {@code route_metadata} row with {@code extra1} = the user name and {@code extra2} = the secret in the {@code {sha256}} form a route
+         * writer stores ({@link Secrets#hashMachineSecret}).
          */
-        public TenantSpec routeCredentials(int partnerId, String routeName, String username, String password) {
-            byte[] salt = new byte[Secrets.SALT_BYTES];
-            new java.security.SecureRandom().nextBytes(salt);
-            return credentials(partnerId, routeName, username, Secrets.hash(password.toCharArray(), salt, TESTKIT_ITERATIONS));
+        public TenantSpec routeCredentials(int partnerId, String routeName, String username, String secret) {
+            return credentials(partnerId, routeName, username, Secrets.hashMachineSecret(secret));
+        }
+
+        /** P1-O · A route whose row keeps {@code storedSecret} exactly as given — a compatibility form a test pins (a {@code {pbkdf2}} value). */
+        public TenantSpec routeCredentialsStoredAs(int partnerId, String routeName, String username, String storedSecret) {
+            return credentials(partnerId, routeName, username, storedSecret);
         }
 
         /**

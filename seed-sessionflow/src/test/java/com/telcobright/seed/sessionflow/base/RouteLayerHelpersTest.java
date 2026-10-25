@@ -16,6 +16,7 @@ import com.telcobright.seed.sessionflow.api.Tier;
 import com.telcobright.seed.sessionflow.api.TierRate;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.internal.Secrets;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.InMemoryLedger;
 import com.telcobright.seed.sessionflow.testkit.TenantTreeBuilder;
@@ -38,12 +39,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class RouteLayerHelpersTest {
 
-    static final String HASHED_PASSWORD = "s3cret-9", LEGACY_PASSWORD = "plain-pw";
+    /** A machine secret (stored in its {sha256} form), the legacy plaintext row's, and the compatibility {pbkdf2} row's (a pinned vector). */
+    static final String HASHED_PASSWORD = "s3cret-9", LEGACY_PASSWORD = "plain-pw", PBKDF2_PASSWORD = "pässwörd-1";
+    static final String PBKDF2_PINNED = "{pbkdf2}1000$AAECAwQFBgcICQoLDA0ODw==$SCZ5vXO5ZjDsP0X74CHQxBwaYg7tl3QRGXb9r5OQbsI=";
 
     static Tenant btcl() {
         TenantTreeBuilder b = new TenantTreeBuilder();
         b.root("btcl").partner(9, "DirectCo", PartnerType.CUSTOMER)
             .routeCredentials(9, "DirectCo-api", "directco", HASHED_PASSWORD)
+            .routeCredentialsStoredAs(9, "DirectCo-old", "directco-old", PBKDF2_PINNED)
             .route(9, "10.0.0.9", "10.0.0.9:5080", "sip.directco.test", "10.0.0.8", "10.0.0.6:5060").sipAccount(9, "1001").prefix(9, "88019")
             .reseller(44, "Res44").partner(701, "Unilever", PartnerType.CUSTOMER)
             .legacyRouteCredentials(701, "Unilever-api", "unilever", LEGACY_PASSWORD)
@@ -66,7 +70,8 @@ class RouteLayerHelpersTest {
 
     @Test
     void the_route_credentials_name_the_partner_in_both_forms_and_a_refusal_is_one_cause() {
-        assertThat(leaf(find.byRouteCredentials(onBtcl(), "directco", HASHED_PASSWORD))).as("the hashed form, recomputed").isEqualTo("btcl/9");
+        assertThat(leaf(find.byRouteCredentials(onBtcl(), "directco", HASHED_PASSWORD))).as("a machine secret's {sha256} form").isEqualTo("btcl/9");
+        assertThat(leaf(find.byRouteCredentials(onBtcl(), "directco-old", PBKDF2_PASSWORD))).as("the compatibility {pbkdf2} form").isEqualTo("btcl/9");
         assertThat(leaf(find.byRouteCredentials(onBtcl(), "unilever", LEGACY_PASSWORD))).as("the legacy plaintext").isEqualTo("res_44/701");
         assertThat(leaf(find.bySystemId(onBtcl(), "unilever", LEGACY_PASSWORD))).as("the SMPP name of the same check").isEqualTo("res_44/701");
         RouteEntry route = find.routeOfCredentials(onBtcl(), "unilever", LEGACY_PASSWORD);
@@ -74,11 +79,14 @@ class RouteLayerHelpersTest {
         assertThat(route.toString()).doesNotContain(LEGACY_PASSWORD);
 
         LabContext wrong = onBtcl(), unknown = onBtcl(), missing = onBtcl(), hashAsPassword = onBtcl();
+        long decoys = Secrets.decoyCompares();
         assertThat(find.byRouteCredentials(wrong, "directco", "s3cret-8")).isNull();
+        assertThat(Secrets.decoyCompares()).as("a known user's wrong secret: its own row checked, no decoy").isEqualTo(decoys);
         assertThat(find.byRouteCredentials(unknown, "nobody", HASHED_PASSWORD)).isNull();
+        assertThat(Secrets.decoyCompares()).as("A4′: an unknown user name does one decoy compare — the same work").isEqualTo(decoys + 1);
         assertThat(find.byRouteCredentials(missing, "unilever", null)).isNull();
         String stored = find.routeOfCredentials(onBtcl(), "directco", HASHED_PASSWORD).metadata().getExtra2();
-        assertThat(stored).as("the testkit stores the hashed form").startsWith("{pbkdf2}1000$");
+        assertThat(stored).as("the testkit stores a machine secret's form (A4′)").startsWith("{sha256}");
         assertThat(find.byRouteCredentials(hashAsPassword, "directco", stored)).as("the stored hash is not the password").isNull();
         for (LabContext refused : List.of(wrong, unknown, missing, hashAsPassword)) {
             assertThat(refused.identificationCause).as("one cause for every refusal").isEqualTo(SessionCause.CREDENTIALS_REJECTED);
@@ -112,7 +120,7 @@ class RouteLayerHelpersTest {
         assertThat(find.byPrefix(onBtcl(), "8801811000002")).isNull();
         Tier directCo = find.bySipAccount(onBtcl(), "1001");
         assertThat(find.routesOf(directCo)).extracting(r -> r.getRouteName())
-            .containsExactlyInAnyOrder("DirectCo-api", "10.0.0.9", "10.0.0.9:5080", "sip.directco.test", "10.0.0.8", "10.0.0.6:5060");
+            .containsExactlyInAnyOrder("DirectCo-api", "DirectCo-old", "10.0.0.9", "10.0.0.9:5080", "sip.directco.test", "10.0.0.8", "10.0.0.6:5060");
         assertThat(find.routesOf(null)).isEmpty();
     }
 

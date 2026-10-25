@@ -69,10 +69,11 @@ public final class Lookups {
     }
 
     /**
-     * The leaf of the route a client authenticates on: its user name ({@code route_metadata.extra1}) and its password, checked against
-     * {@code route_metadata.extra2} ({@link Secrets}: the hashed form recomputed, the legacy plaintext compared in constant time). An unknown
-     * user name, a wrong or missing password — null, and the session's {@code identificationCause} is {@code CREDENTIALS_REJECTED} (one cause
-     * for both: an unknown user name is not told from a wrong password). The password is not kept, logged or put in any text.
+     * The leaf of the route a client authenticates on: its user name ({@code route_metadata.extra1}) and its secret, checked against
+     * {@code route_metadata.extra2} ({@link Secrets}: a machine secret's {@code {sha256}} form — one SHA-256 —, the compatibility
+     * {@code {pbkdf2}} form, the legacy plaintext in constant time). An unknown user name, a wrong or missing secret — null, and the session's
+     * {@code identificationCause} is {@code CREDENTIALS_REJECTED}: one cause for both, and the same work (an unknown user name is checked
+     * against a decoy, A4′). The secret is not kept, logged or put in any text.
      */
     public Tier byRouteCredentials(RoutesphereContext ctx, String username, String password) {
         RouteEntry route = routeOfCredentials(ctx, username, password);
@@ -83,6 +84,7 @@ public final class Lookups {
     public RouteEntry routeOfCredentials(RoutesphereContext ctx, String username, String password) {
         RootIndex index = indexOf(ctx);
         RouteEntry route = index == null ? null : index.routeOfUsername(username);
+        if (route == null) Secrets.compareWithNobody(password);                 // equal work for "no such user" and "wrong secret"
         if (route != null && Secrets.verify(password, route.metadata().getExtra2())) return route;
         ctx.identificationCause = SessionCause.CREDENTIALS_REJECTED;
         return null;
