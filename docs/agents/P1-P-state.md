@@ -65,3 +65,10 @@ One line per item, newest last. Times are Dhaka (+06), each read with `date` bef
   `partnerAbove` reads the parent tier's own `partners` by the id at the end of the child's database name (and, on a miss, the parent tier's
   own exact name: eee569f), never the tree-wide `byPartnerId`. Both facts checked in the code first (`Lookups.byIp`,
   `RootIndex.partner`, `RoutesphereFlow.partnerStandingFor`). The §9 history line for P1-P. Docs only: no test reads the README.
+- 2026-10-25 14:08 · **P1-P DONE**: items 1, 2, 3. The code head 5971206, in ONE lock hold 13:56:03–14:01:10 (offline, no install): from
+  clean in the worktree **698/0/0/3** (2:36 min) and on a git-archive clean copy **698/0/0/3** (2:28 min). statewalk 4.1.0 only
+  (`dependency:tree` on the clean copy, to stdout at 14:01–14:08 after a wait for the lock: seed-sessionflow directly; seed-bootstrap-config,
+  seed-tenant and seed-switch-ledger through it; the samples in test scope). The R-1 proofs RestoreLostUpTest 4/0/0/0,
+  HotPathHasNoListScanTest 2/0/0/0, StatewalkPinTest 2/0/0/0, EslCallRestoreTest 2/0/0/0; ServableTest 20/0, ServableNeverWalksTheTenantTest
+  1/0, CampaignServiceTest 12/0, PendingRootTest 7/0. Base a1d4440 674/0/0/3; +24 tests; 13 mutants red. `~/.m2` holds no seed
+  2.0.0-SNAPSHOT. Report: `docs/agents/P1-P-report.md`.
