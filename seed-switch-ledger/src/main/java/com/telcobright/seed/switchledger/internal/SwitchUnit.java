@@ -9,6 +9,7 @@ import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerRefusal;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.Reservation;
 import com.telcobright.seed.sessionflow.spi.LedgerUnit;
+import com.telcobright.seed.switchledger.api.ChargeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,10 +97,13 @@ final class SwitchUnit implements LedgerUnit {
         if (seen != null) return Optional.of(Answers.repeatOf(seen));
         String db = level.getDbName();
         holdTheLockOf(db, accountId);
+        Reservation durable = chargeMadeBefore(db, reference);
+        if (durable != null) return Optional.of(durable);
         PackageAccount live = heldAccount(db, accountId, level);
         BigDecimal before = Books.balanceOf(live);
         if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
         BigDecimal after = amount.signum() == 0 ? before : books.debit(work, db, live, amount).getBalanceAfter();
+        if (amount.signum() > 0 && books.keepsCharges()) books.openChargeRow(work, db, reference, live, amount, before, after);
         Reservation took = new Reservation(live.getId(), live.getUom(), amount, before, after, false);
         afterTheRecord.add(() -> {
             answers.rememberCharge(reference, took);
@@ -157,8 +161,14 @@ final class SwitchUnit implements LedgerUnit {
         long accountId = accountOf(level);
         String db = level.getDbName();
         holdTheLockOf(db, accountId);
+        ChargeReference charge = books.keepsCharges() ? books.chargeRow(work, db, tier) : null;
+        if (books.keepsCharges() && amount.signum() > 0) {
+            if (charge == null) throw new LedgerFault("no charge is held under " + tier + " in " + db + ": nothing to refund (a charge carries its reference row)");
+            if (charge.getRefunded() != null) return refundedBefore(level, charge, why);
+        }
         PackageAccount live = heldAccount(db, accountId, level);
         BigDecimal after = amount.signum() == 0 ? Books.balanceOf(live) : books.moveBalance(work, db, live, Books.balanceOf(live).add(amount), amount).getBalanceAfter();
+        if (charge != null && amount.signum() > 0) books.markRefunded(work, db, charge, amount);
         BigDecimal taken = TierSettlement.reservedOf(level);
         TierSettlement refunded = new TierSettlement(level.getLevelIndex(), taken, taken.subtract(amount), amount, after, true, why);
         afterTheRecord.add(() -> {
@@ -166,6 +176,26 @@ final class SwitchUnit implements LedgerUnit {
             log.info("REFUND {} | account {} of {}: +{} {} → {} ({})", LogText.clean(tier), accountId, db, amount, live.getUom(), after, LogText.clean(why));
         });
         return refunded;
+    }
+
+    // ── L2b 2b · the charge's durable reference, read before anything moves ──
+
+    /** A charge made under this reference before — this process or one before a restart: its first answer, repeated; null = none. */
+    private Reservation chargeMadeBefore(String db, String reference) {
+        if (!books.keepsCharges()) return null;
+        ChargeReference row = books.chargeRow(work, db, reference);
+        if (row == null) return null;
+        Reservation first = new Reservation(row.getIdPackageAccount(), row.getUom(), row.getAmount(), row.getBalanceBefore(), row.getBalanceAfter(), false);
+        afterTheRecord.add(() -> answers.rememberCharge(reference, first));
+        return Answers.repeatOf(first);
+    }
+
+    /** A refund made before (its row says what came back): answered as it was, nothing moves. */
+    private TierSettlement refundedBefore(LevelAdmission level, ChargeReference charge, String why) {
+        TierSettlement first = new TierSettlement(level.getLevelIndex(), charge.getAmount(), charge.getAmount().subtract(charge.getRefunded()), charge.getRefunded(),
+            null, true, why);
+        afterTheRecord.add(() -> answers.close(level.getDebitReference(), first));
+        return first;
     }
 
     // ── the record ──────────────────────────────────────────────────────────

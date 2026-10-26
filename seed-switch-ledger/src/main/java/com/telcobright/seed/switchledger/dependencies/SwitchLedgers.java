@@ -26,8 +26,8 @@ public final class SwitchLedgers {
         Objects.requireNonNull(memLedger, "memLedger");
         Objects.requireNonNull(settings, "settings");
         Objects.requireNonNull(clock, "clock");
-        TwoEntities.check(memLedger);
-        Books books = new Books(memLedger, clock);
+        boolean keepsCharges = TwoEntities.check(memLedger).contains(Books.CHARGE);
+        Books books = new Books(memLedger, clock, keepsCharges);
         AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
         MemLedgerPort port = new MemLedgerPort(books, locks);
         return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock), new Credit(books, locks));

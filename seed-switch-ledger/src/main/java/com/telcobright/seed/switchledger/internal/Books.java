@@ -3,6 +3,7 @@ package com.telcobright.seed.switchledger.internal;
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
+import com.telcobright.seed.switchledger.api.ChargeReference;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerRefusal;
 
@@ -22,22 +23,32 @@ import java.util.function.Supplier;
  * caller commits it — ONE {@code execCrud(WALEntryBatch)}, one WAL record, however many rows and tiers the operation touches. A read
  * through the unit sees what the unit already staged. Every image staged is a NEW object: the cached row is never changed in place.
  *
- * <p>Exactly two entities are ever named: {@value #ACCOUNT} and {@value #RESERVE}. {@code packagepurchase} is never written.
+ * <p>The entities named: {@value #ACCOUNT}, {@value #RESERVE} and — where registered — {@value #CHARGE} (L2b 2b).
  */
 public final class Books {
 
     public static final String ACCOUNT = "PackageAccount";
     public static final String RESERVE = "PackageAccountReserve";
+    /** L2b 2b · The durable reference of a final charge ({@link ChargeReference}), registered only where the root's ledger says so. */
+    public static final String CHARGE = "PackageAccountCharge";
 
     private final MemLedger ledger;
     private final Clock clock;
+    private final boolean keepsCharges;
 
-    public Books(MemLedger ledger, Clock clock) {
+    public Books(MemLedger ledger, Clock clock) { this(ledger, clock, false); }
+
+    /** @param keepsCharges the ledger registers {@value #CHARGE}: every final charge carries its durable reference row */
+    public Books(MemLedger ledger, Clock clock, boolean keepsCharges) {
         this.ledger = ledger;
         this.clock = clock;
+        this.keepsCharges = keepsCharges;
     }
 
     public MemLedger ledger() { return ledger; }
+
+    /** L2b 2b · Does every final charge carry its durable reference row here ({@value #CHARGE} registered)? */
+    public boolean keepsCharges() { return keepsCharges; }
 
     /** A new unit of work over this ledger: stage the moves of ONE money operation, then commit it as ONE record. */
     public UnitOfWork unit() { return new UnitOfWork(ledger); }
@@ -151,6 +162,21 @@ public final class Books {
         moveBalance(unit, dbName, live, after, back);
         deleteReserveRow(unit, dbName, row.getChannelCallUuid());
         return after;
+    }
+
+    // ── L2b 2b · the charge's durable reference ─────────────────────────────
+
+    /** The charge made under {@code reference}, as the unit will leave it; null = none. */
+    public ChargeReference chargeRow(UnitOfWork unit, String dbName, String reference) { return unit.read(dbName, CHARGE, reference); }
+
+    /** The charge's reference row, in the same unit as its debit: the account, the amount, the balances it moved. */
+    public void openChargeRow(UnitOfWork unit, String dbName, String reference, PackageAccount live, BigDecimal amount, BigDecimal before, BigDecimal after) {
+        unit.insert(dbName, CHARGE, reference, new ChargeReference(reference, live.getId(), live.getUom(), amount, before, after, null, now()));
+    }
+
+    /** The charge's refund, in the same unit as its credit: the row says what came back (once). */
+    public void markRefunded(UnitOfWork unit, String dbName, ChargeReference row, BigDecimal back) {
+        unit.update(dbName, CHARGE, row.getReference(), row.refunded(back, now()));
     }
 
     /** The row dies with the settlement or the release ({@code returnBalance} 254–255, {@code deletePackageAccountReserve} 704–713). */

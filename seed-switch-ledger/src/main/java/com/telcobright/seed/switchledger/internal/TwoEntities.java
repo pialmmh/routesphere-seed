@@ -18,10 +18,12 @@ public final class TwoEntities {
 
     private TwoEntities() {}
 
-    public static void check(MemLedger ledger) {
+    /** @return the entities the ledger holds — the two, and {@value Books#CHARGE} when registered (L2b 2b: optional) */
+    public static Set<String> check(MemLedger ledger) {
         Set<String> held = entitiesHeldBy(ledger);
         Set<String> others = new TreeSet<>(held);
         others.removeAll(THE_TWO);
+        others.remove(Books.CHARGE);
         Set<String> missing = new TreeSet<>(THE_TWO);
         missing.removeAll(held);
         if (!others.isEmpty()) {
@@ -33,6 +35,7 @@ public final class TwoEntities {
             throw new IllegalStateException("the switch ledger registers exactly two entities — " + Books.ACCOUNT + " and " + Books.RESERVE
                 + " — but the MemLedger handed in lacks " + missing + ": register both");
         }
+        return held;
     }
 
     @SuppressWarnings("unchecked")

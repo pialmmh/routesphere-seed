@@ -9,6 +9,7 @@ import com.telcobright.seed.sessionflow.api.RootResources;
 import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.switchledger.api.ChargeReference;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.AddTierLive;
 import com.telcobright.seed.switchledger.internal.DriverDataSource;
@@ -51,17 +52,27 @@ public final class SwitchLedgerMaker implements LedgerMaker {
     public LedgerPort make(RootResources root, Context context) {
         RootResources.SwitchDb db = requireTheDatabase(root);
         Set<String> tiers = tierSchemasOf(root, context);
-        MemLedger memLedger = MemLedger.builder()
+        var builder = MemLedger.builder()
             .dataSource(dataSources.of(db, passwordOf(db, context)))
             .databases(tiers.toArray(String[]::new))
             .registerEntity(Books.ACCOUNT, PackageAccount.class)
             .registerEntity(Books.RESERVE, PackageAccountReserve.class)
             .walPath(root.dir().resolve("ledger").resolve("wal").toString())
             .queuePath(root.dir().resolve("ledger").resolve("queue").toString())
-            .replicationMode(ReplicationConfig.Mode.STANDALONE)     // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
-            .build();
+            .replicationMode(ReplicationConfig.Mode.STANDALONE);    // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
+        if (keepsChargeReferences(root)) builder.registerEntity(Books.CHARGE, ChargeReference.class);
+        MemLedger memLedger = builder.build();
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
         return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root));
+    }
+
+    /**
+     * L2b 2b · {@code ledger.charge-references = on}: every final charge carries its durable reference row ({@code packageaccountcharge} in
+     * every tier schema — its DDL in the round's report; nothing here creates it). Not said: the charges are idempotent in memory only.
+     */
+    private static boolean keepsChargeReferences(RootResources root) {
+        String said = root.ledger().word("charge-references");
+        return said != null && (said.trim().equalsIgnoreCase("on") || said.trim().equalsIgnoreCase("true"));
     }
 
     /** P1-J · {@code ledger.merge-spacing-sec}: the least time between two merges of the root's new rows; 5 s when not said. */

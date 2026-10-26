@@ -101,6 +101,19 @@ public final class LedgerLab implements AutoCloseable {
         return this;
     }
 
+    /** L2b 2b · The charges' durable references: {@code packageaccountcharge} in every schema made so far, its entity registered. */
+    public LedgerLab chargeReferences() {
+        String ddl = "CREATE TABLE %s.packageaccountcharge (reference VARCHAR(255) NOT NULL PRIMARY KEY, id_packageaccount BIGINT NOT NULL, uom VARCHAR(45) NOT NULL,"
+            + " amount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, refunded DECIMAL(20,6), time VARCHAR(64))";
+        return alsoRegister(Books.CHARGE, com.telcobright.seed.switchledger.api.ChargeReference.class, ddl);
+    }
+
+    /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
+    public MemLedger restart() {
+        ledger.shutdown();
+        return start();
+    }
+
     /** Build the MemLedger: it loads every schema's two tables and replays the (empty) WAL. */
     public MemLedger start() {
         System.out.println("LedgerLab: no network listener — H2 in memory (" + url + "), MemLedger STANDALONE (no REST, no gRPC), queue at " + dir);
