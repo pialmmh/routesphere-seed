@@ -80,13 +80,15 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private Optional<Reservation> holdUnderTheLock(LevelAdmission level, long accountId, BigDecimal amount, String reference, String rowKey) {
         String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
+        UnitOfWork unit = books.unit();
+        PackageAccount live = heldAccount(unit, db, accountId, level);
         BigDecimal before = Books.balanceOf(live);
         if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
         BigDecimal after = before.subtract(amount);
-        PackageAccountReserve row = books.reserveRow(db, rowKey);
-        if (row == null) books.openReserveRow(db, rowKey, live, amount); else books.growReserveRow(db, row, amount);
-        books.moveBalance(db, live, after, amount.negate());
+        PackageAccountReserve row = books.reserveRow(unit, db, rowKey);
+        if (row == null) books.openReserveRow(unit, db, rowKey, live, amount); else books.growReserveRow(unit, db, row, amount);
+        books.moveBalance(unit, db, live, after, amount.negate());
+        unit.commit("hold " + amount + " under " + rowKey);
         return Optional.of(remember(rowKey, reference, new Reservation(live.getId(), live.getUom(), amount, before, after, false)));
     }
 
@@ -122,14 +124,16 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private TierSettlement settleUnderTheLock(LevelAdmission level, String tier, long accountId, BigDecimal charged) {
         String db = level.getDbName();
-        PackageAccountReserve row = books.reserveRow(db, tier);
+        UnitOfWork unit = books.unit();
+        PackageAccountReserve row = books.reserveRow(unit, db, tier);
         if (row == null) return nothingOpen(level, tier, charged);
         BigDecimal toReturn = TierSettlement.reservedOf(level).subtract(charged);
         noteADisagreement(level, row, tier);
-        PackageAccount live = heldAccount(db, accountId, level);
+        PackageAccount live = heldAccount(unit, db, accountId, level);
         BigDecimal after = Books.balanceOf(live).add(toReturn);
-        books.moveBalance(db, live, after, toReturn);
-        books.deleteReserveRow(db, tier);
+        books.moveBalance(unit, db, live, after, toReturn);
+        books.deleteReserveRow(unit, db, tier);
+        unit.commit("settle " + tier);
         forget(tier);
         return closed.remember(tier, TierSettlement.of(level, charged, after));
     }
@@ -162,10 +166,12 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private void releaseUnderTheLock(LevelAdmission level, String tier, String why) {
         String db = level.getDbName();
-        PackageAccountReserve row = books.reserveRow(db, tier);
+        UnitOfWork unit = books.unit();
+        PackageAccountReserve row = books.reserveRow(unit, db, tier);
         if (row == null) { forget(tier); return; }
         BigDecimal back = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
-        BigDecimal after = books.returnRow(db, row);
+        BigDecimal after = books.returnRow(unit, db, row);
+        unit.commit("release " + tier);
         forget(tier);
         closed.remember(tier, new TierSettlement(level.getLevelIndex(), back, BigDecimal.ZERO, back, after, true, why));
     }
@@ -184,10 +190,12 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private Optional<Reservation> chargeUnderTheLock(LevelAdmission level, long accountId, BigDecimal amount, String reference) {
         String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
+        UnitOfWork unit = books.unit();
+        PackageAccount live = heldAccount(unit, db, accountId, level);
         BigDecimal before = Books.balanceOf(live);
         if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
-        BigDecimal after = amount.signum() == 0 ? before : books.debit(db, live, amount).getBalanceAfter();
+        BigDecimal after = amount.signum() == 0 ? before : books.debit(unit, db, live, amount).getBalanceAfter();
+        unit.commit("charge " + amount + " under " + reference);
         log.info("CHARGE {} | account {} of {}: -{} {} → {}", LogText.clean(reference), accountId, db, amount, live.getUom(), after);
         return Optional.of(charges.remember(reference, new Reservation(live.getId(), live.getUom(), amount, before, after, false)));
     }
@@ -206,8 +214,10 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private TierSettlement refundUnderTheLock(LevelAdmission level, String tier, long accountId, BigDecimal amount, String why) {
         String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal after = amount.signum() == 0 ? Books.balanceOf(live) : books.moveBalance(db, live, Books.balanceOf(live).add(amount), amount).getBalanceAfter();
+        UnitOfWork unit = books.unit();
+        PackageAccount live = heldAccount(unit, db, accountId, level);
+        BigDecimal after = amount.signum() == 0 ? Books.balanceOf(live) : books.moveBalance(unit, db, live, Books.balanceOf(live).add(amount), amount).getBalanceAfter();
+        unit.commit("refund " + amount + " of " + tier);
         log.info("REFUND {} | account {} of {}: +{} {} → {} ({})", LogText.clean(tier), accountId, db, amount, live.getUom(), after, LogText.clean(why));
         BigDecimal taken = TierSettlement.reservedOf(level);
         return closed.remember(tier, new TierSettlement(level.getLevelIndex(), taken, taken.subtract(amount), amount, after, true, why));
@@ -249,8 +259,8 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     }
 
     /** The live row; a schema the ledger does not serve is the HOST's fault (every tier schema of the tree is registered), a missing row the tier's refusal. */
-    private PackageAccount heldAccount(String db, long accountId, LevelAdmission level) {
-        PackageAccount live = books.liveAccount(db, accountId);
+    private PackageAccount heldAccount(UnitOfWork unit, String db, long accountId, LevelAdmission level) {
+        PackageAccount live = books.liveAccount(unit, db, accountId);
         if (live != null) return live;
         if (!books.serves(db)) throw new LedgerFault("schema " + db + " is not registered in the MemLedger: the host must register every tier schema of the tree");
         throw new LedgerRefusal(ACCOUNT_NOT_FOUND, "account " + accountId + " of tier " + level.getLevelIndex() + " is not held in schema " + db);

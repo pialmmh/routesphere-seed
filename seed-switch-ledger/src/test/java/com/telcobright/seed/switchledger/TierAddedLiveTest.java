@@ -27,8 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * P1-E item 13 · a reseller tier created live reaches its root's switch ledger (R10): ONE new tier schema loaded into the running MemLedger
  * (mem-ledger's {@code addDatabase(schema)}), between the root's money moves — never under a session's reserve —, once; a tier the ledger was
- * built over is nothing. The pinned mem-ledger (1.0.0-SNAPSHOT of 2026-10-07) has no {@code addDatabase}: said in words. MemLedger on H2 in
- * memory, as the lab's; a stand-in for a build that has the verb.
+ * built over is nothing. L2b: the seed's mem-ledger (main 6523614) has the verb — a plain call, no stand-in. MemLedger on H2 in memory.
  */
 class TierAddedLiveTest {
 
@@ -37,29 +36,30 @@ class TierAddedLiveTest {
     @AfterEach
     void close() throws Exception { lab.close(); }
 
-    /** A stand-in of a MemLedger that has {@code addDatabase} (mem-ledger fba1346): it writes down what it was asked. */
-    public static final class TierAddingLedger {
-        public final List<String> asked = new CopyOnWriteArrayList<>();
-        public boolean addDatabase(String schema) { asked.add(schema); return true; }
-    }
-
     private static Tenant btcl() {
         return new TenantTreeBuilder().root("btcl").partner(1, "client", PartnerType.CUSTOMER).and().build();
     }
 
+    /** L2b item 1 · the seed's mem-ledger (main 6523614) has {@code addDatabase}: a plain call loads the one new tier, its rows served at once. */
     @Test
-    void aMemLedgerThatHasAddDatabase_loadsTheOneNewTier() {
-        TierAddingLedger stand = new TierAddingLedger();
-        assertThat(AddTierLive.of(stand).load("btcl_res_9")).isTrue();
-        assertThat(stand.asked).containsExactly("btcl_res_9");
+    void theMemLedger_loadsTheOneNewTierLive_itsRowsServedAtOnce() {
+        MemLedger memLedger = lab.start();
+        lab.schema("btcl_res_9").account("btcl_res_9", 901, 90, "BDT", "12.5");
+
+        assertThat(AddTierLive.of(memLedger).load("btcl_res_9")).isTrue();
+
+        assertThat(memLedger.getRegisteredDatabases()).contains("btcl_res_9");
+        assertThat(lab.cachedBalance("btcl_res_9", 901)).isEqualByComparingTo("12.5");
     }
 
     @Test
-    void thePinnedMemLedger_cannotLoadATierLive_andSaysWhy() {
-        MemLedger pinned = lab.start();
-        assertThatThrownBy(() -> AddTierLive.of(pinned).load("btcl_res_9"))
-            .hasMessageContaining("cannot load the tier schema 'btcl_res_9' live")
-            .hasMessageContaining("addDatabase(schema) (mem-ledger fba1346");
+    void aTierAlreadyRegistered_isNothing_andATierWithoutTables_isSaidInWords() {
+        MemLedger memLedger = lab.start();
+
+        assertThat(AddTierLive.of(memLedger).load("btcl_res_5")).as("built over at the start: nothing").isFalse();
+        assertThatThrownBy(() -> AddTierLive.of(memLedger).load("btcl_res_77"))
+            .hasMessageContaining("the MemLedger did not load the tier schema 'btcl_res_77'");
+        assertThat(memLedger.getRegisteredDatabases()).doesNotContain("btcl_res_77");
     }
 
     @Test

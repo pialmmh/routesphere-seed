@@ -4,6 +4,7 @@ import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.switchledger.internal.AccountLocks;
 import com.telcobright.seed.switchledger.internal.Books;
+import com.telcobright.seed.switchledger.internal.UnitOfWork;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,9 +46,11 @@ public final class Credit {
     public Credited credit(String dbName, long accountId, BigDecimal delta, String reference) {
         if (delta == null || delta.signum() <= 0) throw new IllegalArgumentException("a credit is positive: " + delta + " (" + reference + ")");
         try (AccountLocks.Held held = locks.hold(dbName, accountId)) {
-            PackageAccount live = heldAccount(dbName, accountId);
+            UnitOfWork unit = books.unit();
+            PackageAccount live = heldAccount(unit, dbName, accountId);
             BigDecimal before = Books.balanceOf(live);
-            PackageAccount updated = books.moveBalance(dbName, live, before.add(delta), delta);
+            PackageAccount updated = books.moveBalance(unit, dbName, live, before.add(delta), delta);
+            unit.commit("credit " + delta + " to account " + accountId);
             log.info("CREDIT {} | account {} of {}: +{} {} → {}", LogText.clean(reference), accountId, dbName, delta, live.getUom(), updated.getBalanceAfter());
             return new Credited(accountId, before, updated.getBalanceAfter(), updated.getIdpackagePurchase());
         }
@@ -56,15 +59,17 @@ public final class Credit {
     /** Move the account onto purchase {@code newPurchaseId}, under its lock; the balance stays. */
     public Credited reparent(String dbName, long accountId, long newPurchaseId) {
         try (AccountLocks.Held held = locks.hold(dbName, accountId)) {
-            PackageAccount live = heldAccount(dbName, accountId);
-            PackageAccount updated = books.reparent(dbName, live, newPurchaseId);
+            UnitOfWork unit = books.unit();
+            PackageAccount live = heldAccount(unit, dbName, accountId);
+            PackageAccount updated = books.reparent(unit, dbName, live, newPurchaseId);
+            unit.commit("reparent account " + accountId);
             log.info("REPARENT account {} of {}: purchase {} → {}", accountId, dbName, live.getIdpackagePurchase(), newPurchaseId);
             return new Credited(accountId, Books.balanceOf(live), Books.balanceOf(updated), updated.getIdpackagePurchase());
         }
     }
 
-    private PackageAccount heldAccount(String dbName, long accountId) {
-        PackageAccount live = books.liveAccount(dbName, accountId);
+    private PackageAccount heldAccount(UnitOfWork unit, String dbName, long accountId) {
+        PackageAccount live = books.liveAccount(unit, dbName, accountId);
         if (live == null) throw new IllegalArgumentException("account " + accountId + " is not held in schema " + dbName);
         return live;
     }

@@ -35,16 +35,17 @@ final class NewRowsOfATier {
         return byDb;
     }
 
+    /** L2b item 1 · Every ghost of every tier taken out in ONE unit (one WAL record), as every write of the switch ledger is. */
     private static int takeOutTheGhosts(MemLedger memLedger, Map<String, Set<Object>> reservesBefore) {
-        int ghosts = 0;
+        UnitOfWork unit = new UnitOfWork(memLedger);
         for (String db : memLedger.getRegisteredDatabases()) {
             Set<Object> before = reservesBefore.getOrDefault(db, Set.of());
             for (Object key : Set.copyOf(memLedger.getAllEntities(db, Books.RESERVE).keySet())) {
-                if (before.contains(key)) continue;
-                memLedger.delete(db, Books.RESERVE, key);
-                ghosts++;
+                if (!before.contains(key)) unit.delete(db, Books.RESERVE, key);
             }
         }
+        int ghosts = unit.size();
+        unit.commit("take out " + ghosts + " ghost reserve row(s) a merge brought back");
         return ghosts;
     }
 }

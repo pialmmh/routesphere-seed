@@ -61,9 +61,11 @@ public final class OrphanReaper {
     /** Under the account's lock the row is read again — a session may have settled it meanwhile — then given back whole. */
     private boolean giveBack(String dbName, PackageAccountReserve row) {
         try (AccountLocks.Held held = locks.hold(dbName, row.getIdPackageAccount())) {
-            PackageAccountReserve still = books.reserveRow(dbName, row.getChannelCallUuid());
+            UnitOfWork unit = books.unit();
+            PackageAccountReserve still = books.reserveRow(unit, dbName, row.getChannelCallUuid());
             if (still == null) return false;
-            books.returnRow(dbName, still);
+            books.returnRow(unit, dbName, still);
+            unit.commit("give back the orphan " + row.getChannelCallUuid());
             return true;
         } catch (RuntimeException e) {
             log.error("the reaper could not give back the reserve {} of {}: {}", LogText.clean(row.getChannelCallUuid()), dbName, LogText.failureText(e));

@@ -1,11 +1,17 @@
 package com.telcobright.seed.switchledger;
 
+import com.telcobright.core.wal.WALEntryBatch;
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.memledger.config.ReplicationConfig;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.internal.Books;
+import net.openhft.chronicle.queue.ChronicleQueue;
+import net.openhft.chronicle.queue.ExcerptTailer;
+import net.openhft.chronicle.queue.RollCycles;
+import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
+import net.openhft.chronicle.wire.DocumentContext;
 import org.h2.jdbcx.JdbcDataSource;
 
 import java.io.IOException;
@@ -140,6 +146,33 @@ public final class LedgerLab implements AutoCloseable {
 
     public BigDecimal dbPurchase(String schema, long accountId) {
         return queryDecimal("SELECT id_PackagePurchase FROM " + schema + ".packageaccount WHERE id_packageaccount = " + accountId);
+    }
+
+    /**
+     * L2b · The records in the ledger's REAL WAL that carry at least one entry (the start's probe marker carries none), read by the lab's own
+     * tailer over the same queue files — the way mem-ledger's L1 scenario counts them (one business operation = ONE record).
+     */
+    public long walRecords() { return walRecordsAndEntries()[0]; }
+
+    /** L2b · The entries of the LAST record that carries any (0 when none): how many rows one record wrote. */
+    public long entriesOfTheLastRecord() { return walRecordsAndEntries()[1]; }
+
+    private long[] walRecordsAndEntries() {
+        long records = 0, lastEntries = 0;
+        try (ChronicleQueue queue = SingleChronicleQueueBuilder.binary(dir.resolve("wal").toString()).rollCycle(RollCycles.DAILY).build()) {
+            ExcerptTailer tailer = queue.createTailer();
+            tailer.toStart();
+            while (true) {
+                try (DocumentContext dc = tailer.readingDocument()) {
+                    if (!dc.isPresent()) return new long[] {records, lastEntries};
+                    WALEntryBatch record = dc.wire().read("batch").object(WALEntryBatch.class);
+                    if (record != null && record.getEntries() != null && !record.getEntries().isEmpty()) {
+                        records++;
+                        lastEntries = record.getEntries().size();
+                    }
+                }
+            }
+        }
     }
 
     public static void await(String what, BooleanSupplier condition) {
