@@ -64,6 +64,7 @@ public final class BootstrapRoad implements AutoCloseable {
         this.ledger = new PerRootLedger(this::rootOf);
         this.tiersFirst = new TiersFirst(ledger);
         trees.gateEachNewTree(tiersFirst);                                  // P1-G: a new tree's tiers into their root's ledger first
+        trees.onDoorbellWords((root, message) -> ledger.doorbell(rootDbOf(root), message));      // L2b item 3: the ledger DB reads the ring
         this.pending = new PendingRoots(deployment.app(), deployment.pendingRoot(), makers.clock(), root -> tryToServe(root, "tried again, it was pending"));
     }
 

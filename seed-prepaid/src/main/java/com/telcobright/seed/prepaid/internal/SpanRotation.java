@@ -55,13 +55,13 @@ final class SpanRotation<C extends RoutesphereContext> {
         long startedAt = ctx.spanStartedAtMs > 0 ? ctx.spanStartedAtMs : ctx.activeAtMs;
         TierSettlement done;
         try {
-            done = flow.kit().ledger().settle(level, TierSettlement.reservedOf(level));
+            done = MoneyUnit.moves(flow.kit().ledger()).settle(level, TierSettlement.reservedOf(level));
         } catch (RuntimeException e) {
             ctx.history.note(flow.name(), "tier " + level.getLevelIndex() + ": the ledger did not take the settlement of " + level.getDebitReference()
                 + " at the rotation (" + e + ") — the cut; the end settles it");
             return false;
         }
-        journalSettled(ctx, level);
+        MoneyUnit.afterTheRecord(() -> journalSettled(ctx, level));
         List<ClosedSpan> spans = new ArrayList<>(ctx.closedSpans);
         spans.add(new ClosedSpan(ctx.spanNo(), level, done, startedAt, now));
         ctx.closedSpans = List.copyOf(spans);

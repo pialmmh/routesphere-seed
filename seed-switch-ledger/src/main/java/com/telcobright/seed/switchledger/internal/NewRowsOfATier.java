@@ -1,6 +1,7 @@
 package com.telcobright.seed.switchledger.internal;
 
 import com.telcobright.memledger.api.MemLedger;
+import com.telcobright.memledger.api.ReloadResult;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,13 +21,16 @@ import java.util.Set;
  */
 final class NewRowsOfATier {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NewRowsOfATier.class);
+
     private NewRowsOfATier() {}
 
     /** @return the rows merged, the ghost reserves not counted */
     static int merge(MemLedger memLedger) {
         Map<String, Set<Object>> reservesBefore = reservesOf(memLedger);
-        int merged = memLedger.reloadNewEntities();
-        return merged - takeOutTheGhosts(memLedger, reservesBefore);
+        ReloadResult read = memLedger.reloadNewRows();                       // L2b item 3 (S6): main's reload, its failures said, not the deprecated count
+        if (!read.isComplete()) log.error("the switch ledger's reload of new rows was partial — the rest was merged: {}", read.failures());
+        return read.added() - takeOutTheGhosts(memLedger, reservesBefore);
     }
 
     private static Map<String, Set<Object>> reservesOf(MemLedger memLedger) {
@@ -35,16 +39,17 @@ final class NewRowsOfATier {
         return byDb;
     }
 
+    /** L2b item 1 · Every ghost of every tier taken out in ONE unit (one WAL record), as every write of the switch ledger is. */
     private static int takeOutTheGhosts(MemLedger memLedger, Map<String, Set<Object>> reservesBefore) {
-        int ghosts = 0;
+        UnitOfWork unit = new UnitOfWork(memLedger);
         for (String db : memLedger.getRegisteredDatabases()) {
             Set<Object> before = reservesBefore.getOrDefault(db, Set.of());
             for (Object key : Set.copyOf(memLedger.getAllEntities(db, Books.RESERVE).keySet())) {
-                if (before.contains(key)) continue;
-                memLedger.delete(db, Books.RESERVE, key);
-                ghosts++;
+                if (!before.contains(key)) unit.delete(db, Books.RESERVE, key);
             }
         }
+        int ghosts = unit.size();
+        unit.commit("take out " + ghosts + " ghost reserve row(s) a merge brought back");
         return ghosts;
     }
 }

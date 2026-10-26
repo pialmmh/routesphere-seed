@@ -97,9 +97,9 @@ final class SessionSettlement<C extends RoutesphereContext> {
         BigDecimal charged = null;
         try {
             charged = chargeByTheRefundRule(ctx, level);
-            if (charged.signum() > 0) return flow.kit().ledger().settle(level, charged);
-            flow.kit().ledger().release(level, ctx.endCause == null ? SessionCause.NO_ANSWER : ctx.endCause);
-            TierReserve.of(flow).journalRelease(ctx, level);
+            if (charged.signum() > 0) return MoneyUnit.moves(flow.kit().ledger()).settle(level, charged);
+            MoneyUnit.moves(flow.kit().ledger()).release(level, ctx.endCause == null ? SessionCause.NO_ANSWER : ctx.endCause);
+            MoneyUnit.afterTheRecord(() -> TierReserve.of(flow).journalRelease(ctx, level));
             return TierSettlement.of(level, BigDecimal.ZERO, level.getBalanceBefore());
         } catch (RuntimeException e) {
             return owed(ctx, level, charged, e);
@@ -114,7 +114,7 @@ final class SessionSettlement<C extends RoutesphereContext> {
     TierSettlement settleTier(C ctx, LevelAdmission tier, Outcome outcome) {
         BigDecimal charged = flow.delivered(ctx, outcome) ? flow.chargeAtSettle(ctx, tier) : chargeByTheRefundRule(ctx, tier);
         if (charged == null || charged.signum() < 0) charged = BigDecimal.ZERO;
-        return flow.kit().ledger().settle(tier, charged);
+        return MoneyUnit.moves(flow.kit().ledger()).settle(tier, charged);
     }
 
     /** What a tier not delivered pays: its whole reserve when the lane's refund rule charges the outcome, else nothing. */

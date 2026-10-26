@@ -40,6 +40,12 @@
             <artifactId>seed-switch-ledger</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- L2b item 4: the ids of a purchase and its accounts — the application's IdSource (seed-idgen; its testkit in the tests) -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-idgen</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- PackageAccount, Partner, DynamicContext, LevelAdmission, IntlOutRating -->
         <dependency>
             <groupId>com.telcobright</groupId>

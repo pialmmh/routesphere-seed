@@ -13,6 +13,7 @@ import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.LedgerUnit;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.ManualClock;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
@@ -89,14 +90,30 @@ public final class ParityScene implements AutoCloseable {
     public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID, ON_PREPAID }
 
     private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
+        this(balances, null, settings, withEngine, lanes);
+    }
+
+    /** L2b item 4 · The ledger as a ledger DB with the purchases cached (each account's purchase as the tree names it; expiries overridden). */
+    private ParityScene(Map<String, String> balances, Map<Long, String> purchaseExpiries, RoutesphereSettings settings, boolean withEngine,
+                        Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
         fundTheLab(balances);
+        if (purchaseExpiries != null) buyEveryAccountsPurchase(purchaseExpiries);
         lab.start();
-        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock);
+        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null
+            : java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase"));
         this.recorder = new RecordingPort(ledger.port(), this::ctxOrNull);
         this.kit = RoutesphereKit.builder().tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("esl", "10.0.0.1:8021", "btcl")))
             .ledger(recorder).cdr(cdrs).zone(DHAKA).clock(clock).settings(settings).build();
         this.flow = lanes.apply(kit);
         this.engine = withEngine ? RoutesphereEngine.of(new ParitySupervisor(flow, this::newContext)).signaling(ParityWire.spec()).channel(wire, ParityScene::decode).start() : null;
+    }
+
+    /**
+     * L2b item 4 (S4) · The handler-level scene whose ledger caches the PURCHASES: a partner's accounts and their expiry are the ledger's,
+     * not the tree's — {@code expiries} (purchase id → {@code "yyyy-MM-dd HH:mm:ss"}) makes the ledger's purchase disagree with the tree.
+     */
+    public static ParityScene openOnTheLedgersPurchases(Map<String, String> balances, Map<Long, String> expiries, Lane lane) {
+        return new ParityScene(balances, expiries, handlerSettings(), false, kit -> laneOf(lane, kit));
     }
 
     /** The handler-level scene: the live call's cadence (60 s, the first renewal at 58 s), a 3-hour ACTIVE, no machine. */
@@ -169,6 +186,16 @@ public final class ParityScene implements AutoCloseable {
         row("btcl", 21, 5, "TF_min", "10", balances).row("btcl", 22, 6, "BDT", "50", balances).row("btcl", 91, 9, "BDT", "100", balances)
             .row("res_2", 11, 1, "TF_min", "2.5", balances).row("res_2", 12, 2, "BDT", "100", balances).row("res_2", 13, 3, "TF_min", "100", balances)
             .row("res_2", 31, 4, "BDT", "1.00", balances).row("res_2", 41, 7, "TF_min", "100", balances);
+    }
+
+    /** Every account's purchase as the tree names it (partner, expiry; 3 = EXPIRED), the ledger as a ledger DB over them. */
+    private void buyEveryAccountsPurchase(Map<Long, String> expiries) {
+        lab.purchaseTables();
+        long[][] purchases = {{5, RESELLER}, {6, RESELLER}, {9, DIRECT}};
+        for (long[] p : purchases) lab.purchase("btcl", p[0], p[1], expiries.getOrDefault(p[0], "2030-01-01 00:00:00"));
+        long[][] inRes2 = {{1, UNILEVER}, {2, UNILEVER}, {3, UNILEVER}, {4, CASH_ONLY}, {7, PACKAGES_ONLY}};
+        for (long[] p : inRes2) lab.purchase("res_2", p[0], p[1], expiries.getOrDefault(p[0], p[0] == 3 ? "2026-01-01 00:00:00" : "2030-01-01 00:00:00"));
+        lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase"), List.of("packageaccountreserve"), 5_000);
     }
 
     private ParityScene row(String schema, long id, long purchase, String uom, String balance, Map<String, String> overrides) {
@@ -319,5 +346,27 @@ public final class ParityScene implements AutoCloseable {
         @Override public Credited credit(LevelAdmission account, BigDecimal amount, String reference) { note("credit", reference); return real.credit(account, amount, reference); }
         @Override public Credited reparent(LevelAdmission account, long purchaseId) { note("reparent", "account-" + account.getPackageAccountId()); return real.reparent(account, purchaseId); }
         @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
+
+        /** L2b item 4: the purchase road and the ledger's accounts. */
+        @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { note("purchase", reference); return real.purchase(buyer, offer, reference, ids); }
+        @Override public Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return real.accountsOf(buyer); }
+
+        /** L2b: a unit's moves are recorded as the port's verbs are (the same words), then staged in the real port's unit. */
+        @Override public LedgerUnit unit() { return new RecordingUnit(real.unit()); }
+
+        private final class RecordingUnit implements LedgerUnit {
+            private final LedgerUnit unit;
+            RecordingUnit(LedgerUnit unit) { this.unit = unit; }
+            @Override public void lock(java.util.Collection<LevelAdmission> accounts) { unit.lock(accounts); }
+            @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return unit.balanceOf(level); }
+            @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) { note("reserve", reference); return unit.reserve(level, amount, reference, withinMs); }
+            @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { note("charge", reference); return unit.charge(level, amount, reference); }
+            @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { note("settle", level.getDebitReference()); return unit.settle(level, charged); }
+            @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); unit.release(level, why); }
+            @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { note("refund", level.getDebitReference()); return unit.refund(level, amount, why); }
+            @Override public void abandon(String why) { unit.abandon(why); }
+            @Override public void commit(String what) { unit.commit(what); }
+            @Override public void close() { unit.close(); }
+        }
     }
 }

@@ -67,6 +67,9 @@ public final class LiveTenantTrees implements LiveTrees {
 
     @Override public Set<String> roots() { return served.active(); }
 
+    /** L2b item 3 · The doorbell's words of every served root, by root, as they arrive (the kit's ledger reads them). */
+    @Override public void onDoorbellWords(java.util.function.BiConsumer<String, String> words) { trees.onDoorbellWords(words); }
+
     @Override
     public void serve(String root) {
         if (!served.add(root)) return;

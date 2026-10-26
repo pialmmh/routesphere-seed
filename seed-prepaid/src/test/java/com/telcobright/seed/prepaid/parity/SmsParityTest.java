@@ -96,16 +96,21 @@ class SmsParityTest {
         assertThat(scene.recorder.seen).noneMatch(s -> s.startsWith("charge s4#L1"));
     }
 
-    /** S5 · a later tier refuses (the root's digit filter) → the earlier tier's charge is given back (the compensate rule, charged-now). */
+    /**
+     * S5 · a later tier refuses (the root's digit filter) → the earlier tier's charge is given back (the compensate rule, charged-now). L2b:
+     * every tier authorized first, then ONE batch — the same money; nothing was charged, the ledger never asked, no record.
+     */
     @Test
     void S5_aLaterTierRefuses_theEarlierChargeIsGivenBack() {
         scene = sms(Map.of(), true);
+        long records = scene.lab.walRecords();
 
         Verdict verdict = scene.admit(scene.call("s5", UNILEVER, DENIED));
 
         assertThat(verdict.cause()).isEqualTo(CallLane.DIGIT_FILTER_DENIED);
         assertThat(scene.balance("res_2", 12)).isEqualByComparingTo("100");
-        assertThat(scene.recorder.seen).anyMatch(s -> s.startsWith("charge s5#L0 ")).anyMatch(s -> s.startsWith("refund s5#L0 "));
+        assertThat(scene.recorder.seen).as("L2b: nothing charged, nothing to give back — the ledger was never asked").isEmpty();
+        assertThat(scene.lab.walRecords()).as("L2b: no record").isEqualTo(records);
     }
 
     /** S6 · every verb is idempotent by its reference: the same charge twice takes once; the same refund twice gives back once. */

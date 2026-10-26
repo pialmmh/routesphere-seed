@@ -64,6 +64,9 @@ public final class TenantTrees implements TenantLookup, AutoCloseable {
 
     @Override public void close() { contexts.close(); }
 
+    /** L2b item 3 · Every doorbell message's words, by root (its tenant id), as they arrive. */
+    public void onDoorbellWords(java.util.function.BiConsumer<String, String> listener) { contexts.onDoorbellWords(listener); }
+
     // ── the map ──
 
     /** The tenant's current tree with its version; empty for a tenant not served or never loaded. */

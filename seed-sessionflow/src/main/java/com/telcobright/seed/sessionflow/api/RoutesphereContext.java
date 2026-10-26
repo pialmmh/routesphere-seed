@@ -113,6 +113,8 @@ public class RoutesphereContext extends SessionContext {
     @JsonIgnore public transient volatile List<LevelAdmission> levels = List.of();
     /** The tiers the candidate being admitted has reserved so far (live, admission only). */
     @JsonIgnore transient volatile List<LevelAdmission> walking = new ArrayList<>();
+    /** L2b · The money engine's plan of the candidate under admission (seed-prepaid's: every tier rated, held at once); the base never reads it. */
+    @JsonIgnore public transient volatile Object moneyPlan;
     /** The candidate being admitted (live, admission only) — read it through {@link #candidateBeingAdmitted()}. */
     @JsonIgnore transient volatile Candidate trying;
     /** The persisted picture of {@link #levels}: ids and amounts, in the same order. */

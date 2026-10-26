@@ -19,8 +19,8 @@ import java.util.List;
  * process left in the air — is ONE call into the engine. The engine is seed-prepaid's ({@code PrepaidEngine}: the base's money steps moved
  * there, the Prepaid builder on top); the kit finds its maker on the classpath ({@link MoneyEngineMaker}).
  *
- * <p>The order of operations is today's (L2a): one tier held as the chain walks it, the earlier tiers released when a later one refuses,
- * the renewal per tier, the settlement per tier. Every verb is idempotent per (session, tier) through the ledger port's references; every
+ * <p>L2b: {@link #admit} rates a tier as the chain walks it and {@link #holdTheWalk} holds every tier at once (one unit of the ledger,
+ * nothing to give back when a tier refuses); the renewal of every tier and the settlement of every tier are each ONE unit too. Every verb is idempotent per (session, tier) through the ledger port's references; every
  * write goes through the kit's ONE ledger port.
  *
  * @param <C> the lane's context
@@ -32,6 +32,13 @@ public interface MoneyEngine<C extends RoutesphereContext> {
      * on its account through the ledger under the tier's reference, the tier recorded on the walk. The verdict: ok, or the cause.
      */
     Verdict admit(C ctx, Tier tier, Partner partner);
+
+    /**
+     * L2b item 2 · ADMITTING, after EVERY tier of the candidate passed its checks: the money of every tier the engine was asked to
+     * {@link #admit} — rated and authorized as one, under the accounts' locks — held in ONE unit of the ledger (all tiers or none). Null =
+     * held (or nothing to hold); else the cause, nothing held anywhere. Default: nothing (an engine that holds as the chain walks).
+     */
+    default String holdTheWalk(C ctx) { return null; }
 
     /** ADMITTING · a refused candidate (the call switch's {@code compensateReserves}): every tier it held goes back, in the order held. */
     void release(C ctx, List<LevelAdmission> held, String why);

@@ -1,24 +1,19 @@
 package com.telcobright.seed.switchledger.internal;
 
-import com.telcobright.seed.sessionflow.api.LogText;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
-import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.LedgerUnit;
 import com.telcobright.seed.switchledger.api.Credit;
 import com.telcobright.seed.switchledger.api.LiveBalance;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
- * The base's {@link LedgerPort} over the switch's own MemLedger (ARCH-0077-A item 3) — the call switch's money, in the base's three verbs,
+ * The base's {@link LedgerPort} over the switch's own MemLedger (ARCH-0077-A item 3) — the call switch's money, in the base's verbs,
  * exactly as routesphere-core {@code PrepaidServiceWithCompensation} moves it:
  *
  * <ul>
@@ -35,15 +30,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *       back under the same lock, once per tier.</li>
  * </ul>
  *
- * <p>Every verb is idempotent by its reference: a repeated reserve answers its first result ({@code repeated = true}) and debits nothing; a
- * repeated settle or release answers the first and moves nothing. The account is the tier's own ({@code level.getPackageAccountId()}: the
- * tree's {@code PackageAccount} the rating step chose through {@code TierRate.account}, else the account a rotation named — none is the
- * refusal {@code NO_ACCOUNT}), in the TIER's own schema ({@code level.getDbName()}). A MemLedger that does not answer is a
- * {@link LedgerFault}, never a refusal. In the process: {@link #slowestAnswerMs()} is 0.
+ * <p>L2b: the moves themselves live in {@link SwitchUnit} — ONE unit of work, ONE WAL record. {@link #unit()} hands one out for a business
+ * operation over every tier it touches (the engine's: every tier's hold, renewal or settlement at once); each verb here is a unit of one
+ * move. Every verb is idempotent by its reference: a repeated reserve answers its first result ({@code repeated = true}) and debits
+ * nothing; a repeated settle or release answers the first and moves nothing. The account is the tier's own ({@code level.getPackageAccountId()}
+ * — none is the refusal {@code NO_ACCOUNT}), in the TIER's own schema. A MemLedger that does not answer is a {@link LedgerFault}, never a
+ * refusal. In the process: {@link #slowestAnswerMs()} is 0.
  */
 public final class MemLedgerPort implements LedgerPort, LiveBalance {
-
-    private static final Logger log = LoggerFactory.getLogger(MemLedgerPort.class);
 
     /** The ledger refused: the tier names no account. */
     public static final String NO_ACCOUNT = "NO_ACCOUNT";
@@ -52,178 +46,72 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     private final Books books;
     private final AccountLocks locks;
-    /** The first answer of every reference held, until its tier closes. */
-    private final Map<String, Reservation> answered = new ConcurrentHashMap<>();
-    /** The references of every open tier (its row key), to forget at the close. */
-    private final Map<String, Set<String>> referencesOf = new ConcurrentHashMap<>();
-    private final ClosedTiers closed = new ClosedTiers();
-    /** L2a · CHARGE_NOW: the first answer of every charge, by its reference (bounded as the closed tiers are). */
-    private final Charges charges = new Charges();
+    private final Answers answers = new Answers();
+    private final Purchases purchases;
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
         this.locks = locks;
+        this.purchases = new Purchases(books);
     }
 
-    // ── reserve ─────────────────────────────────────────────────────────────
+    /** L2b · ONE unit over every tier a business operation touches: lock all, move all, ONE record. */
+    @Override public LedgerUnit unit() { return new SwitchUnit(books, locks, answers); }
 
     @Override
     public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) {
-        long accountId = accountOf(level);
-        Reservation seen = answered.get(reference);
-        if (seen != null) return Optional.of(repeatOf(seen));
-        String rowKey = rowKeyOf(level, reference);
-        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            return holdUnderTheLock(level, accountId, amount, reference, rowKey);
-        }
+        return oneMove("hold " + amount + " under " + reference, u -> u.reserve(level, amount, reference, Long.MAX_VALUE));
     }
-
-    private Optional<Reservation> holdUnderTheLock(LevelAdmission level, long accountId, BigDecimal amount, String reference, String rowKey) {
-        String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal before = Books.balanceOf(live);
-        if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
-        BigDecimal after = before.subtract(amount);
-        PackageAccountReserve row = books.reserveRow(db, rowKey);
-        if (row == null) books.openReserveRow(db, rowKey, live, amount); else books.growReserveRow(db, row, amount);
-        books.moveBalance(db, live, after, amount.negate());
-        return Optional.of(remember(rowKey, reference, new Reservation(live.getId(), live.getUom(), amount, before, after, false)));
-    }
-
-    private static Optional<Reservation> refused(LevelAdmission level, long accountId, BigDecimal balance, BigDecimal amount, String reference) {
-        if (log.isDebugEnabled()) log.debug("{} | account {} of {} cannot fund {} {}: balance {}", LogText.clean(reference), accountId, level.getDbName(), amount,
-            level.getUom(), balance);
-        return Optional.empty();
-    }
-
-    private Reservation remember(String rowKey, String reference, Reservation held) {
-        answered.put(reference, held);
-        referencesOf.computeIfAbsent(rowKey, k -> ConcurrentHashMap.newKeySet()).add(reference);
-        return held;
-    }
-
-    private static Reservation repeatOf(Reservation first) {
-        return new Reservation(first.account(), first.uom(), first.reserved(), first.balanceBefore(), first.balanceAfter(), true);
-    }
-
-    // ── settle ──────────────────────────────────────────────────────────────
 
     @Override
-    public TierSettlement settle(LevelAdmission level, BigDecimal charged) {
-        String tier = level.getDebitReference();
-        if (tier == null) return TierSettlement.nothing(level.getLevelIndex());
-        TierSettlement done = closed.get(tier);
-        if (done != null) return done;
-        long accountId = accountOf(level);
-        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            return settleUnderTheLock(level, tier, accountId, charged);
-        }
-    }
-
-    private TierSettlement settleUnderTheLock(LevelAdmission level, String tier, long accountId, BigDecimal charged) {
-        String db = level.getDbName();
-        PackageAccountReserve row = books.reserveRow(db, tier);
-        if (row == null) return nothingOpen(level, tier, charged);
-        BigDecimal toReturn = TierSettlement.reservedOf(level).subtract(charged);
-        noteADisagreement(level, row, tier);
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal after = Books.balanceOf(live).add(toReturn);
-        books.moveBalance(db, live, after, toReturn);
-        books.deleteReserveRow(db, tier);
-        forget(tier);
-        return closed.remember(tier, TierSettlement.of(level, charged, after));
-    }
-
-    /** The base's facts and the row's should agree; when they do not, the base's rule the money and the difference is said once. */
-    private static void noteADisagreement(LevelAdmission level, PackageAccountReserve row, String tier) {
-        BigDecimal held = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
-        if (held.compareTo(TierSettlement.reservedOf(level)) != 0) {
-            log.warn("{} | the reserve row holds {} but the tier reserved {}: the tier's total settles", LogText.clean(tier), held, TierSettlement.reservedOf(level));
-        }
-    }
-
-    /** No row is open under the tier: it was settled, released or reaped before. Nothing moves; the base is told it is owed, in words. */
-    private static TierSettlement nothingOpen(LevelAdmission level, String tier, BigDecimal charged) {
-        log.error("{} | no reserve row is open in {} for account {}: settled, released or reaped before — nothing moved", LogText.clean(tier), level.getDbName(), level.getPackageAccountId());
-        return TierSettlement.owed(level, charged, "no reserve row open under " + tier + " (settled, released or reaped before): nothing moved");
-    }
-
-    // ── release ─────────────────────────────────────────────────────────────
+    public TierSettlement settle(LevelAdmission level, BigDecimal charged) { return oneMove("settle " + level.getDebitReference(), u -> u.settle(level, charged)); }
 
     @Override
-    public void release(LevelAdmission level, String why) {
-        String tier = level.getDebitReference();
-        if (tier == null || closed.get(tier) != null) return;
-        long accountId = accountOf(level);
-        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            releaseUnderTheLock(level, tier, why);
-        }
-    }
-
-    private void releaseUnderTheLock(LevelAdmission level, String tier, String why) {
-        String db = level.getDbName();
-        PackageAccountReserve row = books.reserveRow(db, tier);
-        if (row == null) { forget(tier); return; }
-        BigDecimal back = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
-        BigDecimal after = books.returnRow(db, row);
-        forget(tier);
-        closed.remember(tier, new TierSettlement(level.getLevelIndex(), back, BigDecimal.ZERO, back, after, true, why));
-    }
-
-    // ── charge · refund (L2a: CHARGE_NOW, the SMS's final debit) ───────────
+    public void release(LevelAdmission level, String why) { oneMove("release " + level.getDebitReference(), u -> { u.release(level, why); return null; }); }
 
     @Override
     public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) {
-        long accountId = accountOf(level);
-        Reservation seen = charges.get(reference);
-        if (seen != null) return Optional.of(repeatOf(seen));
-        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            return chargeUnderTheLock(level, accountId, amount, reference);
-        }
-    }
-
-    private Optional<Reservation> chargeUnderTheLock(LevelAdmission level, long accountId, BigDecimal amount, String reference) {
-        String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal before = Books.balanceOf(live);
-        if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
-        BigDecimal after = amount.signum() == 0 ? before : books.debit(db, live, amount).getBalanceAfter();
-        log.info("CHARGE {} | account {} of {}: -{} {} → {}", LogText.clean(reference), accountId, db, amount, live.getUom(), after);
-        return Optional.of(charges.remember(reference, new Reservation(live.getId(), live.getUom(), amount, before, after, false)));
+        return oneMove("charge " + amount + " under " + reference, u -> u.charge(level, amount, reference));
     }
 
     @Override
     public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) {
-        String tier = level.getDebitReference();
-        if (tier == null) return TierSettlement.nothing(level.getLevelIndex());
-        TierSettlement done = closed.get(tier);
-        if (done != null) return done;
-        long accountId = accountOf(level);
-        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
-            return refundUnderTheLock(level, tier, accountId, amount, why);
-        }
+        return oneMove("refund " + amount + " of " + level.getDebitReference(), u -> u.refund(level, amount, why));
     }
 
-    private TierSettlement refundUnderTheLock(LevelAdmission level, String tier, long accountId, BigDecimal amount, String why) {
-        String db = level.getDbName();
-        PackageAccount live = heldAccount(db, accountId, level);
-        BigDecimal after = amount.signum() == 0 ? Books.balanceOf(live) : books.moveBalance(db, live, Books.balanceOf(live).add(amount), amount).getBalanceAfter();
-        log.info("REFUND {} | account {} of {}: +{} {} → {} ({})", LogText.clean(tier), accountId, db, amount, live.getUom(), after, LogText.clean(why));
-        BigDecimal taken = TierSettlement.reservedOf(level);
-        return closed.remember(tier, new TierSettlement(level.getLevelIndex(), taken, taken.subtract(amount), amount, after, true, why));
+    /** One move = one unit: its account's lock, its rows staged, ONE record (nothing when the move staged nothing). */
+    private <T> T oneMove(String what, Function<SwitchUnit, T> move) {
+        try (SwitchUnit unit = new SwitchUnit(books, locks, answers)) {
+            T answer = move.apply(unit);
+            unit.commit(what);
+            return answer;
+        }
     }
 
     // ── credit · reparent (L2a: the money roads, over the existing Credit — one lock table with the verbs above) ──
 
     @Override
     public Credited credit(LevelAdmission account, BigDecimal amount, String reference) {
-        return creditedOf(new Credit(books, locks).credit(account.getDbName(), accountOf(account), amount, reference));
+        return creditedOf(new Credit(books, locks).credit(account.getDbName(), SwitchUnit.accountOf(account), amount, reference));
     }
 
     @Override
     public Credited reparent(LevelAdmission account, long purchaseId) {
-        return creditedOf(new Credit(books, locks).reparent(account.getDbName(), accountOf(account), purchaseId));
+        Credited moved = creditedOf(new Credit(books, locks).reparent(account.getDbName(), SwitchUnit.accountOf(account), purchaseId));
+        purchases.forgetTheIndex();                                                    // the account's partner may be another's now
+        return moved;
     }
+
+    // ── L2b item 4 · purchases through the ledger; the partner's accounts from its cached purchases (S4) ──
+
+    @Override
+    public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { return purchases.purchase(buyer, offer, reference, ids); }
+
+    @Override
+    public Optional<java.util.List<PackageAccount>> accountsOf(LevelAdmission buyer) { return purchases.accountsOf(buyer); }
+
+    /** New rows were merged into the cache (a reload, a tier added): the partner → accounts index is made again on its next ask. */
+    public void newRowsMerged() { purchases.forgetTheIndex(); }
 
     private static Credited creditedOf(Credit.Credited done) { return new Credited(done.accountId(), done.before(), done.after(), done.purchaseId()); }
 
@@ -235,36 +123,5 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         if (accountId == null || level.getDbName() == null) return Optional.empty();
         PackageAccount live = books.liveAccount(level.getDbName(), accountId);
         return live == null ? Optional.empty() : Optional.of(Books.balanceOf(live));
-    }
-
-    // ── the small helpers ───────────────────────────────────────────────────
-
-    private static long accountOf(LevelAdmission level) {
-        Long id = level.getPackageAccountId();
-        if (id == null) {
-            throw new LedgerRefusal(NO_ACCOUNT, "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") partner " + level.getPartnerId()
-                + " names no package account: the rating step chose none");
-        }
-        return id;
-    }
-
-    /** The live row; a schema the ledger does not serve is the HOST's fault (every tier schema of the tree is registered), a missing row the tier's refusal. */
-    private PackageAccount heldAccount(String db, long accountId, LevelAdmission level) {
-        PackageAccount live = books.liveAccount(db, accountId);
-        if (live != null) return live;
-        if (!books.serves(db)) throw new LedgerFault("schema " + db + " is not registered in the MemLedger: the host must register every tier schema of the tree");
-        throw new LedgerRefusal(ACCOUNT_NOT_FOUND, "account " + accountId + " of tier " + level.getLevelIndex() + " is not held in schema " + db);
-    }
-
-    /** The row is the TIER's: its reference once held ({@code <sid>#L<n>}); a window ({@code …#W<n>}) grows it. */
-    private static String rowKeyOf(LevelAdmission level, String reference) {
-        if (level.getDebitReference() != null) return level.getDebitReference();
-        int window = reference.indexOf("#W");
-        return window < 0 ? reference : reference.substring(0, window);
-    }
-
-    private void forget(String tier) {
-        Set<String> references = referencesOf.remove(tier);
-        if (references != null) references.forEach(answered::remove);
     }
 }

@@ -22,12 +22,18 @@ public final class SwitchLedgers {
      * Every door of the switch ledger over this MemLedger, on one per-account lock table. The ledger must hold exactly the two entities,
      * PackageAccount and PackageAccountReserve, in every tier schema of the tree — any other refuses the build in words.
      */
-    public static SwitchLedger over(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock) {
+    public static SwitchLedger over(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock) { return over(memLedger, settings, clock, null); }
+
+    /**
+     * L2b item 3 · The same over a ledger DB: the MemLedger must hold EXACTLY the configured entities ({@code LedgerDb.register}'s answer);
+     * null = the two (and the charges' references when registered), as before.
+     */
+    public static SwitchLedger over(MemLedger memLedger, SwitchLedgerSettings settings, Clock clock, java.util.Set<String> configured) {
         Objects.requireNonNull(memLedger, "memLedger");
         Objects.requireNonNull(settings, "settings");
         Objects.requireNonNull(clock, "clock");
-        TwoEntities.check(memLedger);
-        Books books = new Books(memLedger, clock);
+        java.util.Set<String> held = configured == null ? TwoEntities.check(memLedger) : TwoEntities.check(memLedger, configured);
+        Books books = new Books(memLedger, clock, held);
         AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
         MemLedgerPort port = new MemLedgerPort(books, locks);
         return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock), new Credit(books, locks));

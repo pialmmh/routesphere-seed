@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.spi;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.internal.DirectUnit;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -70,6 +71,14 @@ public interface LedgerPort {
     default void treeReloaded() { }
 
     /**
+     * L2b item 3 · A ring of the root's doorbell {@code config_event_loader_<root>} with its words: {@code what} and change-wire's keys
+     * {@code changes} ({@code "tier.table:OPERATION"}). A ledger that keeps a DB of its own reads them (the switch ledger's ledger DB: an
+     * INSERT on a table it caches → a reload of new rows, coalesced; a catch-up word → the same; its own tables' UPDATE/DELETE → nothing).
+     * Default: nothing.
+     */
+    default void doorbell(String what, java.util.List<String> changes) { }
+
+    /**
      * After {@link #tierAdded}: are the tier's books loaded? A ledger that keeps books per tier and SAID its load failed (never thrown)
      * answers false, so the kit's gate hands the tier again on the next tree (the next doorbell ring, reload or event) instead of leaving
      * its money refused until a restart. Default: true (a ledger that keeps no books per tier has nothing to load).
@@ -115,6 +124,43 @@ public interface LedgerPort {
     default Credited reparent(LevelAdmission account, long purchaseId) {
         throw new LedgerFault(getClass().getSimpleName() + " has no reparent road: the switch ledger has");
     }
+
+    /**
+     * L2b item 2 · A unit of work over this ledger: ONE business operation over every tier it touches (the hold of every tier at admission,
+     * every tier's renewal, every tier's settlement), written as ONE — all tiers or none ({@link LedgerUnit}). Default: a ledger that cannot
+     * write a batch applies each move at once and gives back what it took when the unit is not committed (the old saga).
+     */
+    default LedgerUnit unit() { return new DirectUnit(this); }
+
+    /**
+     * L2b item 4 · A purchase made THROUGH the ledger, ONE unit: the purchase row, an account per bucket of the offer with its opening
+     * balance (and the purchase's reference row where the ledger keeps them), ids from {@code ids} above what the ledger holds today. The
+     * same reference again answers the first purchase, nothing written twice. Default: this ledger has no purchase road — refused in words.
+     */
+    default Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no purchase road: the switch ledger has (with packagepurchase cached)");
+    }
+
+    /**
+     * L2b item 4 · The buyer's accounts (its partner, its tier) as THIS ledger holds them — each with its purchase's expiry — read from the
+     * ledger's cached purchases (S4: not prime-context's tree). Empty = this ledger cannot say (it caches no purchases): the tree's.
+     */
+    default Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return Optional.empty(); }
+
+    /** L2b item 4 · What one purchase buys (the package catalog is config: prime-context's): its buckets, each an account. */
+    record Offer(long packageId, String name, BigDecimal price, java.time.LocalDateTime at, java.time.LocalDateTime expires, java.util.List<Bucket> buckets) {
+        public Offer { buckets = buckets == null ? java.util.List.of() : java.util.List.copyOf(buckets); }
+    }
+
+    /** One bucket of an offer: an account of this unit with this opening balance. */
+    record Bucket(String uom, BigDecimal opening) {}
+
+    /** L2b item 4 · Ids from the application's source (seed-idgen's LONG counters): (table, the highest id in use) → a new id above it. */
+    @FunctionalInterface
+    interface Ids { long next(String table, long highestInUse); }
+
+    /** What a purchase came to: the purchase's id, its accounts' ids (the offer's order), and whether it was the first answer repeated. */
+    record Purchased(long purchaseId, java.util.List<Long> accounts, boolean repeated) {}
 
     /** What a credit or a reparent came to: the balance before and after, the purchase the account is on now. */
     record Credited(long accountId, BigDecimal before, BigDecimal after, long purchaseId) {}

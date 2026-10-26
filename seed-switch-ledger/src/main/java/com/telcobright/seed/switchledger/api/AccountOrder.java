@@ -35,8 +35,11 @@ public final class AccountOrder {
      * Every account that could pay, best first: the unit buckets ({@code TF_min}, {@code OTH_ea}) in the tree's order, then cash
      * ({@code BDT}) in the tree's order, then anything else — unexpired only. Empty = nothing the partner owns can fund a request.
      */
-    public static List<PackageAccount> fundable(Partner partner, DynamicContext tree, LocalDateTime now) {
-        List<PackageAccount> live = unexpired(accountsOf(partner, tree), now);
+    public static List<PackageAccount> fundable(Partner partner, DynamicContext tree, LocalDateTime now) { return fundable(accountsOf(partner, tree), now); }
+
+    /** L2b item 4 · The same order over the partner's accounts as the LEDGER names them (its cached purchases, their expiry: S4). */
+    public static List<PackageAccount> fundable(List<PackageAccount> accounts, LocalDateTime now) {
+        List<PackageAccount> live = unexpired(accounts, now);
         List<PackageAccount> ordered = new ArrayList<>(live.size());
         for (PackageAccount a : live) if (isBucket(a)) ordered.add(a);
         for (PackageAccount a : live) if (BDT.equals(a.getUom())) ordered.add(a);
@@ -45,16 +48,22 @@ public final class AccountOrder {
     }
 
     /** The unit buckets ONLY ({@code TF_min}, {@code OTH_ea}), unexpired — no cash: the owner, "if there is no package, no wifi". */
-    public static List<PackageAccount> buckets(Partner partner, DynamicContext tree, LocalDateTime now) {
+    public static List<PackageAccount> buckets(Partner partner, DynamicContext tree, LocalDateTime now) { return buckets(accountsOf(partner, tree), now); }
+
+    /** L2b item 4 · The buckets of the accounts the ledger names. */
+    public static List<PackageAccount> buckets(List<PackageAccount> accounts, LocalDateTime now) {
         List<PackageAccount> out = new ArrayList<>();
-        for (PackageAccount a : unexpired(accountsOf(partner, tree), now)) if (isBucket(a)) out.add(a);
+        for (PackageAccount a : unexpired(accounts, now)) if (isBucket(a)) out.add(a);
         return List.copyOf(out);
     }
 
     /** Cash ONLY ({@code BDT}), unexpired — the call's international rule ({@code ReserveBalanceStep.bdtAccounts}, lines 209–219). */
-    public static List<PackageAccount> cashOnly(Partner partner, DynamicContext tree, LocalDateTime now) {
+    public static List<PackageAccount> cashOnly(Partner partner, DynamicContext tree, LocalDateTime now) { return cashOnly(accountsOf(partner, tree), now); }
+
+    /** L2b item 4 · The cash of the accounts the ledger names. */
+    public static List<PackageAccount> cashOnly(List<PackageAccount> accounts, LocalDateTime now) {
         List<PackageAccount> out = new ArrayList<>();
-        for (PackageAccount a : unexpired(accountsOf(partner, tree), now)) if (BDT.equals(a.getUom())) out.add(a);
+        for (PackageAccount a : unexpired(accounts, now)) if (BDT.equals(a.getUom())) out.add(a);
         return List.copyOf(out);
     }
 

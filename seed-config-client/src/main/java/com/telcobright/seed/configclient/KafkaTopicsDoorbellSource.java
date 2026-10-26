@@ -36,12 +36,21 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
     private final String groupId;
     private final boolean failFast;
     private final Consumer<String> onTopicRing;
+    /** L2b item 3 · Each message's words (topic, value), before the topic rings; null = the words are not wanted. */
+    private final java.util.function.BiConsumer<String, String> onWords;
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Thread thread;
     private volatile List<String> wanted = List.of();
     private volatile boolean started;
 
     public KafkaTopicsDoorbellSource(String bootstrap, String groupId, boolean failFast, Consumer<String> onTopicRing) {
+        this(bootstrap, groupId, failFast, onTopicRing, null);
+    }
+
+    /** L2b item 3 · The same, every message's words handed to {@code onWords} (topic, value) before its topic rings: a ledger reads them. */
+    public KafkaTopicsDoorbellSource(String bootstrap, String groupId, boolean failFast, Consumer<String> onTopicRing,
+                                     java.util.function.BiConsumer<String, String> onWords) {
+        this.onWords = onWords;
         this.bootstrap = bootstrap;
         this.groupId = groupId != null ? groupId : "config-doorbell-" + UUID.randomUUID();
         this.failFast = failFast;
@@ -83,7 +92,7 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
             if (current.isEmpty()) { sleep(500); continue; }
             ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1_000));
             Set<String> rang = new HashSet<>();
-            for (ConsumerRecord<String, String> r : records) rang.add(r.topic());
+            for (ConsumerRecord<String, String> r : records) { rang.add(r.topic()); handTheWords(r); }
             rang.forEach(this::ring);
         }
     }
@@ -96,6 +105,12 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
         else consumer.subscribe(List.copyOf(want));
         log.info("doorbell listening on kafka {} topics={} group={}", bootstrap, want, groupId);
         return want;
+    }
+
+    private void handTheWords(ConsumerRecord<String, String> r) {
+        if (onWords == null) return;
+        try { onWords.accept(r.topic(), r.value()); }
+        catch (RuntimeException e) { log.error("doorbell words on {} failed (source stays alive)", r.topic(), e); }
     }
 
     private void ring(String topic) {
