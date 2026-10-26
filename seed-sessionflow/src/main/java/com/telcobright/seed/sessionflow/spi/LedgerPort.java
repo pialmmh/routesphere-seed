@@ -71,6 +71,14 @@ public interface LedgerPort {
     default void treeReloaded() { }
 
     /**
+     * L2b item 3 · A ring of the root's doorbell {@code config_event_loader_<root>} with its words: {@code what} and change-wire's keys
+     * {@code changes} ({@code "tier.table:OPERATION"}). A ledger that keeps a DB of its own reads them (the switch ledger's ledger DB: an
+     * INSERT on a table it caches → a reload of new rows, coalesced; a catch-up word → the same; its own tables' UPDATE/DELETE → nothing).
+     * Default: nothing.
+     */
+    default void doorbell(String what, java.util.List<String> changes) { }
+
+    /**
      * After {@link #tierAdded}: are the tier's books loaded? A ledger that keeps books per tier and SAID its load failed (never thrown)
      * answers false, so the kit's gate hands the tier again on the next tree (the next doorbell ring, reload or event) instead of leaving
      * its money refused until a restart. Default: true (a ledger that keeps no books per tier has nothing to load).

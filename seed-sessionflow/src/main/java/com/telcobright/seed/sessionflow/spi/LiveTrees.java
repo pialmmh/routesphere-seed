@@ -48,5 +48,11 @@ public interface LiveTrees extends TenantLookup, AutoCloseable {
      */
     default void gateEachNewTree(TreeGate gate) { }
 
+    /**
+     * L2b item 3 · Every message of a served root's doorbell, its words as sent ({@code {"what": …, "changes": [ … ]}}), handed to
+     * {@code words} (root, message) as it arrives: the kit's ledger reads which tables changed. Default: no words (trees of a test's own).
+     */
+    default void onDoorbellWords(java.util.function.BiConsumer<String, String> words) { }
+
     @Override default void close() { }
 }

@@ -5,12 +5,15 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.sessionflow.spi.LedgerUnit;
+import com.telcobright.seed.switchledger.api.Doorbell;
+import com.telcobright.seed.switchledger.api.LedgerDb;
 import com.telcobright.seed.switchledger.api.LiveBalance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +40,8 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     /** P1-J · The default spacing of two merges of the root's new rows. */
     public static final long DEFAULT_MERGE_SPACING_MS = 5_000;
     private final CoalescedMerges merges;
+    /** L2b item 3 · The root's ledger DB (its tables, its signals); null = the two tables, every tree's reload merges (before L2b). */
+    private final LedgerDb ledgerDb;
 
     /**
      * @param tiers  the tier schemas the MemLedger was built over
@@ -48,6 +53,16 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     /** P1-J · The same, two merges of the root's new rows at least {@code mergeSpacingMs} apart ({@code ledger.merge-spacing-sec}). */
     public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader, long mergeSpacingMs) {
+        this(port, memLedger, tiers, loader, mergeSpacingMs, null);
+    }
+
+    /**
+     * L2b item 3 · The same over a ledger DB: its doorbell's rings decide (an INSERT on a cached table → a reload of new rows, coalesced; a
+     * catch-up word → the same; a tier it lacks → loaded); a tree's reload alone merges nothing (S2: a ring of a rule or a campaign no
+     * longer re-reads every cached table of every tier).
+     */
+    public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader, long mergeSpacingMs, LedgerDb ledgerDb) {
+        this.ledgerDb = ledgerDb;
         this.port = port;
         this.memLedger = memLedger;
         this.loader = loader;
@@ -137,7 +152,16 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
      * spacing, the first at once on the reloading thread, the rest of a burst ONE merge at the end of the spacing; under the write gate
      * (the root's money moves wait for it, never run under it), ghost reserves taken out ({@code NewRowsOfATier}).
      */
-    @Override public void treeReloaded() { merges.ask(); }
+    @Override public void treeReloaded() { if (ledgerDb == null) merges.ask(); }
+
+    /** L2b item 3 · A ring of the root's doorbell, read by its ledger DB: the tiers it lacks loaded, then (if asked) one coalesced reload. */
+    @Override
+    public void doorbell(String what, List<String> changes) {
+        if (ledgerDb == null) return;
+        LedgerDb.Decision asked = ledgerDb.decide(new Doorbell(what, changes), Set.copyOf(tiers));
+        asked.tiersToAdd().forEach(this::tierAdded);
+        if (asked.reload()) merges.ask();
+    }
 
     /** The merges of the root's new rows run so far (the operations' view; a test's). */
     public long mergesRun() { return merges.runs(); }

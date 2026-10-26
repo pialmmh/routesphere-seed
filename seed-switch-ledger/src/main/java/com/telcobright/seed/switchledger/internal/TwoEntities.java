@@ -38,6 +38,15 @@ public final class TwoEntities {
         return held;
     }
 
+    /** L2b item 3 · A ledger DB's: the MemLedger holds EXACTLY the configured entities — one more or one less is refused in words. */
+    public static Set<String> check(MemLedger ledger, Set<String> configured) {
+        Set<String> held = entitiesHeldBy(ledger);
+        if (!held.equals(new TreeSet<>(configured))) {
+            throw new IllegalStateException("the ledger DB caches exactly its configured entities " + new TreeSet<>(configured) + ", but the MemLedger handed in holds " + held);
+        }
+        return held;
+    }
+
     @SuppressWarnings("unchecked")
     private static Set<String> entitiesHeldBy(MemLedger ledger) {
         Map<String, Object> cache;

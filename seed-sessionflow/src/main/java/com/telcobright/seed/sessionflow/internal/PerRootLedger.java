@@ -89,6 +89,27 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
         if (ledger != null) ledger.treeReloaded();
     }
 
+    /** L2b item 3 · A ring of a root's doorbell, with its words: that root's ledger alone reads it; a root without one is nothing. */
+    public void doorbell(String root, String what, List<String> changes) {
+        LedgerPort ledger = root == null ? null : byRoot.get(root);
+        if (ledger != null) ledger.doorbell(what, changes);
+    }
+
+    /** L2b item 3 · A doorbell message as sent ({@code {"what": …, "changes": [ … ]}}) to its root's ledger; an unreadable one is one WARN. */
+    public void doorbell(String root, String message) {
+        if (root == null || !byRoot.containsKey(root)) return;
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = WORDS.readTree(message == null ? "{}" : message);
+            List<String> changes = new java.util.ArrayList<>();
+            if (node.path("changes").isArray()) node.path("changes").forEach(c -> changes.add(c.asText()));
+            doorbell(root, node.path("what").asText(""), changes);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.warn("the doorbell of root {} sent words that are not a doorbell message — ignored: {}", root, e.getOriginalMessage());
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper WORDS = new com.fasterxml.jackson.databind.ObjectMapper();
+
     /** The engine's close: every root's ledger that holds something open (a switch ledger's MemLedger) is closed; a failure is said, the rest go on. */
     @Override
     public void close() {

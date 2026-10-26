@@ -49,6 +49,8 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
     private final Map<String, TenantCell<T>> cells = new ConcurrentHashMap<>();
     private final Map<String, String> tenantByTopic = new ConcurrentHashMap<>();
     private KafkaTopicsDoorbellSource doorbell;
+    /** L2b item 3 · Who hears every doorbell message's words (tenant id, message). */
+    private final java.util.List<java.util.function.BiConsumer<String, String>> wordsHeard = new java.util.concurrent.CopyOnWriteArrayList<>();
     private Backstop backstop;
     private volatile boolean started;
 
@@ -198,7 +200,7 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
 
     private void openDoorbell() {
         if (kafkaBootstrap == null || topicBase == null) return;
-        doorbell = new KafkaTopicsDoorbellSource(kafkaBootstrap, kafkaGroupId, kafkaFailFast, this::ringByTopic);
+        doorbell = new KafkaTopicsDoorbellSource(kafkaBootstrap, kafkaGroupId, kafkaFailFast, this::ringByTopic, this::wordsByTopic);
         doorbell.subscribe(topics());
         doorbell.start();
     }
@@ -210,6 +212,16 @@ public final class TenantContextsImpl<T> implements TenantContexts<T> {
     }
 
     private List<String> topics() { return new ArrayList<>(new TreeMap<>(tenantByTopic).keySet()); }
+
+    @Override
+    public void onDoorbellWords(java.util.function.BiConsumer<String, String> listener) { wordsHeard.add(listener); }
+
+    /** L2b item 3 · A message's words to every listener, by the tenant its topic names (a topic of no tenant: nothing). */
+    void wordsByTopic(String topic, String message) {
+        String tenantId = tenantByTopic.get(topic);
+        if (tenantId == null) return;
+        for (java.util.function.BiConsumer<String, String> listener : wordsHeard) listener.accept(tenantId, message);
+    }
 
     private void ringByTopic(String topic) {
         String tenantId = tenantByTopic.get(topic);

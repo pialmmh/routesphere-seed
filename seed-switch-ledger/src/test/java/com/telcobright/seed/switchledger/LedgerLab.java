@@ -49,7 +49,11 @@ public final class LedgerLab implements AutoCloseable {
     private final Path dir;
     private final List<String> schemas = new ArrayList<>();
     private final Map<String, Class<? extends CacheableEntity>> more = new LinkedHashMap<>();
+    /** The extra entities' tables: made in every schema, those made later too (a tier created live). */
+    private final List<String> moreTables = new ArrayList<>();
     private MemLedger ledger;
+    /** L2b item 3 · Built as a ledger DB (its entities by name or prefix, its cache-only tables); null = the two tables + the extra ones. */
+    private com.telcobright.seed.switchledger.dependencies.LedgerDbSettings ledgerDb;
 
     private LedgerLab(Path dir) {
         this.dir = dir;
@@ -77,6 +81,7 @@ public final class LedgerLab implements AutoCloseable {
             + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL)");
         sql("CREATE TABLE " + name + ".packageaccountreserve (channel_call_uuid VARCHAR(255) NOT NULL PRIMARY KEY, id_packageaccount BIGINT NOT NULL,"
             + " id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255) NOT NULL, reserveUnit DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL, time VARCHAR(64))");
+        for (String ddl : moreTables) sql(String.format(ddl, name));
         return this;
     }
 
@@ -97,6 +102,7 @@ public final class LedgerLab implements AutoCloseable {
     /** A THIRD entity registered in the MemLedger (what the switch ledger refuses), with its table in every schema. */
     public LedgerLab alsoRegister(String entityName, Class<? extends CacheableEntity> entityClass, String tableDdlPerSchema) {
         more.put(entityName, entityClass);
+        moreTables.add(tableDdlPerSchema);
         for (String schema : schemas) sql(String.format(tableDdlPerSchema, schema));
         return this;
     }
@@ -114,18 +120,28 @@ public final class LedgerLab implements AutoCloseable {
         return start();
     }
 
+    /** L2b item 3 · The ledger as a ledger DB: these entities (names or table prefixes), these cache-only tables, this reload spacing. */
+    public LedgerLab asLedgerDb(List<String> entities, List<String> cacheOnly, long reloadSpacingMs) {
+        ledgerDb = new com.telcobright.seed.switchledger.dependencies.LedgerDbSettings(entities, cacheOnly, dir.resolve("wal"), dir.resolve("queue"), reloadSpacingMs);
+        return this;
+    }
+
+    public com.telcobright.seed.switchledger.dependencies.LedgerDbSettings ledgerDbSettings() { return ledgerDb; }
+
     /** Build the MemLedger: it loads every schema's two tables and replays the (empty) WAL. */
     public MemLedger start() {
         System.out.println("LedgerLab: no network listener — H2 in memory (" + url + "), MemLedger STANDALONE (no REST, no gRPC), queue at " + dir);
         var builder = MemLedger.builder()
             .dataSource(dataSource)
             .databases(schemas.toArray(String[]::new))
-            .registerEntity(Books.ACCOUNT, PackageAccount.class)
-            .registerEntity(Books.RESERVE, PackageAccountReserve.class)
-            .walPath(dir.resolve("wal").toString())
-            .queuePath(dir.resolve("queue").toString())
             .replicationMode(ReplicationConfig.Mode.STANDALONE);
-        more.forEach(builder::registerEntity);
+        if (ledgerDb != null) {
+            com.telcobright.seed.switchledger.api.LedgerDb.register(builder, ledgerDb);
+        } else {
+            builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
+                .walPath(dir.resolve("wal").toString()).queuePath(dir.resolve("queue").toString());
+            more.forEach(builder::registerEntity);
+        }
         ledger = builder.build();
         return ledger;
     }

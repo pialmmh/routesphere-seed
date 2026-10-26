@@ -54,3 +54,4 @@ RecordingCdrSink#of — a test's recorded CDRs filtered
 FakeKafka#create — a test's topics made
 MoneyUnit#commit — the records of ONE unit's moves (one per tier of ONE session), applied after its WAL record (L2b item 2)
 PrepaidEngine#holdEveryTier — the tiers of ONE candidate's walk (leaf to root, a handful), held in one unit (L2b item 2)
+PerRootLedger#doorbell — the change keys of ONE doorbell message (a handful), read once per ring, never on a session (L2b item 3)

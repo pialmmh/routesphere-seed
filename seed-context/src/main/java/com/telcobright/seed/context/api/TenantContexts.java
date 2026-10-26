@@ -50,6 +50,13 @@ public interface TenantContexts<T> extends AutoCloseable {
     /** A doorbell ring from outside (tests, a Redis leg the product wires itself): debounced like Kafka's. */
     void ring(String tenantId, String source);
 
+    /**
+     * L2b item 3 · Every message of a tenant's doorbell, its words as sent ({@code {"what": …, "changes": [ … ]}}), handed to
+     * {@code listener} (tenant id, message) as it arrives — before the debounced reload: a ledger reads which tables changed. Default:
+     * nothing (a cache that hears no words).
+     */
+    default void onDoorbellWords(java.util.function.BiConsumer<String, String> listener) { }
+
     /** Re-read the directory: new tenants are loaded, tenants that left are dropped, the doorbell re-subscribes. */
     void refreshDirectory();
 

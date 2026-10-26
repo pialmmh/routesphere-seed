@@ -10,13 +10,17 @@ import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.switchledger.api.ChargeReference;
+import com.telcobright.seed.switchledger.api.LedgerDb;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.AddTierLive;
 import com.telcobright.seed.switchledger.internal.DriverDataSource;
 import com.telcobright.seed.switchledger.internal.MemLedgerPort;
 import com.telcobright.seed.switchledger.internal.OwnedMemLedgerPort;
 
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -52,18 +56,40 @@ public final class SwitchLedgerMaker implements LedgerMaker {
     public LedgerPort make(RootResources root, Context context) {
         RootResources.SwitchDb db = requireTheDatabase(root);
         Set<String> tiers = tierSchemasOf(root, context);
+        LedgerDbSettings ledgerDb = ledgerDbOf(root);
         var builder = MemLedger.builder()
             .dataSource(dataSources.of(db, passwordOf(db, context)))
             .databases(tiers.toArray(String[]::new))
-            .registerEntity(Books.ACCOUNT, PackageAccount.class)
-            .registerEntity(Books.RESERVE, PackageAccountReserve.class)
-            .walPath(root.dir().resolve("ledger").resolve("wal").toString())
-            .queuePath(root.dir().resolve("ledger").resolve("queue").toString())
             .replicationMode(ReplicationConfig.Mode.STANDALONE);    // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
-        if (keepsChargeReferences(root)) builder.registerEntity(Books.CHARGE, ChargeReference.class);
+        Set<String> configured = ledgerDb == null ? null : LedgerDb.register(builder, ledgerDb);
+        if (ledgerDb == null) registerTheTwo(builder, root);
         MemLedger memLedger = builder.build();
-        MemLedgerPort port = (MemLedgerPort) SwitchLedgers.memLedger(memLedger, SwitchLedgerSettings.standard(), context.clock());
-        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root));
+        MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), context.clock(), configured).port();
+        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root), ledgerDb == null ? null : LedgerDb.of(ledgerDb));
+    }
+
+    /** Before L2b's ledger DB: the two tables (+ the charges' references when said), under the root's {@code <dir>/ledger}. */
+    private static void registerTheTwo(com.telcobright.memledger.api.MemLedgerBuilder builder, RootResources root) {
+        builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
+            .walPath(root.dir().resolve("ledger").resolve("wal").toString()).queuePath(root.dir().resolve("ledger").resolve("queue").toString());
+        if (keepsChargeReferences(root)) builder.registerEntity(Books.CHARGE, ChargeReference.class);
+    }
+
+    /**
+     * L2b item 3 · The root's ledger DB, when its ledger names its entities: {@code ledger.entities} (names or table prefixes, comma-separated:
+     * {@code package}), {@code ledger.cache-only} (tables loaded at the start only: {@code packageaccountreserve}), the reload spacing
+     * {@code ledger.merge-spacing-sec}; the tiers are the tree's. Not said: null — the two tables, as before.
+     */
+    private static LedgerDbSettings ledgerDbOf(RootResources root) {
+        List<String> entities = listOf(root.ledger().word("entities"));
+        if (entities.isEmpty()) return null;
+        Path dir = root.dir().resolve("ledger");
+        return new LedgerDbSettings(entities, listOf(root.ledger().word("cache-only")), dir.resolve("wal"), dir.resolve("queue"), mergeSpacingMsOf(root));
+    }
+
+    private static List<String> listOf(String words) {
+        if (words == null || words.isBlank()) return List.of();
+        return Arrays.stream(words.split("[,\\s]+")).filter(w -> !w.isBlank()).toList();
     }
 
     /**
