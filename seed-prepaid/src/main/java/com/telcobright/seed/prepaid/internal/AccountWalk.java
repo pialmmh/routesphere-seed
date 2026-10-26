@@ -20,7 +20,8 @@ import java.util.List;
  * the rule lets pay (unexpired, packages before cash — or the lane's choice: the call abroad, cash only), each rated by the lane's
  * {@code rate} and gated by its {@code beforeHold}, the tier held on the FIRST that pays (82–123: "an exhausted package falls through to
  * the customer's cash") through the moved hold ({@link TierReserve}); none pays → the lane's {@code refusalCause}. The order of operations
- * is today's: this tier only, as the chain walks it. Stateless: one per ask.
+ * is today's: this tier only, as the chain walks it. CHARGE_NOW (item 4): the account is charged at once instead of held — the SMS's
+ * final debit, every tier as the chain walks it, no hold row. Stateless: one per ask.
  */
 final class AccountWalk<C extends RoutesphereContext> {
 
@@ -37,7 +38,7 @@ final class AccountWalk<C extends RoutesphereContext> {
         List<PackageAccount> accounts = accountsToTry(ctx, paying);
         String reference = TierReserve.referenceOf(referenceOf(ctx), ctx.candidatesTried, tier.levelIndex());
         TierReserve.Held held = TierReserve.of(flow).holdOnTheFirstThatPays(ctx, tier, partner, accounts, account -> rated(ctx, paying, account),
-            reference, () -> refusalCauseOf(ctx, paying));
+            reference, () -> refusalCauseOf(ctx, paying), rules.chargesNow());
         if (held.level() != null) LowBalanceMark.check(flow, rules, ctx, held.level());
         return held.verdict();
     }

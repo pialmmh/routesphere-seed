@@ -49,10 +49,14 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
         return new AccountWalk<>(flow, rules).admit(ctx, tier, partner);
     }
 
-    /** The call switch's compensateReserves (the base's {@code AdmissionChain.undo}): every tier the refused candidate held, back, in order. */
+    /**
+     * The call switch's compensateReserves (the base's {@code AdmissionChain.undo}): every tier the refused candidate held, back, in order —
+     * a CHARGE_NOW lane's tiers were charged: each charge given back whole (item 4).
+     */
     @Override
     public void release(C ctx, List<LevelAdmission> held, String why) {
         TierReserve<C> tiers = TierReserve.of(flow);
+        if (rules != null && rules.chargesNow()) { for (LevelAdmission level : held) tiers.refundCharge(ctx, level, why); return; }
         for (LevelAdmission level : held) tiers.release(ctx, level, why);
     }
 

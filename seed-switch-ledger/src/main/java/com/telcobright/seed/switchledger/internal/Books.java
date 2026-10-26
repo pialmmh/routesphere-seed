@@ -79,6 +79,14 @@ public final class Books {
         return updated;
     }
 
+    /**
+     * L2a · A final debit — the SMS's ({@code PrepaidServiceWithCompensation.debit} 489–501): the account's balance down by {@code amount},
+     * {@code lastAmount} = −amount, the same full-row UPDATE; no reserve row. The caller holds the account's lock and checked the balance.
+     */
+    public PackageAccount debit(String dbName, PackageAccount live, BigDecimal amount) {
+        return moveBalance(dbName, live, balanceOf(live).subtract(amount), amount.negate());
+    }
+
     /** The account moves onto another purchase ({@code recharge} 347–351): the copy carries the NEW purchase, the balance stays. */
     public PackageAccount reparent(String dbName, PackageAccount live, long purchaseId) {
         PackageAccount updated = copyOf(live);

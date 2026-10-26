@@ -156,19 +156,20 @@ final class TierReserve<C extends RoutesphereContext> {
      * order — each rated by {@code rating} and held through the moved reserve (above, unchanged) under the tier's ONE reference; an account
      * that cannot fund it is skipped ("an exhausted package falls through to the customer's cash"); a rating's refusal, a fault, a ledger
      * refusal of its own or no time left ends the walk with its cause; none pays → {@code causeWhenNone}. A dry run rates the first and
-     * holds nothing.
+     * holds nothing. {@code chargeNow} (item 4, CHARGE_NOW): the account is CHARGED at once instead of held — no hold row.
      */
     Held holdOnTheFirstThatPays(C ctx, Tier tier, Partner partner, List<PackageAccount> accounts, Function<PackageAccount, TierRate> rating,
-                                String reference, Supplier<String> causeWhenNone) {
+                                String reference, Supplier<String> causeWhenNone, boolean chargeNow) {
         for (PackageAccount account : accounts) {
-            Held held = holdOn(ctx, tier, partner, rating, account, reference);
+            Held held = holdOn(ctx, tier, partner, rating, account, reference, chargeNow);
             if (held != null) return held;
         }
         return new Held(Verdict.reject(causeWhenNone.get()), null);
     }
 
     /** One account: held (or, in a dry run, rated) → the tier's level; a cause that ends the walk; null = it cannot fund it, try the next. */
-    private Held holdOn(C ctx, Tier tier, Partner partner, Function<PackageAccount, TierRate> rating, PackageAccount account, String reference) {
+    private Held holdOn(C ctx, Tier tier, Partner partner, Function<PackageAccount, TierRate> rating, PackageAccount account, String reference,
+                        boolean chargeNow) {
         TierRate rate;
         try {
             rate = rating.apply(account);
@@ -179,11 +180,45 @@ final class TierReserve<C extends RoutesphereContext> {
         }
         if (rate == null) return new Held(Verdict.reject(SessionCause.UNRATED), null);
         LevelAdmission level = levelOf(tier.tenant(), partner, tier.levelIndex(), rate);
-        String refusal = ctx.dryRun ? null : reserve(ctx, level, rate.reserveAmount(), reference, CANNOT_PAY, flow.admissionTimeLeftMs(ctx));
+        String refusal = ctx.dryRun ? null : chargeNow ? charge(ctx, level, rate.reserveAmount(), reference, flow.admissionTimeLeftMs(ctx))
+            : reserve(ctx, level, rate.reserveAmount(), reference, CANNOT_PAY, flow.admissionTimeLeftMs(ctx));
         if (CANNOT_PAY.equals(refusal)) return null;
         if (refusal != null) return new Held(Verdict.reject(refusal), null);
         ctx.walked(level);
         return new Held(Verdict.ok(), level);
+    }
+
+    /**
+     * 4 · CHARGE_NOW: the tier's account charged at once through the ledger port — the SMS's final debit, no hold row
+     * ({@code PrepaidServiceWithCompensation.debit} 441–516) — and recorded on the level exactly as a hold is (its reference, account, the
+     * amount taken, the balances). Null = taken (or nothing to take); CANNOT_PAY = short; else the cause. Not journaled: a charge is final.
+     */
+    private String charge(C ctx, LevelAdmission level, BigDecimal amount, String reference, long withinMs) {
+        if (amount.signum() <= 0) return null;
+        if (withinMs <= 0) return notAsked(ctx, level);
+        try {
+            Optional<LedgerPort.Reservation> taken = flow.kit().ledger().charge(level, amount, reference);
+            if (taken.isEmpty()) return CANNOT_PAY;
+            recordReserve(level, taken.get(), reference);
+            return null;
+        } catch (LedgerPort.LedgerRefusal refused) {
+            return refused.code();
+        } catch (LedgerPort.LedgerFault fault) {
+            return ledgerFault(ctx, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), fault);
+        }
+    }
+
+    /** 4 · A refused candidate's CHARGED tier: the whole charge given back; a refund the ledger refuses is OWED (as a release is). */
+    void refundCharge(C ctx, LevelAdmission level, String why) {
+        if (!SessionSettlement.holdsReserve(level)) return;
+        try {
+            flow.kit().ledger().refund(level, TierSettlement.reservedOf(level), why);
+        } catch (RuntimeException e) {
+            flow.kit().counters().owed.incrementAndGet();
+            log.error("[{}] {} | OWED: the charge {} of {} {} at tier {} ({}) partner {} was NOT given back ({}): {}", flow.name(),
+                LogText.clean(ctx.sessionId()), LogText.clean(level.getDebitReference()), level.getTotalReserved(), level.getUom(), level.getLevelIndex(),
+                level.getDbName(), level.getPartnerId(), LogText.clean(why), LogText.failureText(e));
+        }
     }
 
     // ── giving it back ──────────────────────────────────────────────────────

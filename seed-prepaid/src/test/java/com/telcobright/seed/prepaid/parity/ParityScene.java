@@ -118,6 +118,14 @@ public final class ParityScene implements AutoCloseable {
         return new ParityScene(balances, engineSettings(firstSec, periodSec), true, kit -> laneOf(lane, kit));
     }
 
+    /** The scene with settings and a lane of the test's own (the SMS-shaped rows of item 4: no renewal, CHARGE_NOW). */
+    public static ParityScene openWith(RoutesphereSettings settings, Map<String, String> balances, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lane) {
+        return new ParityScene(balances, settings, false, lane);
+    }
+
+    /** A lane priced per event (the SMS, the ad): no budget child — one charge or one hold at admission, the end decides. */
+    public static RoutesphereSettings perEventSettings() { return handlerSettings().withReservePeriodSec(0).withReserveInitialDelaySec(0); }
+
     /** The lane under test on the scene's kit: the call's answers on the base (item 1), or the call's Prepaid (2b). */
     static RoutesphereFlow<CallContext> laneOf(Lane lane, RoutesphereKit kit) {
         return switch (lane) {
@@ -304,6 +312,9 @@ public final class ParityScene implements AutoCloseable {
         @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); real.release(level, why); }
         /** 2b: the peek of the C14 remainder (a read: not recorded as a money move). */
         @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return real.balanceOf(level); }
+        /** 4: CHARGE_NOW's final debit and its refund. */
+        @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { note("charge", reference); return real.charge(level, amount, reference); }
+        @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { note("refund", level.getDebitReference()); return real.refund(level, amount, why); }
         @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
     }
 }

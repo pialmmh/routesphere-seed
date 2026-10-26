@@ -84,6 +84,25 @@ public interface LedgerPort {
     default Optional<BigDecimal> balanceOf(LevelAdmission level) { return Optional.empty(); }
 
     /**
+     * L2a · CHARGE_NOW — the SMS's final debit (routesphere-core {@code PrepaidServiceWithCompensation.debit} 441–516): {@code amount} taken
+     * from the tier's account at once, under its lock, with NO reserve row ("a reserve exists to be settled later, and nothing settles an
+     * SMS, so reserving one per message would leave rows behind forever"). Empty = the balance is short, nothing taken. Idempotent per
+     * reference: the same reference twice takes once and answers the first. Default: this ledger takes no final charge — refused in words.
+     */
+    default Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) {
+        throw new LedgerFault(getClass().getSimpleName() + " takes no final charge (CHARGE_NOW): the switch ledger does");
+    }
+
+    /**
+     * L2a · Give back {@code amount} of what {@link #charge} took under the tier's reference ({@code level.getDebitReference()}), once — the
+     * SMS's refund (routesphere-core {@code BalanceCheckRule.refund} 236–255: a recharge of the charge). Answers the tier's settlement:
+     * charged = what stays taken, returned = {@code amount}. A second refund of the same tier answers the first and moves nothing.
+     */
+    default TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) {
+        throw new LedgerFault(getClass().getSimpleName() + " gives back no final charge (CHARGE_NOW): the switch ledger does");
+    }
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */

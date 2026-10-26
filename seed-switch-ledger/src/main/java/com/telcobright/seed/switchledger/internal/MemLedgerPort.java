@@ -28,6 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *       reserved less what the session finally costs goes back — in EITHER direction, a negative return is the extra debit of an overrun —
  *       and the row is deleted (254–255);</li>
  *   <li><b>release</b>: the whole of the row back, the row deleted — the same {@code returnBalance}.</li>
+ *   <li><b>charge</b> (L2a, CHARGE_NOW: {@code debit}, 441–516): under the account's lock the LIVE row is read; short → refused (empty,
+ *       nothing taken); zero → taken without a write (484–486); else the account is debited (489–501) — NO reserve row;</li>
+ *   <li><b>refund</b> (L2a: the SMS's refund, {@code BalanceCheckRule.refund} 236–255 — a recharge): the given part of a charge credited
+ *       back under the same lock, once per tier.</li>
  * </ul>
  *
  * <p>Every verb is idempotent by its reference: a repeated reserve answers its first result ({@code repeated = true}) and debits nothing; a
@@ -52,6 +56,8 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     /** The references of every open tier (its row key), to forget at the close. */
     private final Map<String, Set<String>> referencesOf = new ConcurrentHashMap<>();
     private final ClosedTiers closed = new ClosedTiers();
+    /** L2a · CHARGE_NOW: the first answer of every charge, by its reference (bounded as the closed tiers are). */
+    private final Charges charges = new Charges();
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
@@ -161,6 +167,49 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         BigDecimal after = books.returnRow(db, row);
         forget(tier);
         closed.remember(tier, new TierSettlement(level.getLevelIndex(), back, BigDecimal.ZERO, back, after, true, why));
+    }
+
+    // ── charge · refund (L2a: CHARGE_NOW, the SMS's final debit) ───────────
+
+    @Override
+    public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) {
+        long accountId = accountOf(level);
+        Reservation seen = charges.get(reference);
+        if (seen != null) return Optional.of(repeatOf(seen));
+        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
+            return chargeUnderTheLock(level, accountId, amount, reference);
+        }
+    }
+
+    private Optional<Reservation> chargeUnderTheLock(LevelAdmission level, long accountId, BigDecimal amount, String reference) {
+        String db = level.getDbName();
+        PackageAccount live = heldAccount(db, accountId, level);
+        BigDecimal before = Books.balanceOf(live);
+        if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
+        BigDecimal after = amount.signum() == 0 ? before : books.debit(db, live, amount).getBalanceAfter();
+        log.info("CHARGE {} | account {} of {}: -{} {} → {}", LogText.clean(reference), accountId, db, amount, live.getUom(), after);
+        return Optional.of(charges.remember(reference, new Reservation(live.getId(), live.getUom(), amount, before, after, false)));
+    }
+
+    @Override
+    public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) {
+        String tier = level.getDebitReference();
+        if (tier == null) return TierSettlement.nothing(level.getLevelIndex());
+        TierSettlement done = closed.get(tier);
+        if (done != null) return done;
+        long accountId = accountOf(level);
+        try (AccountLocks.Held held = locks.hold(level.getDbName(), accountId)) {
+            return refundUnderTheLock(level, tier, accountId, amount, why);
+        }
+    }
+
+    private TierSettlement refundUnderTheLock(LevelAdmission level, String tier, long accountId, BigDecimal amount, String why) {
+        String db = level.getDbName();
+        PackageAccount live = heldAccount(db, accountId, level);
+        BigDecimal after = amount.signum() == 0 ? Books.balanceOf(live) : books.moveBalance(db, live, Books.balanceOf(live).add(amount), amount).getBalanceAfter();
+        log.info("REFUND {} | account {} of {}: +{} {} → {} ({})", LogText.clean(tier), accountId, db, amount, live.getUom(), after, LogText.clean(why));
+        BigDecimal taken = TierSettlement.reservedOf(level);
+        return closed.remember(tier, new TierSettlement(level.getLevelIndex(), taken, taken.subtract(amount), amount, after, true, why));
     }
 
     // ── the peek (3b) ───────────────────────────────────────────────────────
