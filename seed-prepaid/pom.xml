@@ -90,6 +90,15 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <!-- L2a 2a: the base's session tests run HERE (their money is this module's engine) and read the base's fixtures (Lab, LabFlow,
+             BootstrapWorld, …) from its test-jar, in their own packages -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

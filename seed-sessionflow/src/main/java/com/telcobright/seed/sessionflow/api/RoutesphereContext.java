@@ -174,6 +174,13 @@ public class RoutesphereContext extends SessionContext {
      */
     public Candidate candidateBeingAdmitted() { return trying; }
 
+    /**
+     * L2a · The tier the candidate being admitted has just been held on — recorded on the walk, so a later refusal gives it back. The money
+     * engine's {@code admit} calls it (the engine lives outside this package since the money moved to seed-prepaid; the walk itself stays
+     * the base's, live and never persisted).
+     */
+    public void walked(LevelAdmission tier) { walking.add(tier); }
+
     /** The service was established (a call answered, an ad viewed, an SMS submitted). */
     public boolean answered() { return answer != null; }
 

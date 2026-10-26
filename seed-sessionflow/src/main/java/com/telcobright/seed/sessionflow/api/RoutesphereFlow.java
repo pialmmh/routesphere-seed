@@ -7,6 +7,7 @@ import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
+import com.telcobright.seed.sessionflow.spi.MoneyEngine;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
@@ -99,10 +100,26 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /** The only field (pool rule): the trees per root, the rules, the ledger, the sinks, the clock, the settings. */
     protected final RoutesphereKit kit;
 
+    /** L2a · The lane's money engine, made once by the kit's maker on first use (no session in it: the pool rule holds). */
+    private volatile MoneyEngine<C> money;
+
     protected RoutesphereFlow(RoutesphereKit kit) { this.kit = Objects.requireNonNull(kit, "kit"); }
 
     /** What the host handed in. */
     public final RoutesphereKit kit() { return kit; }
+
+    /**
+     * L2a · The lane's money engine (design §11): every money step of a session is ONE call into it — the base moves no money itself. Made
+     * once, on first use, by the kit's maker (seed-prepaid's on the classpath); none → refused in words, here and at the engine's start.
+     */
+    public final MoneyEngine<C> money() {
+        MoneyEngine<C> engine = money;
+        if (engine == null) money = engine = kit.moneyMaker().make(this);       // a race makes two equal engines; either serves
+        return engine;
+    }
+
+    /** L2a · The lane's answers as the money engine reads them: each one the flow's own hook, unchanged (one view per ask). */
+    public final LaneAnswers<C> answers() { return new FlowAnswers<>(this); }
 
     /**
      * The application's name — the REGISTERED supervisor name ({@code AdSupervisor}, {@code CallSupervisor}, …): statewalk gives each
@@ -173,14 +190,14 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     @Override
     public final void settle(C ctx, Outcome outcome) {
         bringBackTheLiveTiers(ctx);
-        SessionSettlement.of(this).settle(ctx, outcome);
+        money().finish(ctx, outcome, true);
     }
 
     /** FAILED, never answered: every reserve back — the refund rule decides only a session offered and never consumed. */
     @Override
     public final void release(C ctx) {
         bringBackTheLiveTiers(ctx);
-        SessionSettlement.of(this).release(ctx);
+        money().finish(ctx, Outcome.FAILED, false);
     }
 
     /** Both finals (g): the finish; then the registry resets every machine of the session and returns it to its pool. */
@@ -341,20 +358,16 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     /**
      * (e) Reserve at this tier: the call model — the tier's rate ({@link #rateAtLevel}: package units before money, ONE unit), held on ITS
      * account through the one ledger port, under the session's and the tier's own reference. Override only to hold in one move of your
-     * own — or answer {@link TierRate#held} from {@link #rateAtLevel} instead.
+     * own — or answer {@link TierRate#held} from {@link #rateAtLevel} instead. L2a: the default is ONE call into the money engine.
      */
-    protected Verdict reserveBalance(C ctx, Tier tier, Partner partner) { return AdmissionChain.of(this).rateAndReserve(ctx, tier, partner); }
+    protected Verdict reserveBalance(C ctx, Tier tier, Partner partner) { return money().admit(ctx, tier, partner); }
 
     /**
      * (e) The tier's final cost, in the final state: delivered → charged = rate × billed units ({@link #chargeAtSettle}), the rest back
      * (negative = an extra debit, the call's rule); not delivered → the refund rule ({@link #refundPolicy} on {@link #settleOutcome}).
-     * Through the one ledger port, idempotent per (session, tier).
+     * Through the one ledger port, idempotent per (session, tier). L2a: the default is ONE call into the money engine.
      */
-    protected TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome) {
-        BigDecimal charged = delivered(ctx, outcome) ? chargeAtSettle(ctx, tier) : chargeByTheRefundRule(ctx, tier);
-        if (charged == null || charged.signum() < 0) charged = BigDecimal.ZERO;
-        return kit.ledger().settle(tier, charged);
-    }
+    protected TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome) { return money().settleTier(ctx, tier, outcome); }
 
     /**
      * (f) Failover by cause, after a signaling failure: RETRY_SAME → the same hop; REROUTE → the plan's next hop while the attempts are under
@@ -463,9 +476,9 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * ACTIVE, every renewal (C14) · Renew this tier's reserve for the next window and answer how many seconds it funds: the period = held;
      * less = only that much (the cut comes when it ends); 0 = nothing is left. The default rates the window with {@link #rateNextWindow}
      * and holds it through the ledger; a ledger FAULT answers the period (a fault never cuts a session: the settlement reconciles).
-     * An override gives up the next-account rotation unless it calls {@code super} first.
+     * An override gives up the next-account rotation unless it calls {@code super} first. L2a: the default is ONE call into the money engine.
      */
-    protected double renewWindowSeconds(C ctx, LevelAdmission tier) { return AdmissionChain.of(this).renewThroughLedger(ctx, tier); }
+    protected double renewWindowSeconds(C ctx, LevelAdmission tier) { return money().renewTier(ctx, tier); }
 
     /** ACTIVE · A tier's account could not fund the next window: the NEXT account to carry the session on, or null (the money ended). */
     protected Long nextAccount(C ctx, LevelAdmission tier) { return null; }
@@ -599,7 +612,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         try {
             if (ctx.reservesClosed) return period;
             bringBackTheLiveTiers(ctx);
-            double narrowest = narrowestWindow(ctx, period);
+            double narrowest = money().renewWindow(ctx);
             ctx.keepTiers();
             return narrowest;
         } finally {
@@ -607,21 +620,12 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         }
     }
 
-    private double narrowestWindow(C ctx, double period) {
-        double narrowest = period;
-        for (LevelAdmission level : ctx.levels) {
-            narrowest = Math.min(narrowest, safely(ctx, "renewWindowSeconds", () -> renewWindowSeconds(ctx, level), period));
-            if (narrowest <= 0) break;
-        }
-        return narrowest;
-    }
-
     /**
      * ACTIVE · Hold {@code amount} of this tier's next window through the ledger under {@code reference}, recorded on the tier exactly as the
      * base's own renewal records it — for a lane that answers {@link #renewWindowSeconds} itself. Null = held; else the cause.
      */
     protected final String reserveWindow(C ctx, LevelAdmission tier, BigDecimal amount, String reference) {
-        return AdmissionChain.of(this).reserveForRenewal(ctx, tier, amount, reference);
+        return money().hold(ctx, tier, amount, reference);
     }
 
     /**
@@ -815,15 +819,6 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     private void writeTheSdr(C ctx, Outcome outcome) {
         Object sdr = buildSdr(ctx, outcome);
         if (sdr != null) kit.sdr().write(ctx.sessionId(), sdr);
-    }
-
-    /** What a tier not delivered pays: its whole reserve when the lane's refund rule charges the outcome, else nothing. */
-    final BigDecimal chargeByTheRefundRule(C ctx, LevelAdmission tier) {
-        RefundPolicy policy = refundPolicy(ctx);
-        SettleOutcome outcome = settleOutcome(ctx);
-        if (policy == null) policy = RefundPolicy.callsRule();
-        if (outcome == null) outcome = ctx.answered() ? SettleOutcome.CONSUMED : SettleOutcome.FAILED;
-        return policy.pays(outcome) ? TierSettlement.reservedOf(tier) : BigDecimal.ZERO;
     }
 
     /**

@@ -12,6 +12,7 @@ import com.telcobright.seed.sessionflow.internal.NoRootAtTheDoor;
 import com.telcobright.seed.sessionflow.spi.BootstrapSource;
 import com.telcobright.seed.sessionflow.spi.CdrSink;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.MoneyEngineMaker;
 import com.telcobright.seed.sessionflow.spi.SdrSink;
 import com.telcobright.seed.sessionflow.spi.SessionJournal;
 import com.telcobright.seed.sessionflow.spi.TaskSink;
@@ -42,6 +43,7 @@ public final class RoutesphereKit {
     private final Clock clock;
     private final ZoneId zone;
     private final RoutesphereSettings settings;
+    private final MoneyEngineMaker money;
     private final ChannelSlots slots = new ChannelSlots();
     private final FlowCounters counters = new FlowCounters();
     private final NoRootAtTheDoor noRoot;
@@ -61,6 +63,7 @@ public final class RoutesphereKit {
         this.journal = b.journal;
         this.clock = b.clock;
         this.settings = b.settings;
+        this.money = b.money;
         this.resolver = b.rules != null ? checkedResolver(b.rules, tenants) : b.resolver;
         this.cdrAssembler = new CdrAssembler(zone, clock.millis() * 1000);
         this.bootstrap = b.bootstrap;
@@ -100,7 +103,7 @@ public final class RoutesphereKit {
                 + " split its books — give the kit the lane's sinks (toBuilder()) before the flow and the engine are made");
         }
         return new Builder().tenants(tenants).resolver(resolver).ledger(ledger).cdr(cdr).sdr(sdr).tasks(tasks).journal(journal)
-            .clock(clock).zone(zone).settings(settings).bootstrap(bootstrap);
+            .clock(clock).zone(zone).settings(settings).money(money).bootstrap(bootstrap);
     }
 
     /** The tenant trees per root (§D): one immutable snapshot per root, a session keeps the one it started with. */
@@ -120,6 +123,12 @@ public final class RoutesphereKit {
 
     /** The ONE money road (§E): reserve, settle, release — idempotent per (session, tier). */
     public LedgerPort ledger() { return ledger; }
+
+    /**
+     * L2a · The maker of every flow's money engine (design §11): seed-prepaid's, found on the classpath, unless the host named one — the
+     * base never moves money itself; a kit with no maker refuses the flow's start in words ({@link MoneyEngineMaker#NONE}).
+     */
+    public MoneyEngineMaker moneyMaker() { return money; }
 
     /** Where the CDR goes: one message per session, one record per tier, leaf first, on {@code cdr_<root>} (R13: the switch only publishes). */
     public CdrSink cdr() { return cdr; }
@@ -193,6 +202,7 @@ public final class RoutesphereKit {
         private Clock clock = Clock.systemUTC();
         private ZoneId zone;
         private RoutesphereSettings settings = RoutesphereSettings.defaults();
+        private MoneyEngineMaker money = MoneyEngineMaker.onTheClasspath();
         private BootstrapRoad bootstrap;
 
         private Builder() {}
@@ -210,6 +220,8 @@ public final class RoutesphereKit {
         public Builder clock(Clock v) { this.clock = required(v, "clock"); return this; }
         public Builder zone(ZoneId v) { this.zone = v; return this; }
         public Builder settings(RoutesphereSettings v) { this.settings = required(v, "settings"); return this; }
+        /** L2a · The maker of the flows' money engine; default: the one on the classpath (seed-prepaid's), else {@link MoneyEngineMaker#NONE}. */
+        public Builder money(MoneyEngineMaker v) { this.money = required(v, "money (the money engine's maker)"); return this; }
         /** The road the kit was made on ({@link #fromBootstrap}); a kit built by hand has none. */
         public Builder bootstrap(BootstrapRoad v) { this.bootstrap = v; return this; }
 
