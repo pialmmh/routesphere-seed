@@ -15,7 +15,8 @@
 | 3 | cfb5e37 | LedgerDb: entities by name/prefix, every tier of the tree, the doorbell's words decide the reload | 812 / 0 / 0 / 9 |
 | 4 | 92b36ae | purchase: the purchase cached (3rd money entity), the road as ONE unit, ids from the app's IdSource; S4 closed | 818 / 0 / 0 / 9 |
 | 5 | 50c1f1d | the money roads as plain Java: purchase · credit (+ reparent) · accounts · balance, refusing in words | 820 / 0 / 0 / 9 |
-| 6 | (this) | this report | — |
+| 6 | 3317945 | this report | — |
+| 7 | edb3e7f | the gate fix (§14): a free candidate with tiers after a hanging ledger; a ledger without a batch gives back leaf first with the refusal's cause | 822 / 0 / 0 / 9; ad-sphere 239f57b on it 998 / 0 / 0 / 7 |
 
 **The code head 50c1f1d on a git-archive clean copy: 820 / 0 / 0 / 9**, exit 0 (§9); statewalk 4.1.0 only; mem-ledger 1.0.0-SNAPSHOT = 6523614's jar.
 
@@ -352,3 +353,46 @@ the root's money. **Decision for the owner:** which service owns each root's led
   (342 → 343) and `RoutesphereFlow` as at L2a — not this round's split.
 - Nothing pushed (the rule). No sudo, no systemctl, nothing listening (H2 in process). Scratch under `~/l2b-work`: the mutants' originals under
   `reds/`, every log under `logs/`, the STATE lines in `STATE.md`.
+
+## 14 · The architect's ad-sphere gate on 3317945 — diagnosis and fix (commit edb3e7f)
+
+**The gate:** ad-sphere 239f57b (ea1512f + the `seed-prepaid` line) on 3317945 = 987/2/2/7, against 998/0/0/7 on L2a's 431bd6e. I re-ran
+the baseline with a copy of the gate tool that keeps its reports (`~/l2b-work/tools/p2gate-keep.sh`, `~/l2b-work/p2gate/l2a-431bd6e/`):
+998/0/0/7 again.
+
+**The reds were SEED regressions, all three on a ledger WITHOUT a batch** (the testkit's `InMemoryLedger`, ad-sphere's own return road) —
+where the brief keeps the old give-back (the `DirectUnit`). The money was right each time; the shape of the give-back, and one admission
+rule, were not:
+
+| ad-sphere red | What the seed did at 3317945 | Before L2b | Fix (edb3e7f) |
+|---|---|---|---|
+| `AdCallStoryTest.item2b`:454 — `expected "INSUFFICIENT_BALANCE" but was "the unit was not committed"` | the DirectUnit's release carried its own words | the release carried the refusal's cause | `LedgerUnit.abandon(why)`; `holdTheWalk` abandons with the tier's cause |
+| `AdReturnRoadStoryTest.three_tiers…`:331 — `["9007 L1 returned", "9071 L0 returned"]` | the DirectUnit gave back newest first | in the order held, the leaf first (`compensateReserves`) | the DirectUnit gives back in the order taken |
+| `AdCallStoryTest.item6d`:597, `item6g`:660 — no view, `NoSuchElement` | `holdTheWalk` refused the WHOLE walk when the paid budget was spent — the free house ad (a partner, a tier, nothing to pay) was refused after the hanging ledger spent the budget | a tier with nothing to hold never asked the ledger; only a tier that PAYS is "not asked" (`ADMISSION_TIMEOUT`) | no check up front: each tier's hold checks what is left, as `TierReserve` always did |
+
+**Is the new path under the budget?** Yes. On a ledger without a batch every hold of `holdTheWalk` goes through the port's BOUNDED reserve
+(`reserve(level, amount, reference, withinMs)`, `withinMs` = what the admission has left) — item6d's log: "the ledger did not answer within
+1500 ms (scripted: it takes 8000 ms)". On the switch ledger (in process) the unit takes every account's lock once, each wait bounded by
+the ledger's lock timeout (5 s) — as each reserve's lock was before L2b; neither was ever bounded by the admission budget. `balanceOf` is
+not on the admission path.
+
+**Seed-side tests, red first** (`~/l2b-work/reds/g-seed-red-before-the-fix.log`): `AdmissionBudgetTest.aFreeCandidateWithItsTiers_
+isStillAdmitted_afterAHangingLedgerSpentTheBudget` (the testkit's ledger hangs 5 s on the paid candidate's leaf; the free candidate walks two
+tiers) — red: "[the free candidate with its tiers: BILLING_SYSTEM_ERROR] Expecting value to be true but was false"; `GiveBackWithoutABatchTest`
+(three tiers, the top short: releases res_44_7 then res_44, each noted INSUFFICIENT_BALANCE) — red: "[the leaf's first] expected "res_44_7"
+but was "res_44"". Mutants on the fixed code: the budget checked before every tier → the free candidate refused; newest first → the order;
+the cause dropped → the note. Seed suite 820/0/0/9 → 822/0/0/9.
+
+**The 11 tests fewer (987 vs 998) are not lost:** ad-sphere runs more surefire executions after `default-test` (`jvm-in-utc` and the next):
+`PcStartListensOnLoopbackOnlyTest` 2, `TreelessWallClockInUtcTest` 2, `TreeUploadsKeepTheirTypeTest` 5, `TreeWallClockInUtcTest` 2 = 11.
+`default-test` failed, so Maven never reached them. `default-test` is 987 in both runs.
+
+**What L3 must change in ad-sphere for these:** nothing — with edb3e7f they pass as they are (the gate below). When ad-sphere moves its
+money onto the switch ledger (a batch), its tests that count the testkit's releases of a refused candidate stay true only on the testkit's
+ledger: on the switch ledger a refused candidate writes nothing and releases nothing (P5's rule).
+
+**The gate on edb3e7f:** `bash ~/arch-drafts/tools/p2gate-ml.sh 239f57b edb3e7f` (05:13–05:22): mem-ledger
+6523614 and the seed installed into the empty head, **test exit 0, 998 / 0 / 0 / 7** — every class's counts identical to 431bd6e's run (205
+classes, `~/l2b-work/logs/ad-classes-{431bd6e,edb3e7f}.txt`); AdCallStoryTest 25/0/0/0, AdReturnRoadStoryTest 7/0/0/0; statewalk 4.1.0,
+mem-ledger 1.0.0-SNAPSHOT, every seed module 2.0.0-SNAPSHOT (seed-idgen now among them: seed-prepaid needs it). Log copy
+`~/l2b-work/logs/p2gate-edb3e7f-test.log`.
