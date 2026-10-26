@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.spi.MoneyRules;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Verdict;
 import com.telcobright.statewalk.session.events.Established;
@@ -33,13 +34,20 @@ final class AppFlow<C extends RoutesphereContext> extends RoutesphereFlow<C> {
     @Override protected int serviceGroup(C ctx) { return app.serviceGroup; }
     @Override protected String identifyRootLevelTenant(RoutesphereFacts facts) { return app.identifyRootLevelTenant.identify(facts, kit.lookups()); }
     @Override protected Tier identifyPartner(C ctx, Candidate candidate) { return app.identifyPartner.identify(ctx, candidate, kit.lookups()); }
-    @Override protected TierRate rateAtLevel(C ctx, Tier tier, Partner partner) { return app.rateAtLevel.rate(ctx, tier, partner); }
+    @Override
+    protected TierRate rateAtLevel(C ctx, Tier tier, Partner partner) {
+        if (app.rateAtLevel == null) throw new IllegalStateException("[" + app.name + "] the lane's Prepaid rates every tier: rateAtLevel is not asked of it");
+        return app.rateAtLevel.rate(ctx, tier, partner);
+    }
     @Override protected RoutePlan route(C ctx) { return app.route.apply(ctx); }
     @Override protected boolean delivered(C ctx, Outcome outcome) { return app.delivered.test(ctx, outcome); }
-    @Override protected RefundPolicy refundPolicy(C ctx) { return app.refundPolicy.apply(ctx); }
+    @Override protected RefundPolicy refundPolicy(C ctx) { return app.refundPolicy == null ? null : app.refundPolicy.apply(ctx); }
     @Override protected RerouteAction rerouteActionFor(String cause) { return app.rerouteActionFor.apply(cause); }
 
     // ── the optional hooks: the lane's lambda, else the base's default ──
+
+    /** L2a · The lane's own Prepaid, or null (the engine runs on the answers above). */
+    @Override protected MoneyRules<C> moneyRules() { return app.prepaid; }
 
     @Override protected String buildTask(C ctx) { return app.buildTask == null ? super.buildTask(ctx) : app.buildTask.apply(ctx); }
 

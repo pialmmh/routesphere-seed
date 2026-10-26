@@ -83,9 +83,10 @@ public final class ParityScene implements AutoCloseable {
     /**
      * The lane under test. Item 1: the base's builder with the call's answers and NO Prepaid (the gaps of today's base stay disabled on it);
      * 2b: the same call as a BIG lane (a subclass of RoutesphereFlow) on the call's Prepaid ({@link CallFlowOnPrepaid}) — the same rows, the
-     * same assertions, the gaps written as they should be and run.
+     * same assertions, the gaps written as they should be and run; 3: the call in builder syntax with {@code .prepaid(CallPrepaid)} — the
+     * small lane's way, the one the design names ({@link CallLane#onPrepaid}).
      */
-    public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID }
+    public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID, ON_PREPAID }
 
     private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
         fundTheLab(balances);
@@ -122,6 +123,7 @@ public final class ParityScene implements AutoCloseable {
         return switch (lane) {
             case ON_THE_BASE -> CallLane.onTheBase(kit, rates(), Map.of(DOMESTIC, PORTED), kit.clock());
             case ON_A_SUBCLASS_PREPAID -> new CallFlowOnPrepaid(kit, rates(), Map.of(DOMESTIC, PORTED));
+            case ON_PREPAID -> CallLane.onPrepaid(kit, rates(), Map.of(DOMESTIC, PORTED));
         };
     }
 

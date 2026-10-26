@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.spi.MoneyRules;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Verdict;
 import com.telcobright.statewalk.session.events.Established;
@@ -37,6 +38,10 @@ import java.util.function.Function;
  *       .rerouteActionFor(cause -&gt; RerouteAction.FAIL_TERMINAL)                                  // retry, next hop, or stop?
  *       .build(kit);
  * </pre>
+ *
+ * <p>L2a · A lane's money is the seed's ONE engine: on the lane's answers ({@code rateAtLevel}, {@code refundPolicy}, …), or on the lane's
+ * own Prepaid ({@link Builder#prepaid}: seed-prepaid's builder, design §10) — then the Prepaid answers the rate and the end, and the
+ * builder refuses those answers given twice.
  *
  * The lambdas run under the base's guards exactly as overrides do (a throw at admission refuses the candidate with {@code INTERNAL_ERROR};
  * a throw anywhere else is logged with the session and the session still ends). They are the lane's RULES, shared by every session: they
@@ -100,6 +105,7 @@ public final class RoutesphereApp {
         BiFunction<C, Outcome, Object> buildSdr;
         BiConsumer<C, Outcome> onEnded;
         Function<String, List<String>> topicsOf;
+        MoneyRules<C> prepaid;
         private boolean sealed;
 
         private Builder(String name) {
@@ -161,6 +167,14 @@ public final class RoutesphereApp {
         /** The finish, last · the lane's own closing. */
         public Builder<C> onEnded(BiConsumer<C, Outcome> v) { open(); this.onEnded = v; return this; }
 
+        /**
+         * L2a · The lane's money as its own Prepaid (seed-prepaid: {@code Prepaid.<C>builder(name)…build(kit)}, design §10): the Prepaid
+         * answers what a tier charges, which accounts pay, the renewal and the end — so {@code rateAtLevel} and {@code refundPolicy} are not
+         * asked of this lane, and {@code rateAtLevel}, {@code refundPolicy}, {@code settleOutcome}, {@code billedUnits} and
+         * {@code rateNextWindow} given beside it are refused (two answers to one question). Absent: the engine runs on the lane's answers.
+         */
+        public Builder<C> prepaid(MoneyRules<C> v) { open(); this.prepaid = v; return this; }
+
         /** The start · the lane's own Kafka topics of one root ({@code <app>_<in|out>_<name>_<root>}); default: none. */
         public Builder<C> topicsOf(Function<String, List<String>> v) { open(); this.topicsOf = v; return this; }
 
@@ -179,13 +193,27 @@ public final class RoutesphereApp {
             if (serviceGroup == null) missing.add("serviceGroup(int) — the CDR's service group");
             if (identifyRootLevelTenant == null) missing.add("identifyRootLevelTenant((facts, find) -> root) — which root operator owns this door?");
             if (identifyPartner == null) missing.add("identifyPartner((ctx, candidate, find) -> tier) — who pays at the leaf?");
-            if (rateAtLevel == null) missing.add("rateAtLevel((ctx, tier, partner) -> rate) — what does this tier charge?");
+            if (rateAtLevel == null && prepaid == null) missing.add("rateAtLevel((ctx, tier, partner) -> rate) — what does this tier charge? (or its prepaid(...))");
             if (route == null) missing.add("route(ctx -> plan) — where does it go, in failover order?");
             if (delivered == null) missing.add("delivered((ctx, outcome) -> yes/no) — did the service happen?");
-            if (refundPolicy == null) missing.add("refundPolicy(ctx -> policy) — what does a session not delivered pay?");
+            if (refundPolicy == null && prepaid == null) missing.add("refundPolicy(ctx -> policy) — what does a session not delivered pay? (or its prepaid(...))");
             if (rerouteActionFor == null) missing.add("rerouteActionFor(cause -> action) — retry, the next hop, or stop?");
-            if (missing.isEmpty()) return;
+            if (missing.isEmpty()) { refuseTwoAnswersToTheMoney(); return; }
             throw new IllegalStateException("[" + name + "] every lane states its rules (R2) — the builder has no " + String.join("; no ", missing));
+        }
+
+        /** L2a · A lane with a Prepaid states its money ONCE: the answers the Prepaid replaces, given beside it, are refused by name. */
+        private void refuseTwoAnswersToTheMoney() {
+            if (prepaid == null) return;
+            List<String> twice = new ArrayList<>();
+            if (rateAtLevel != null) twice.add("rateAtLevel");
+            if (refundPolicy != null) twice.add("refundPolicy");
+            if (settleOutcome != null) twice.add("settleOutcome");
+            if (billedUnits != null) twice.add("billedUnits");
+            if (rateNextWindow != null) twice.add("rateNextWindow");
+            if (twice.isEmpty()) return;
+            throw new IllegalStateException("[" + name + "] the lane's Prepaid answers its money (the rate, the renewal, the end) — drop " + String.join(", ", twice)
+                + ": two answers to one question");
         }
 
         private void open() {

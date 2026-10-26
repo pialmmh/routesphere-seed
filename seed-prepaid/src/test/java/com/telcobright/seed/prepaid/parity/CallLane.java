@@ -62,6 +62,26 @@ public final class CallLane {
             .build(kit);
     }
 
+    /**
+     * L2a 3 · The SAME lane in builder syntax with its money as the call's Prepaid ({@link CallPrepaid}, design §10.1): no rateAtLevel, no
+     * refundPolicy, no rateNextWindow, no billedUnits — the Prepaid answers them; the lane keeps its own answers (who pays, where it goes,
+     * the digit filter, delivered, the ported number at the answer).
+     */
+    public static RoutesphereFlow<CallContext> onPrepaid(RoutesphereKit kit, CallRates rates, Map<String, String> mnp) {
+        return RoutesphereApp.<CallContext>builder("CallSupervisor")
+            .serviceGroup(0)
+            .identifyRootLevelTenant((facts, find) -> find.byIngress(facts.ingress()))
+            .identifyPartner((call, candidate, find) -> find.byPartnerId(call, ((CallFacts) call.facts).partnerId()))
+            .buildTask(CallLane::taskOf)
+            .applyRootRules(CallLane::digitFilter)
+            .route(call -> RoutePlan.one(new ParityWire.Hop("carrier-a")))
+            .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL)
+            .delivered((call, outcome) -> call.answered())
+            .onAnswered((call, answer) -> call.terminatingCalledNumber = mnp.get(call.originatingCalledNumber))
+            .prepaid(CallPrepaid.of(kit, rates))
+            .build(kit);
+    }
+
     static String taskOf(CallContext call) {
         call.taskType = "VOICE";
         call.protocol = "ESL";
