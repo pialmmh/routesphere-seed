@@ -1,0 +1,280 @@
+package com.telcobright.seed.prepaid.parity;
+
+import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.rtc.domainmodel.PartnerType;
+import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
+import com.telcobright.rtc.domainmodel.nonentity.Tenant;
+import com.telcobright.seed.sessionflow.api.Candidate;
+import com.telcobright.seed.sessionflow.api.IdentificationRule;
+import com.telcobright.seed.sessionflow.api.Ingress;
+import com.telcobright.seed.sessionflow.api.RoutesphereEngine;
+import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
+import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
+import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.TenantLookup;
+import com.telcobright.seed.sessionflow.testkit.ManualClock;
+import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
+import com.telcobright.seed.sessionflow.testkit.TenantTreeBuilder;
+import com.telcobright.seed.switchledger.LedgerLab;
+import com.telcobright.seed.switchledger.api.SwitchLedger;
+import com.telcobright.seed.switchledger.dependencies.SwitchLedgerSettings;
+import com.telcobright.seed.switchledger.dependencies.SwitchLedgers;
+import com.telcobright.statewalk.channel.Delivery;
+import com.telcobright.statewalk.channel.TestChannel;
+import com.telcobright.statewalk.event.StatemachineEvent;
+import com.telcobright.statewalk.session.Outcome;
+import com.telcobright.statewalk.session.SessionTimings;
+import com.telcobright.statewalk.session.Verdict;
+import com.telcobright.statewalk.session.events.Established;
+import com.telcobright.statewalk.session.events.SessionStart;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+/**
+ * The scene of every parity row: ONE root {@code btcl} with ONE reseller tier {@code res_2}, the REAL switch ledger (a MemLedger over H2,
+ * nothing listening), a manual clock, the call lane on the base's kit — driven at the handler level (the money rows) or on the engine
+ * (the rows that need the renewal timer and the cut).
+ *
+ * <pre>
+ *   btcl    partner 2 = the reseller (accounts 21 TF_min 10, 22 BDT 50) · partner 9 Direct (91 BDT 100; plan 8801 → 0.75, 88018 → 0.50, 88019 → 0.00)
+ *   res_2   701 Unilever (11 TF_min 2.5 · 12 BDT 100 · 13 TF_min 100 EXPIRED; plan 88017 → 0.60, 88018 → 0.50)
+ *           702 Poorco (no account) · 703 CashOnly (31 BDT 1.00) · 704 PackagesOnly (41 TF_min 100)
+ *   117     the root's international plan: 44 → 1.50/min (no minimum, 1 s pulse) · 1 → 2.00/min (30 s minimum, 10 s pulse)
+ * </pre>
+ */
+public final class ParityScene implements AutoCloseable {
+
+    public static final ZoneId DHAKA = ZoneId.of("Asia/Dhaka");
+    public static final Instant T0 = Instant.parse("2026-10-26T04:00:00Z");
+    public static final Ingress ESL_DOOR = Ingress.esl("10.0.0.1", 8021);
+    public static final LocalDateTime LATER = LocalDateTime.of(2030, 1, 1, 0, 0), EXPIRED = LocalDateTime.of(2026, 1, 1, 0, 0);
+    public static final int RESELLER = 2, DIRECT = 9, UNILEVER = 701, POORCO = 702, CASH_ONLY = 703, PACKAGES_ONLY = 704;
+    public static final String DOMESTIC = "8801711000000", PORTED = "8801811000000", UNRATED_PREFIX = "8809900000000", ZERO_RATED = "8801911000000";
+    public static final String DENIED = "9901711000000", INTL_UK = "00442071234567", INTL_US = "0012125551234";
+    /** The live reaper's thresholds ({@code ReserveReaperJob} 40–42): 30 min, 1000 rows per pass. */
+    public static final SwitchLedgerSettings LEDGER_SETTINGS = new SwitchLedgerSettings(30, 1000, 5000);
+
+    public final ManualClock clock = new ManualClock(T0, DHAKA);
+    public final LedgerLab lab = LedgerLab.open();
+    public final Tenant root = tree();
+    public final CallRates rates = rates();
+    public final RecordingCdrSink cdrs = new RecordingCdrSink();
+    public final List<CallContext> contexts = new CopyOnWriteArrayList<>();
+    public final RecordingPort recorder;
+    public final SwitchLedger ledger;
+    public final RoutesphereKit kit;
+    public final RoutesphereFlow<CallContext> flow;
+    public final TestChannel<String, StatemachineEvent> wire = new TestChannel<>("parity");
+    public final RoutesphereEngine<CallContext> engine;
+
+    private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
+        fundTheLab(balances);
+        lab.start();
+        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock);
+        this.recorder = new RecordingPort(ledger.port(), this::ctxOrNull);
+        this.kit = RoutesphereKit.builder().tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("esl", "10.0.0.1:8021", "btcl")))
+            .ledger(recorder).cdr(cdrs).zone(DHAKA).clock(clock).settings(settings).build();
+        this.flow = lanes.apply(kit);
+        this.engine = withEngine ? RoutesphereEngine.of(new ParitySupervisor(flow, this::newContext)).signaling(ParityWire.spec()).channel(wire, ParityScene::decode).start() : null;
+    }
+
+    /** The handler-level scene: the live call's cadence (60 s, the first renewal at 58 s), a 3-hour ACTIVE, no machine. */
+    public static ParityScene open() { return open(Map.of()); }
+
+    /** The same with some live balances overridden ({@code "res_2#11" → "0.5"}). */
+    public static ParityScene open(Map<String, String> balances) { return new ParityScene(balances, handlerSettings(), false, ParityScene::laneOnTheBase); }
+
+    /** The scene on the engine: the budget child renews every {@code periodSec}, the first time after {@code firstSec} (0 = one period). */
+    public static ParityScene openWithEngine(long firstSec, long periodSec, Map<String, String> balances) {
+        return new ParityScene(balances, engineSettings(firstSec, periodSec), true, ParityScene::laneOnTheBase);
+    }
+
+    /** The lane under test — the base's builder with the call's answers (item 1); item 2 swaps it for the Prepaid builder. */
+    static RoutesphereFlow<CallContext> laneOnTheBase(RoutesphereKit kit) {
+        return CallLane.onTheBase(kit, rates(), Map.of(DOMESTIC, PORTED), kit.clock());
+    }
+
+    public static RoutesphereSettings handlerSettings() {
+        return new RoutesphereSettings(8, 2, 12_000, new SessionTimings(2, 2, 5, 10_800), 60, 58, 0, false, 200);
+    }
+
+    public static RoutesphereSettings engineSettings(long firstSec, long periodSec) {
+        return new RoutesphereSettings(8, 2, 120, new SessionTimings(2, 2, 5, 60), periodSec, firstSec, 0, false, 200);
+    }
+
+    // ── the scene's facts ───────────────────────────────────────────────────
+
+    static Tenant tree() {
+        TenantTreeBuilder b = new TenantTreeBuilder();
+        b.root("btcl").partner(RESELLER, "res_2", PartnerType.RESELLER).partner(DIRECT, "Direct", PartnerType.CUSTOMER)
+            .account(RESELLER, 21, 5, "TF_min", "10", LATER).account(RESELLER, 22, 6, "BDT", "50", LATER)
+            .account(DIRECT, 91, 9, "BDT", "100", LATER);
+        b.tenant("res_2", "btcl").partner(UNILEVER, "Unilever", PartnerType.CUSTOMER).partner(POORCO, "Poorco", PartnerType.CUSTOMER)
+            .partner(CASH_ONLY, "CashOnly", PartnerType.CUSTOMER).partner(PACKAGES_ONLY, "PackagesOnly", PartnerType.CUSTOMER)
+            .account(UNILEVER, 11, 1, "TF_min", "2.5", LATER).account(UNILEVER, 12, 2, "BDT", "100", LATER).account(UNILEVER, 13, 3, "TF_min", "100", EXPIRED)
+            .account(CASH_ONLY, 31, 4, "BDT", "1.00", LATER).account(PACKAGES_ONLY, 41, 7, "TF_min", "100", LATER);
+        return b.build();
+    }
+
+    static CallRates rates() {
+        return new CallRates(
+            Map.of("btcl#" + DIRECT, Map.of("8801", new BigDecimal("0.75"), "88018", new BigDecimal("0.50"), "88019", new BigDecimal("0.00")),
+                   "res_2#" + UNILEVER, Map.of("88017", new BigDecimal("0.60"), "88018", new BigDecimal("0.50"))),
+            Map.of("44", CallRates.intl("1.50", 0, 1), "1", CallRates.intl("2.00", 30, 10)));
+    }
+
+    private void fundTheLab(Map<String, String> balances) {
+        lab.schema("btcl").schema("res_2");
+        row("btcl", 21, 5, "TF_min", "10", balances).row("btcl", 22, 6, "BDT", "50", balances).row("btcl", 91, 9, "BDT", "100", balances)
+            .row("res_2", 11, 1, "TF_min", "2.5", balances).row("res_2", 12, 2, "BDT", "100", balances).row("res_2", 13, 3, "TF_min", "100", balances)
+            .row("res_2", 31, 4, "BDT", "1.00", balances).row("res_2", 41, 7, "TF_min", "100", balances);
+    }
+
+    private ParityScene row(String schema, long id, long purchase, String uom, String balance, Map<String, String> overrides) {
+        lab.account(schema, id, purchase, uom, overrides.getOrDefault(schema + "#" + id, balance));
+        return this;
+    }
+
+    // ── the handler level: the money rows ───────────────────────────────────
+
+    public CallContext call(String id, int partnerId, String called) {
+        CallContext ctx = newContext();
+        ctx.facts = new CallFacts(id, clock.millis(), ESL_DOOR, partnerId, called);
+        return ctx;
+    }
+
+    private CallContext newContext() {
+        CallContext ctx = new CallContext();
+        contexts.add(ctx);
+        return ctx;
+    }
+
+    /** INIT + ADMITTING through the handler alone (no registry): the root, the task, the one candidate, the walk. */
+    public Verdict admit(CallContext ctx) {
+        flow.onStart(ctx, new SessionStart(ctx.facts));
+        ctx.candidates = List.of(Candidate.SELF);
+        return flow.admit(ctx);
+    }
+
+    public CallContext admitted(String id, int partnerId, String called) {
+        CallContext ctx = call(id, partnerId, called);
+        Verdict verdict = admit(ctx);
+        if (!verdict.accepted()) throw new AssertionError(id + " was refused: " + verdict.cause());
+        return ctx;
+    }
+
+    public void answer(CallContext ctx) { ctx.answer = new Established(clock.millis(), "carrier-a", "PCMA", null); }
+
+    public void talk(long seconds) { clock.advance(seconds * 1000); }
+
+    public double renew(CallContext ctx) { return flow.renewReserves(ctx); }
+
+    /** The end of an answered call: the final state's money, then the record (the CDR). */
+    public void hangUp(CallContext ctx) {
+        flow.settle(ctx, Outcome.SUCCEEDED);
+        flow.record(ctx, Outcome.SUCCEEDED);
+    }
+
+    /** The end of a call never answered: every reserve back, then the record. */
+    public void giveUp(CallContext ctx) {
+        ctx.endCause = "NO_ANSWER";
+        flow.release(ctx);
+        flow.record(ctx, Outcome.FAILED);
+    }
+
+    // ── the engine: the rows with a timer ───────────────────────────────────
+
+    static Delivery decode(String sessionId, StatemachineEvent frame) { return Delivery.to(ParityWire.TYPE, frame); }
+
+    public void dial(String id, int partnerId, String called) { frame(id, new ParityWire.Dial(new CallFacts(id, System.currentTimeMillis(), ESL_DOOR, partnerId, called))); }
+
+    public void answerOnTheWire(String id) { frame(id, new ParityWire.Answer(System.currentTimeMillis())); }
+
+    public void hangUpOnTheWire(String id) { frame(id, new ParityWire.Hangup(System.currentTimeMillis())); }
+
+    public void failOnTheWire(String id, String cause) { frame(id, new ParityWire.Fail(cause, 403)); }
+
+    public void frame(String id, StatemachineEvent e) {
+        try {
+            wire.inject(id, e).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            engine.awaitSettled(id, 5, TimeUnit.SECONDS);
+            engine.registry().awaitIdle(5, TimeUnit.SECONDS);
+        } catch (Exception ex) {
+            throw new IllegalStateException("the frame " + e + " for " + id + " was not taken: " + ex, ex);
+        }
+    }
+
+    /** The context of the session with this id (the last one made for it). */
+    public CallContext ctx(String id) {
+        CallContext ctx = ctxOrNull(id);
+        if (ctx == null) throw new AssertionError("no session " + id);
+        return ctx;
+    }
+
+    CallContext ctxOrNull(String id) {
+        for (int i = contexts.size() - 1; i >= 0; i--) if (id.equals(contexts.get(i).sessionId())) return contexts.get(i);
+        return null;
+    }
+
+    /** Wait until the session is gone from the registry; the milliseconds it took. */
+    public long awaitEnd(String id, long withinMs) throws InterruptedException {
+        long startedAt = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startedAt < withinMs && engine.isLive(id)) Thread.sleep(10);
+        return System.currentTimeMillis() - startedAt;
+    }
+
+    public void awaitRenewals(String id, int count, long withinMs) throws InterruptedException {
+        long until = System.currentTimeMillis() + withinMs;
+        while (System.currentTimeMillis() < until && ctx(id).tiers.stream().anyMatch(t -> t.reservationCount < count)) Thread.sleep(20);
+    }
+
+    // ── looking at the books ────────────────────────────────────────────────
+
+    public BigDecimal balance(String schema, long accountId) { return lab.cachedBalance(schema, accountId); }
+
+    public PackageAccountReserve row(String schema, String key) { return lab.cachedRow(schema, key); }
+
+    public int rows(String schema) { return lab.cachedReserveRows(schema); }
+
+    public LocalDateTime now() { return LocalDateTime.now(clock); }
+
+    @Override
+    public void close() {
+        if (engine != null) engine.close();
+        lab.close();
+    }
+
+    /**
+     * P8's witness: the switch ledger's port with every money call recorded — the verb, the reference, and whether the session's money
+     * lock was held by the calling thread (the base's rule: a renewal and a settlement of one session never run beside each other).
+     */
+    public static final class RecordingPort implements LedgerPort {
+        private final LedgerPort real;
+        private final Function<String, CallContext> contexts;
+        public final List<String> seen = new CopyOnWriteArrayList<>();
+
+        RecordingPort(LedgerPort real, Function<String, CallContext> contexts) { this.real = real; this.contexts = contexts; }
+
+        private void note(String verb, String reference) {
+            String sessionId = reference == null ? "?" : reference.split("[#.]")[0];
+            CallContext ctx = contexts.apply(sessionId);
+            seen.add(verb + " " + reference + " locked=" + (ctx != null && ctx.money.isHeldByCurrentThread()) + " thread=" + Thread.currentThread().getName());
+        }
+
+        @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) { note("reserve", reference); return real.reserve(level, amount, reference); }
+        @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { note("settle", level.getDebitReference()); return real.settle(level, charged); }
+        @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); real.release(level, why); }
+        @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
+    }
+}
