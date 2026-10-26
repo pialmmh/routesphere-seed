@@ -60,11 +60,17 @@ final class TierReserve<C extends RoutesphereContext> {
         if (rate == null) return Verdict.reject(SessionCause.UNRATED);
         if (rate.held() != null) return takeHeld(ctx, rate.held(), tier.levelIndex());
         LevelAdmission level = levelOf(tier.tenant(), partner, tier.levelIndex(), rate);
-        String refusal = ctx.dryRun ? null
-            : reserve(ctx, level, rate.reserveAmount(), referenceOf(ctx, tier.levelIndex()), flow.noBalanceCause(ctx), flow.admissionTimeLeftMs(ctx));
-        if (refusal != null) return Verdict.reject(refusal);
-        ctx.walked(level);
+        if (ctx.dryRun) { ctx.walked(level); return Verdict.ok(); }
+        String reference = referenceOf(ctx, tier.levelIndex()), cause = flow.noBalanceCause(ctx);
+        WalkPlan.of(ctx).add(List.of(level), () -> holdAndWalk(ctx, level, rate.reserveAmount(), reference, cause));
         return Verdict.ok();
+    }
+
+    /** L2b · The planned tier held in the walk's unit (every tier at once): held → walked once the unit's record is written. */
+    private String holdAndWalk(C ctx, LevelAdmission level, BigDecimal amount, String reference, String cause) {
+        String refusal = reserve(ctx, level, amount, reference, cause, flow.admissionTimeLeftMs(ctx));
+        if (refusal == null) MoneyUnit.afterTheRecord(() -> ctx.walked(level));
+        return refusal;
     }
 
     /** The application's own step admitted the tier in one move: the base takes its level, names its reference, asks its ledger nothing. */
@@ -103,10 +109,12 @@ final class TierReserve<C extends RoutesphereContext> {
         if (amount.signum() <= 0) return null;
         if (withinMs <= 0) return notAsked(ctx, level);
         try {
-            Optional<LedgerPort.Reservation> held = flow.kit().ledger().reserve(level, amount, reference, withinMs);
+            Optional<LedgerPort.Reservation> held = MoneyUnit.moves(flow.kit().ledger()).reserve(level, amount, reference, withinMs);
             if (held.isEmpty()) return causeWhenItCannotPay;
-            recordReserve(level, held.get(), reference);
-            journalReserve(ctx, level, held.get().reserved());
+            MoneyUnit.afterTheRecord(() -> {
+                recordReserve(level, held.get(), reference);
+                journalReserve(ctx, level, held.get().reserved());
+            });
             return null;
         } catch (LedgerPort.LedgerRefusal refused) {
             return refused.code();
@@ -130,13 +138,13 @@ final class TierReserve<C extends RoutesphereContext> {
         level.incrementReservationCount();
     }
 
-    private String notAsked(C ctx, LevelAdmission level) {
+    String notAsked(C ctx, LevelAdmission level) {
         ctx.budgetSpent = true;
         ctx.history.note(flow.name(), "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") was not reserved: no time left — the ledger was not asked");
         return SessionCause.ADMISSION_TIMEOUT;
     }
 
-    private String ledgerFault(C ctx, int levelIndex, String dbName, Integer partnerId, RuntimeException fault) {
+    String ledgerFault(C ctx, int levelIndex, String dbName, Integer partnerId, RuntimeException fault) {
         ctx.systemFault = SessionCause.BILLING_SYSTEM_ERROR;
         log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), LogText.clean(ctx.sessionId()),
             levelIndex, dbName, partnerId, LogText.failureText(fault.getMessage()));
@@ -184,7 +192,7 @@ final class TierReserve<C extends RoutesphereContext> {
             : reserve(ctx, level, rate.reserveAmount(), reference, CANNOT_PAY, flow.admissionTimeLeftMs(ctx));
         if (CANNOT_PAY.equals(refusal)) return null;
         if (refusal != null) return new Held(Verdict.reject(refusal), null);
-        ctx.walked(level);
+        MoneyUnit.afterTheRecord(() -> ctx.walked(level));
         return new Held(Verdict.ok(), level);
     }
 
@@ -197,9 +205,9 @@ final class TierReserve<C extends RoutesphereContext> {
         if (amount.signum() <= 0) return null;
         if (withinMs <= 0) return notAsked(ctx, level);
         try {
-            Optional<LedgerPort.Reservation> taken = flow.kit().ledger().charge(level, amount, reference);
+            Optional<LedgerPort.Reservation> taken = MoneyUnit.moves(flow.kit().ledger()).charge(level, amount, reference);
             if (taken.isEmpty()) return CANNOT_PAY;
-            recordReserve(level, taken.get(), reference);
+            MoneyUnit.afterTheRecord(() -> recordReserve(level, taken.get(), reference));
             return null;
         } catch (LedgerPort.LedgerRefusal refused) {
             return refused.code();
@@ -212,7 +220,7 @@ final class TierReserve<C extends RoutesphereContext> {
     void refundCharge(C ctx, LevelAdmission level, String why) {
         if (!SessionSettlement.holdsReserve(level)) return;
         try {
-            flow.kit().ledger().refund(level, TierSettlement.reservedOf(level), why);
+            MoneyUnit.moves(flow.kit().ledger()).refund(level, TierSettlement.reservedOf(level), why);
         } catch (RuntimeException e) {
             flow.kit().counters().owed.incrementAndGet();
             log.error("[{}] {} | OWED: the charge {} of {} {} at tier {} ({}) partner {} was NOT given back ({}): {}", flow.name(),
@@ -227,8 +235,8 @@ final class TierReserve<C extends RoutesphereContext> {
     void release(C ctx, LevelAdmission level, String why) {
         if (!SessionSettlement.holdsReserve(level)) return;
         try {
-            flow.kit().ledger().release(level, why);
-            journalRelease(ctx, level);
+            MoneyUnit.moves(flow.kit().ledger()).release(level, why);
+            MoneyUnit.afterTheRecord(() -> journalRelease(ctx, level));
         } catch (RuntimeException e) {
             flow.kit().counters().owed.incrementAndGet();
             log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} was NOT released ({}): {}", flow.name(),

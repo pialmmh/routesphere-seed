@@ -108,11 +108,13 @@ class CallParityAdmissionTest extends ParityRows {
 
     /**
      * P5 · {@code DefaultAdmissionService.compensateReserves} 632–668: a later tier refuses (the root's digit filter, 270) after the leaf
-     * held — the earlier holds are returned in full ({@code releaseReserves} 647–668), no row is left anywhere.
+     * held — the earlier holds are returned in full ({@code releaseReserves} 647–668), no row is left anywhere. L2b (design §10.3 P5:
+     * "every tier rated and authorized first, then ONE batch — nothing to return"): the same money; the ledger is never asked, no record.
      */
     @Test
     void P5_aLaterTierRefuses_theEarlierHoldsAreReturned() {
         scene = open();
+        long records = scene.lab.walRecords();
 
         Verdict verdict = scene.admit(scene.call("p5", UNILEVER, DENIED));
 
@@ -121,7 +123,8 @@ class CallParityAdmissionTest extends ParityRows {
         assertThat(scene.balance("btcl", 21)).isEqualByComparingTo("10");
         assertThat(scene.rows("res_2")).isZero();
         assertThat(scene.rows("btcl")).isZero();
-        assertThat(scene.recorder.seen).anyMatch(s -> s.startsWith("release p5#L0"));
+        assertThat(scene.recorder.seen).as("L2b: nothing was held, nothing to give back — the ledger was never asked").isEmpty();
+        assertThat(scene.lab.walRecords()).as("L2b: no record").isEqualTo(records);
     }
 
     /**

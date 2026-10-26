@@ -35,6 +35,6 @@ final class WindowedRenewal<C extends RoutesphereContext> {
 
     private WindowRenewal renewal(C ctx) {
         TierReserve<C> holds = TierReserve.of(flow);
-        return new WindowRenewal(flow.kit().ledger()::balanceOf, (level, amount, reference) -> holds.reserveForRenewal(ctx, level, amount, reference));
+        return new WindowRenewal(MoneyUnit.moves(flow.kit().ledger())::balanceOf, (level, amount, reference) -> holds.reserveForRenewal(ctx, level, amount, reference));
     }
 }

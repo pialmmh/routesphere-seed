@@ -14,7 +14,8 @@ import java.util.List;
  *
  * <p>The work behind {@link RoutesphereFlow#admit}; the application's part of each step is a hook of the flow. Stateless: one per ask.
  * L2a · No money here: the tier's hold is the lane's {@code reserveBalance} (its default, the money engine's {@code admit}), and a refused
- * candidate's give-back is ONE call into the engine ({@code release}) — both moved to seed-prepaid ({@code TierReserve}).
+ * candidate's give-back is ONE call into the engine ({@code release}) — both moved to seed-prepaid ({@code TierReserve}). L2b: once every
+ * tier passed, ONE call holds every tier's money at once ({@code holdTheWalk}: one unit of the ledger, all tiers or none).
  */
 final class AdmissionChain<C extends RoutesphereContext> {
 
@@ -80,6 +81,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
         ctx.identificationCause = null;                          // P1-O: this candidate's own helper says why it found nobody
         Tier leaf = flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, candidate));
         String refusal = leaf == null ? admitWithoutPartner(ctx, candidate) : admitThroughTheTiers(ctx, leaf);
+        if (refusal == null) refusal = flow.money().holdTheWalk(ctx);
         if (refusal == null) refusal = routeAtTheRoot(ctx);
         if (refusal == null) refusal = confirm(ctx, candidate);
         return refusal;

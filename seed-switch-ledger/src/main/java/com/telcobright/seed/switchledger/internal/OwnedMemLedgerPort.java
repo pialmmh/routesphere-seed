@@ -4,6 +4,7 @@ import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.LedgerUnit;
 import com.telcobright.seed.switchledger.api.LiveBalance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +65,27 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { return shared(() -> port.settle(level, charged)); }
 
     @Override public void release(LevelAdmission level, String why) { shared(() -> { port.release(level, why); return null; }); }
+
+    /** L2a's verbs, through the gate too (L2b: they were not delegated — a CHARGE_NOW lane or a credit road on the bootstrap kit was refused). */
+    @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { return shared(() -> port.charge(level, amount, reference)); }
+
+    @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { return shared(() -> port.refund(level, amount, why)); }
+
+    @Override public Credited credit(LevelAdmission account, BigDecimal amount, String reference) { return shared(() -> port.credit(account, amount, reference)); }
+
+    @Override public Credited reparent(LevelAdmission account, long purchaseId) { return shared(() -> port.reparent(account, purchaseId)); }
+
+    /** L2b · A unit holds the gate shared from its opening to its close: a new tier never loads under a unit's locks. */
+    @Override
+    public LedgerUnit unit() {
+        gate.readLock().lock();
+        try {
+            return new GatedUnit(port.unit(), gate.readLock()::unlock);
+        } catch (RuntimeException e) {
+            gate.readLock().unlock();
+            throw e;
+        }
+    }
 
     @Override public long slowestAnswerMs() { return port.slowestAnswerMs(); }
 

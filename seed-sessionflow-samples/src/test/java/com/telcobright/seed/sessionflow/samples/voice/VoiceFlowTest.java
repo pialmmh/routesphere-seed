@@ -183,8 +183,8 @@ class VoiceFlowTest {
         assertEquals("INSUFFICIENT_BALANCE", b.session("c-mb").endCause, "C6/C7: the middle tier cannot pay");
 
         assertEquals(0, verbs("reserve", "c-nf") + verbs("reserve", "c-da"), "nothing reserved for nobody or a closed partner");
-        assertEquals(1, verbs("reserve", "c-df"), "the leaf had reserved");
-        assertEquals(1, verbs("release", "c-df"), "C7: and got it back");
+        assertEquals(0, verbs("reserve", "c-df"), "L2b: every tier passes its checks first — the root's digit filter refuses before any hold");
+        assertEquals(0, verbs("release", "c-df"), "C7, L2b: nothing held, nothing to give back");
         assertEquals(1, verbs("reserve", "c-mb"), "the leaf of the three tiers reserved");
         assertEquals(1, verbs("refused", "c-mb"), "the middle tier refused");
         assertEquals(1, verbs("release", "c-mb"), "C7: the leaf's reserve back");

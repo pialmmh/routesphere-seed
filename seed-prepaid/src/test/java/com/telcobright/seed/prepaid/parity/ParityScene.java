@@ -13,6 +13,7 @@ import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.LedgerUnit;
 import com.telcobright.seed.sessionflow.spi.TenantLookup;
 import com.telcobright.seed.sessionflow.testkit.ManualClock;
 import com.telcobright.seed.sessionflow.testkit.RecordingCdrSink;
@@ -319,5 +320,22 @@ public final class ParityScene implements AutoCloseable {
         @Override public Credited credit(LevelAdmission account, BigDecimal amount, String reference) { note("credit", reference); return real.credit(account, amount, reference); }
         @Override public Credited reparent(LevelAdmission account, long purchaseId) { note("reparent", "account-" + account.getPackageAccountId()); return real.reparent(account, purchaseId); }
         @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
+
+        /** L2b: a unit's moves are recorded as the port's verbs are (the same words), then staged in the real port's unit. */
+        @Override public LedgerUnit unit() { return new RecordingUnit(real.unit()); }
+
+        private final class RecordingUnit implements LedgerUnit {
+            private final LedgerUnit unit;
+            RecordingUnit(LedgerUnit unit) { this.unit = unit; }
+            @Override public void lock(java.util.Collection<LevelAdmission> accounts) { unit.lock(accounts); }
+            @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return unit.balanceOf(level); }
+            @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) { note("reserve", reference); return unit.reserve(level, amount, reference, withinMs); }
+            @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { note("charge", reference); return unit.charge(level, amount, reference); }
+            @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { note("settle", level.getDebitReference()); return unit.settle(level, charged); }
+            @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); unit.release(level, why); }
+            @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { note("refund", level.getDebitReference()); return unit.refund(level, amount, why); }
+            @Override public void commit(String what) { unit.commit(what); }
+            @Override public void close() { unit.close(); }
+        }
     }
 }

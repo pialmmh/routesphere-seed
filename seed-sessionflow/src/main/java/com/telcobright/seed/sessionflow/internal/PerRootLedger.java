@@ -4,10 +4,12 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.sessionflow.spi.LedgerUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,6 +59,9 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     @Override public Credited reparent(LevelAdmission account, long purchaseId) { return ledgerOf(account).reparent(account, purchaseId); }
 
+    /** L2b · A unit on the ledger of the root its first tier belongs to; a tier of another root in the same unit is refused in words. */
+    @Override public LedgerUnit unit() { return new RootUnit(); }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {
@@ -95,6 +100,37 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
                 log.warn("the ledger of root {} did not close: {}", root, e.toString());
             }
         });
+    }
+
+    /** One unit = one root's ledger (a session's tiers are all of its own root): opened on the first tier it is asked about. */
+    private final class RootUnit implements LedgerUnit {
+        private String root;
+        private LedgerUnit unit;
+
+        private LedgerUnit of(LevelAdmission level) {
+            String rootOfLevel = level.getTenant() == null ? null : rootOf.apply(level.getTenant());
+            if (unit == null) {
+                unit = ledgerOf(level).unit();
+                root = rootOfLevel;
+            } else if (root != null && !root.equals(rootOfLevel)) {
+                throw new LedgerFault("one unit spans one root's ledger: tier " + level.getLevelIndex() + " is of root '" + rootOfLevel + "', the unit of '" + root + "'");
+            }
+            return unit;
+        }
+
+        @Override
+        public void lock(Collection<LevelAdmission> accounts) {
+            for (LevelAdmission account : accounts) of(account);
+            if (unit != null) unit.lock(accounts);
+        }
+        @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return of(level).balanceOf(level); }
+        @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference, long withinMs) { return of(level).reserve(level, amount, reference, withinMs); }
+        @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { return of(level).charge(level, amount, reference); }
+        @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { return of(level).settle(level, charged); }
+        @Override public void release(LevelAdmission level, String why) { of(level).release(level, why); }
+        @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { return of(level).refund(level, amount, why); }
+        @Override public void commit(String what) { if (unit != null) unit.commit(what); }
+        @Override public void close() { if (unit != null) unit.close(); }
     }
 
     /** The root of a tier's tenant by its own tree: the last of its ancestor chain; a tenant with no chain is its own root. */

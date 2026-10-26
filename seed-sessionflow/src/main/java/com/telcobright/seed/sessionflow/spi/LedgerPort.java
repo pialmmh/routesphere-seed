@@ -2,6 +2,7 @@ package com.telcobright.seed.sessionflow.spi;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
+import com.telcobright.seed.sessionflow.internal.DirectUnit;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -115,6 +116,13 @@ public interface LedgerPort {
     default Credited reparent(LevelAdmission account, long purchaseId) {
         throw new LedgerFault(getClass().getSimpleName() + " has no reparent road: the switch ledger has");
     }
+
+    /**
+     * L2b item 2 · A unit of work over this ledger: ONE business operation over every tier it touches (the hold of every tier at admission,
+     * every tier's renewal, every tier's settlement), written as ONE — all tiers or none ({@link LedgerUnit}). Default: a ledger that cannot
+     * write a batch applies each move at once and gives back what it took when the unit is not committed (the old saga).
+     */
+    default LedgerUnit unit() { return new DirectUnit(this); }
 
     /** What a credit or a reparent came to: the balance before and after, the purchase the account is on now. */
     record Credited(long accountId, BigDecimal before, BigDecimal after, long purchaseId) {}
