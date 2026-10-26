@@ -28,7 +28,8 @@ import java.util.Optional;
  *   <li>{@link #credit} — a top-up: a DELTA added to one account under its lock (routesphere-core {@code recharge} 294–383); {@link #reparent}
  *       — onto a new purchase, the balance kept;</li>
  *   <li>{@link #accounts} — a partner's accounts as the LEDGER names them (its cached purchases, their expiry: S4) where it caches
- *       purchases, else as the tree names them; each with its live balance.</li>
+ *       purchases, else as the tree names them; each with its live balance;</li>
+ *   <li>{@link #balance} — one account's live balance.</li>
  * </ul>
  * Each refuses in words: a tier not in the root's tree, an account the tier's ledger does not hold, a delta of 0 or less, a purchase with
  * no buckets or no id source, a ledger with no purchase road.
@@ -92,6 +93,12 @@ public final class PrepaidAdmin {
         List<Account> accounts = new ArrayList<>(rows.size());
         for (PackageAccount row : rows) accounts.add(accountWithBalance(tier, row));
         return List.copyOf(accounts);
+    }
+
+    /** One account's live balance; refused in words when the tier's ledger does not hold it. */
+    public BigDecimal balance(String root, String tierDb, long accountId) {
+        return kit.ledger().balanceOf(accountOf(root, tierDb, accountId)).orElseThrow(() -> new IllegalArgumentException(
+            "account " + accountId + " is not held by the ledger of the tier '" + tierDb + "' of the root '" + root + "'"));
     }
 
     private static List<PackageAccount> fromTheTree(Tenant tier, int partnerId) {
