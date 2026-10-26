@@ -33,6 +33,8 @@
         <module>seed-tenant</module>
         <module>seed-idgen</module>
         <module>seed-switch-ledger</module>
+        <!-- L2a: the call's money as a seed feature — the Prepaid builder over the base's one engine and the switch ledger; parity P1–P21 -->
+        <module>seed-prepaid</module>
     </modules>
 
     <properties>

@@ -1,6 +1,16 @@
-package com.telcobright.seed.sessionflow.api;
+package com.telcobright.seed.prepaid.internal;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.seed.sessionflow.api.ClosedSpan;
+import com.telcobright.seed.sessionflow.api.LaneAnswers;
+import com.telcobright.seed.sessionflow.api.LogText;
+import com.telcobright.seed.sessionflow.api.RoutesphereContext;
+import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
+import com.telcobright.seed.sessionflow.api.SessionCause;
+import com.telcobright.seed.sessionflow.api.TierRate;
+import com.telcobright.seed.sessionflow.api.TierSettlement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -11,14 +21,20 @@ import java.util.List;
  * account, the application names the next one, and the base moves the tier onto it — the current series settled for everything it
  * held and closed as a {@link ClosedSpan}, a fresh series opened on the next account with its first window held at once. The tier
  * keeps its place in the chain; the tiers above are untouched. A next account that cannot fund its first window is the cut.
+ *
+ * <p>L2a 2a: MOVED as it was from the base ({@code seed-sessionflow api/SpanRotation}, design §11); the lane's answers through
+ * {@link LaneAnswers}.
  */
 final class SpanRotation<C extends RoutesphereContext> {
 
-    private final RoutesphereFlow<C> flow;
+    /** The base's own log name: the lines read exactly as before the move. */
+    private static final Logger log = LoggerFactory.getLogger(RoutesphereFlow.class);
 
-    private SpanRotation(RoutesphereFlow<C> flow) { this.flow = flow; }
+    private final LaneAnswers<C> flow;
 
-    static <C extends RoutesphereContext> SpanRotation<C> of(RoutesphereFlow<C> flow) { return new SpanRotation<>(flow); }
+    private SpanRotation(LaneAnswers<C> flow) { this.flow = flow; }
+
+    static <C extends RoutesphereContext> SpanRotation<C> of(LaneAnswers<C> flow) { return new SpanRotation<>(flow); }
 
     /** @return true = the session goes on, on the next account; false = the money ended (the cut) */
     boolean rotateOrCut(C ctx, LevelAdmission level, TierRate window) {
@@ -29,7 +45,7 @@ final class SpanRotation<C extends RoutesphereContext> {
         replace(ctx, level, fresh);
         ctx.keepTiers();                                                               // the closed span is in the session's row at once
         String reference = ctx.sessionId() + "." + ctx.spanNo() + "#L" + level.getLevelIndex();
-        String refusal = AdmissionChain.of(flow).reserveForRenewal(ctx, fresh, window.reserveAmount(), reference);
+        String refusal = TierReserve.of(flow).reserveForRenewal(ctx, fresh, window.reserveAmount(), reference);
         return firstWindowHeld(ctx, fresh, next, refusal);
     }
 
@@ -62,7 +78,7 @@ final class SpanRotation<C extends RoutesphereContext> {
             try {
                 flow.kit().journal().released(ctx.sessionId(), reference);
             } catch (RuntimeException e) {
-                RoutesphereFlow.log.warn("[{}] {} | the journal of the calls in the air did not take the settled reserve {} (a restart would try to give it back; the ledger moves money once per reference): {}",
+                log.warn("[{}] {} | the journal of the calls in the air did not take the settled reserve {} (a restart would try to give it back; the ledger moves money once per reference): {}",
                     flow.name(), LogText.clean(ctx.sessionId()), LogText.clean(reference), LogText.failureText(e));
             }
         }

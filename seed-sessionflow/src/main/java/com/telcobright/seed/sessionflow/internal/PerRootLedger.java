@@ -47,6 +47,16 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     @Override public void release(LevelAdmission level, String why) { ledgerOf(level).release(level, why); }
 
+    @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return ledgerOf(level).balanceOf(level); }
+
+    @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { return ledgerOf(level).charge(level, amount, reference); }
+
+    @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { return ledgerOf(level).refund(level, amount, why); }
+
+    @Override public Credited credit(LevelAdmission account, BigDecimal amount, String reference) { return ledgerOf(account).credit(account, amount, reference); }
+
+    @Override public Credited reparent(LevelAdmission account, long purchaseId) { return ledgerOf(account).reparent(account, purchaseId); }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {

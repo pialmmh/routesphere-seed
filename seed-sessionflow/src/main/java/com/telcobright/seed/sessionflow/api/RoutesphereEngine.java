@@ -108,6 +108,7 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
             if (signaling == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its signaling machine (.signaling(spec))");
             if (channel == null) throw new IllegalStateException("[" + flow.name() + "] a routesphere flow needs its channel and decoder (.channel(channel, decoder))");
             refuseASignalingWithoutItsFactsSample();
+            refuseAFlowWithoutItsMoneyEngine();
             refuseAFastPersistedCadence();
             refuseTwoRecoveryRoads();
             return new RoutesphereEngine<>(this);
@@ -132,6 +133,12 @@ public final class RoutesphereEngine<C extends RoutesphereContext> implements Au
                     + start.facts().getClass().getName() + ", not RoutesphereFacts — they name no ingress: every session would be refused NO_TENANT");
             }
         }
+
+        /**
+         * L2a · The base never moves money itself (design §11): the lane's money engine is made here, at the start, by the kit's maker —
+         * seed-prepaid's on the classpath. None → the start is refused in words (no session would ever be admitted, settled or released).
+         */
+        private void refuseAFlowWithoutItsMoneyEngine() { flow.money(); }
 
         /**
          * P1-F3 · ONE recovery road per lane: the journal of the sessions in the air (the next start closes a dead process's sessions, charged

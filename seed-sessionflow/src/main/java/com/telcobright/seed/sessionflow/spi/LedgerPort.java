@@ -77,6 +77,49 @@ public interface LedgerPort {
     default boolean tierLoaded(String tierDb) { return true; }
 
     /**
+     * L2a · A tier's account as the ledger holds it right now — a read, no write, no lock (the C14 remainder's peek: the whole window was
+     * refused, what is left is spent, routesphere-core {@code BalanceBillingService.reserveNextWindowSeconds} 86–120). Empty = this ledger
+     * cannot say (orchestrix's roads, a ledger of a lane's own): the renewal then holds whole windows only.
+     */
+    default Optional<BigDecimal> balanceOf(LevelAdmission level) { return Optional.empty(); }
+
+    /**
+     * L2a · CHARGE_NOW — the SMS's final debit (routesphere-core {@code PrepaidServiceWithCompensation.debit} 441–516): {@code amount} taken
+     * from the tier's account at once, under its lock, with NO reserve row ("a reserve exists to be settled later, and nothing settles an
+     * SMS, so reserving one per message would leave rows behind forever"). Empty = the balance is short, nothing taken. Idempotent per
+     * reference: the same reference twice takes once and answers the first. Default: this ledger takes no final charge — refused in words.
+     */
+    default Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) {
+        throw new LedgerFault(getClass().getSimpleName() + " takes no final charge (CHARGE_NOW): the switch ledger does");
+    }
+
+    /**
+     * L2a · Give back {@code amount} of what {@link #charge} took under the tier's reference ({@code level.getDebitReference()}), once — the
+     * SMS's refund (routesphere-core {@code BalanceCheckRule.refund} 236–255: a recharge of the charge). Answers the tier's settlement:
+     * charged = what stays taken, returned = {@code amount}. A second refund of the same tier answers the first and moves nothing.
+     */
+    default TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) {
+        throw new LedgerFault(getClass().getSimpleName() + " gives back no final charge (CHARGE_NOW): the switch ledger does");
+    }
+
+    /**
+     * L2a · The recharge road's credit — {@code amount} (positive) added to the account the level names (its tier's schema, its account id),
+     * under the account's lock, a DELTA (routesphere-core {@code PrepaidServiceWithCompensation.recharge} 294–383: "a recharge written
+     * DIRECTLY to MySQL is invisible to billing and gets overwritten by the next write-behind"). Default: refused in words.
+     */
+    default Credited credit(LevelAdmission account, BigDecimal amount, String reference) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no credit road: the switch ledger has");
+    }
+
+    /** L2a · The account the level names moved onto purchase {@code purchaseId} (its expiry follows the purchase), its balance kept. */
+    default Credited reparent(LevelAdmission account, long purchaseId) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no reparent road: the switch ledger has");
+    }
+
+    /** What a credit or a reparent came to: the balance before and after, the purchase the account is on now. */
+    record Credited(long accountId, BigDecimal before, BigDecimal after, long purchaseId) {}
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */

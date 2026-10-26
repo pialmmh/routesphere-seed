@@ -1,6 +1,6 @@
 # The walks the hot-path guard allows (P1-O; the architect's A8 b; the test is seed-sessionflow's HotPathHasNoListScanTest).
 # The owner's rule (2026-10-25): "avoiding a LIST lookup on the hot path is a STRICT rule for partner and tenant identification".
-# The guard scans the MAIN sources of seed-sessionflow, seed-tenant and seed-routing for a `for (…)` over partners() / routes() /
+# The guard scans the MAIN sources of seed-sessionflow, seed-tenant, seed-routing and seed-prepaid (L2a) for a `for (…)` over partners() / routes() /
 # children() / tiers() / tenants() (the names without case: getPartners() counts) and for every `.stream(` and `.forEach(`.
 # Each walk must be named here as `Class#method — reason` (`Class#*` = every method of that class; a nested class is Outer.Inner;
 # `<field>` = a field's initializer). A new walk in a flow class is red; an entry that names no walk any more is red too.
@@ -12,7 +12,7 @@ PartnerTiers#of — seed-tenant's D5 map (the ids two tiers hold), built at the 
 
 # ── a session's own few lines, not a lookup ──
 RoutesphereFlow#bringBackTheLiveTiers — a session's OWN tier lines (one per tier of its chain) re-linked to its snapshot after a restore
-SessionCdr#closeAsReserved — the reserve windows of ONE leftover session's tier, at the start's leftovers
+LeftoverMoney#closeAsReserved — the reserve windows of ONE leftover session's tier, at the start's leftovers (L2a: moved from SessionCdr to seed-prepaid)
 PerRootJournal#released — the journal of the session's root (every root's only when the session left no line: a handful of roots)
 PerRootJournal#noted — the same: the session's root's journal
 PerRootJournal#done — the same: the session's root's journal

@@ -30,6 +30,14 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- L2a: the samples run sessions, and a session's money is seed-prepaid's engine (the base's kit finds its maker on the classpath:
+             the base never moves money itself, design prepaid-engine-design.md §11) -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-prepaid</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- the trees per root with their doorbell (TenantTrees + the scripted source): the §D scenario of a sample -->
         <dependency>
             <groupId>com.telcobright</groupId>

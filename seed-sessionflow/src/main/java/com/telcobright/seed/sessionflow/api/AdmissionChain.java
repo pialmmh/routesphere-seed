@@ -1,16 +1,10 @@
 package com.telcobright.seed.sessionflow.api;
 
-import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
-import com.telcobright.rtc.domainmodel.nonentity.Tenant;
-import com.telcobright.seed.sessionflow.spi.LedgerPort;
-import com.telcobright.seed.sessionflow.spi.SessionJournal;
 import com.telcobright.statewalk.session.Verdict;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * ADMITTING, for every application: the candidates in order, and for each the call switch's admission — (c) the entry partner → (b) the
@@ -19,6 +13,8 @@ import java.util.Optional;
  * OWN root: a session never climbs another root's tree.
  *
  * <p>The work behind {@link RoutesphereFlow#admit}; the application's part of each step is a hook of the flow. Stateless: one per ask.
+ * L2a · No money here: the tier's hold is the lane's {@code reserveBalance} (its default, the money engine's {@code admit}), and a refused
+ * candidate's give-back is ONE call into the engine ({@code release}) — both moved to seed-prepaid ({@code TierReserve}).
  */
 final class AdmissionChain<C extends RoutesphereContext> {
 
@@ -162,104 +158,6 @@ final class AdmissionChain<C extends RoutesphereContext> {
         return flow.kit().slots().acquire(ctx.sessionId(), tier.dbName(), partner) ? null : SessionCause.CHANNEL_LIMIT_REACHED;
     }
 
-    // ── (e) the reserve ─────────────────────────────────────────────────────
-
-    /**
-     * The default of {@code reserveBalance}: the tier is rated by the application and reserved by the base — or, when the application's own
-     * step did both in one move ({@link TierRate#held}), taken as that step left it. A rating hook may refuse in the ledger's own words.
-     */
-    Verdict rateAndReserve(C ctx, Tier tier, Partner partner) {
-        TierRate rate;
-        try {
-            rate = flow.isFree(ctx, ctx.trying) ? TierRate.free() : flow.step(ctx, "RATE", () -> flow.rateAtLevel(ctx, tier, partner));
-        } catch (LedgerPort.LedgerRefusal refused) {
-            return Verdict.reject(refused.code());
-        } catch (LedgerPort.LedgerFault fault) {
-            return Verdict.reject(ledgerFault(ctx, tier.levelIndex(), tier.dbName(), partner.getIdPartner(), fault));
-        }
-        if (rate == null) return Verdict.reject(SessionCause.UNRATED);
-        if (rate.held() != null) return takeHeld(ctx, rate.held(), tier.levelIndex());
-        LevelAdmission level = levelOf(tier.tenant(), partner, tier.levelIndex(), rate);
-        String refusal = ctx.dryRun ? null
-            : reserve(ctx, level, rate.reserveAmount(), referenceOf(ctx, tier.levelIndex()), flow.noBalanceCause(ctx), flow.admissionTimeLeftMs(ctx));
-        if (refusal != null) return Verdict.reject(refusal);
-        ctx.walking.add(level);
-        return Verdict.ok();
-    }
-
-    /** The application's own step admitted the tier in one move: the base takes its level, names its reference, asks its ledger nothing. */
-    private Verdict takeHeld(C ctx, LevelAdmission held, int levelIndex) {
-        if (held.getDebitReference() == null) held.setDebitReference(referenceOf(ctx, levelIndex));
-        ctx.walking.add(held);
-        if (!ctx.dryRun && SessionSettlement.holdsReserve(held)) journalReserve(ctx, held, TierSettlement.reservedOf(held));
-        return Verdict.ok();
-    }
-
-    private static LevelAdmission levelOf(Tenant tier, Partner partner, int levelIndex, TierRate rate) {
-        LevelAdmission level = new LevelAdmission(levelIndex, tier, partner, rate.account());
-        level.setRate(rate.rate());
-        if (rate.uom() != null) level.setUom(rate.uom());
-        level.setRatePrefix(rate.ratePrefix());
-        level.setUsageKind(rate.usageKind());
-        level.setUsageSeconds(rate.usageSeconds());
-        level.setReservedAmount(BigDecimal.ZERO);
-        return level;
-    }
-
-    /**
-     * §L.1 · Every money call carries the session and the tier: the first candidate reserves under {@code <session>#L<tier>}, a later one
-     * under {@code <session>#<try>#L<tier>} — a second reserve, settle or release of the same (session, tier) moves nothing more.
-     */
-    static String referenceOf(RoutesphereContext ctx, int levelIndex) {
-        int tryNo = Math.max(1, ctx.candidatesTried);
-        return (tryNo <= 1 ? ctx.sessionId() : ctx.sessionId() + "#" + tryNo) + "#L" + levelIndex;
-    }
-
-    /** The ledger's reserve, inside what is left of the budget. Null = held (or nothing to hold). A ledger fault is never a balance cause. */
-    private String reserve(C ctx, LevelAdmission level, BigDecimal amount, String reference, String causeWhenItCannotPay, long withinMs) {
-        if (amount.signum() <= 0) return null;
-        if (withinMs <= 0) return notAsked(ctx, level);
-        try {
-            Optional<LedgerPort.Reservation> held = flow.kit().ledger().reserve(level, amount, reference, withinMs);
-            if (held.isEmpty()) return causeWhenItCannotPay;
-            recordReserve(level, held.get(), reference);
-            journalReserve(ctx, level, held.get().reserved());
-            return null;
-        } catch (LedgerPort.LedgerRefusal refused) {
-            return refused.code();
-        } catch (LedgerPort.LedgerFault fault) {
-            return ledgerFault(ctx, level.getLevelIndex(), level.getDbName(), level.getPartnerId(), fault);
-        }
-    }
-
-    private static void recordReserve(LevelAdmission level, LedgerPort.Reservation held, String reference) {
-        boolean first = level.getDebitReference() == null;
-        if (first) level.setDebitReference(reference);
-        if (held.account() != null) level.setChargeAccountId(held.account());
-        if (held.uom() != null) level.setUom(held.uom());
-        if (first) {
-            level.setReservedAmount(held.reserved());
-            level.setBalanceBefore(held.balanceBefore());
-        } else {
-            level.addToTotalReserved(held.reserved());
-        }
-        level.setBalanceAfter(held.balanceAfter());
-        level.incrementReservationCount();
-    }
-
-    private String notAsked(C ctx, LevelAdmission level) {
-        ctx.budgetSpent = true;
-        ctx.history.note(flow.name(), "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") was not reserved: no time left — the ledger was not asked");
-        return SessionCause.ADMISSION_TIMEOUT;
-    }
-
-    private String ledgerFault(C ctx, int levelIndex, String dbName, Integer partnerId, RuntimeException fault) {
-        ctx.systemFault = SessionCause.BILLING_SYSTEM_ERROR;
-        RoutesphereFlow.log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), LogText.clean(ctx.sessionId()),
-            levelIndex, dbName, partnerId, LogText.failureText(fault.getMessage()));
-        return SessionCause.BILLING_SYSTEM_ERROR;
-    }
-
     // ── (d) the route at the root, then the last gate ───────────────────────
 
     /** C8 · The route is resolved at the root after every tier reserved (step (d)); no hop refuses this candidate with NO_ROUTE. */
@@ -283,74 +181,10 @@ final class AdmissionChain<C extends RoutesphereContext> {
         ctx.levels = List.of();
         ctx.routePlan = null;
         if (ctx.dryRun) return;
-        for (LevelAdmission level : ctx.walking) release(ctx, level, cause);
+        flow.money().release(ctx, ctx.walking, cause);
         flow.kit().slots().release(ctx.sessionId());
         ctx.history.note(flow.name(), "candidate " + ctx.candidatesTried + " refused: " + cause);
     }
 
-    private void release(C ctx, LevelAdmission level, String why) {
-        if (!SessionSettlement.holdsReserve(level)) return;
-        try {
-            flow.kit().ledger().release(level, why);
-            journalRelease(ctx, level);
-        } catch (RuntimeException e) {
-            flow.kit().counters().owed.incrementAndGet();
-            RoutesphereFlow.log.error("[{}] {} | OWED: the reserve {} of {} {} at tier {} ({}) partner {} was NOT released ({}): {}", flow.name(),
-                LogText.clean(ctx.sessionId()), LogText.clean(level.getDebitReference()), level.getTotalReserved(), level.getUom(), level.getLevelIndex(),
-                level.getDbName(), level.getPartnerId(), LogText.clean(why), LogText.failureText(e));
-        }
-    }
-
-    // ── F9 · the journal of the sessions in the air takes every reserve as it is held ──────────
-
-    private void journalReserve(C ctx, LevelAdmission level, BigDecimal amount) {
-        SessionJournal journal = flow.kit().journal();
-        if (!journal.keeps()) return;
-        try {
-            SessionJournal.Held held = new SessionJournal.Held(level.getLevelIndex(), rootDbOf(ctx), level.getDbName(), level.getPartnerId(),
-                level.getPackageAccountId(), level.getUom(), amount, level.getDebitReference());
-            journal.reserved(ctx.sessionId(), flow.kit().clock().millis(), SessionCdr.of(flow).lostRecordsOf(ctx), held);
-        } catch (RuntimeException e) {
-            flow.kit().counters().journalRefused.incrementAndGet();
-            ctx.history.note(flow.name(), "the reserve " + level.getDebitReference() + " could not be written to the journal of the sessions in the air ("
-                + journal.where() + "): " + e.getMessage());
-        }
-    }
-
-    void journalRelease(C ctx, LevelAdmission level) {
-        SessionJournal journal = flow.kit().journal();
-        if (!journal.keeps() || level.getDebitReference() == null) return;
-        try {
-            journal.released(ctx.sessionId(), level.getDebitReference());
-        } catch (RuntimeException e) {
-            RoutesphereFlow.log.warn("[{}] {} | the journal did not take the release of {} (the ledger moves money once per reference): {}",
-                flow.name(), LogText.clean(ctx.sessionId()), LogText.clean(level.getDebitReference()), LogText.failureText(e));
-        }
-    }
-
     static String rootDbOf(RoutesphereContext ctx) { return ctx.tree == null ? ctx.root : ctx.tree.rootDbName(); }
-
-    // ── a long session renews its reserve ───────────────────────────────────
-
-    /** A renewal runs while the session is answered, outside any admission: the ledger's own timeout bounds it. */
-    private static final long RENEWAL_HAS_NO_BUDGET = Long.MAX_VALUE;
-
-    /**
-     * The default renewal of one tier (C14), in seconds: the next window as the application rates it, held under {@code …#W<n>}. The period =
-     * held, or nothing to hold; 0 = refused (unless the next account takes over). A ledger FAULT never cuts a session.
-     */
-    double renewThroughLedger(C ctx, LevelAdmission level) {
-        double period = flow.kit().settings().reservePeriodSec();
-        TierRate next = flow.rateNextWindow(ctx, level);
-        if (next == null || !next.reserves() || level.getDebitReference() == null) return period;
-        String reference = level.getDebitReference() + "#W" + (level.getReservationCount() + 1);
-        String refusal = reserve(ctx, level, next.reserveAmount(), reference, SessionCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
-        if (refusal == null || SessionCause.BILLING_SYSTEM_ERROR.equals(refusal)) return period;
-        return SpanRotation.of(flow).rotateOrCut(ctx, level, next) ? period : 0;
-    }
-
-    /** A renewal's reserve under its own reference (a lane's own window, the rotation's first window). Null = held. */
-    String reserveForRenewal(C ctx, LevelAdmission level, BigDecimal amount, String reference) {
-        return reserve(ctx, level, amount, reference, SessionCause.BALANCE_EXHAUSTED, RENEWAL_HAS_NO_BUDGET);
-    }
 }

@@ -22,7 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * P1-O item 4 — the guard that keeps the owner's strict rule kept ("avoiding a LIST lookup on the hot path is a STRICT rule for partner and
- * tenant identification", 2026-10-25; the architect's A8 b). The MAIN sources of seed-sessionflow, seed-tenant and seed-routing are scanned
+ * tenant identification", 2026-10-25; the architect's A8 b). The MAIN sources of seed-sessionflow, seed-tenant, seed-routing and (L2a, the
+ * base's money steps moved there) seed-prepaid are scanned
  * for a walk — a {@code for (…)} over {@code partners()}, {@code routes()}, {@code children()}, {@code tiers()} or {@code tenants()}, any
  * {@code .stream(} or {@code .forEach(} — and every one must stand in {@code docs/agents/hot-path-allowlist.txt} by its
  * {@code Class#method} with a reason (the index builder, the install, a road that is not a session's). A new walk in a flow class is red,
@@ -35,7 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HotPathHasNoListScanTest {
 
     static final Pattern WALK = Pattern.compile("\\bfor\\s*\\(.*(?i:partners|routes|children|tiers|tenants)\\(\\)|\\.(stream|forEach)\\(");
-    static final List<String> MODULES = List.of("seed-sessionflow", "seed-tenant", "seed-routing");
+    /** L2a: seed-prepaid's main sources too — the base's money steps (admission's hold among them) moved there. */
+    static final List<String> MODULES = List.of("seed-sessionflow", "seed-tenant", "seed-routing", "seed-prepaid");
     static final String ALLOW_LIST = "docs/agents/hot-path-allowlist.txt";
 
     /** One walk: where, in which class and method, and the line. */

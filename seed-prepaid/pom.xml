@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-prepaid</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-prepaid</name>
+    <description>
+        The call's money as a seed feature (L2a, design docs/architecture/prepaid-engine-design.md §10; the owner, 2026-10-26: "a package
+        account based reusable prepaid accounting service, based on the call example live in production today for esl calls … for ad, sms,
+        and other applications, shall use no code or very little code to adapt"). The Prepaid builder an application writes — admission
+        (HOLD_WINDOW | HOLD | CHARGE_NOW), the window and its first renewal, the rate, the accounts rule, the finalize rule (Final), the hooks —
+        over the base's ONE money engine (seed-sessionflow's) and the switch ledger (mem-ledger). Parity-first: the suite under
+        src/test/…/parity is one test per row P1–P21 of the live statewalk-v2 call, each citing the live file and lines it mirrors, on a REAL
+        MemLedger over H2 (nothing listens). The seed has no config file and no main (R0): every value is a parameter.
+    </description>
+
+    <properties>
+        <h2.version>2.2.224</h2.version>
+    </properties>
+
+    <dependencies>
+        <!-- the base: RoutesphereFlow / RoutesphereApp, the ledger port, the tiers, the settlement -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- the switch ledger: the MemLedger port, the account order, the credit, the orphan reaper, the live-balance peek -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-switch-ledger</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- PackageAccount, Partner, DynamicContext, LevelAdmission, IntlOutRating -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>rtc-domain</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.telcobright</groupId>
+                    <artifactId>state-walk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- the parity suite's MySQL: H2 in MySQL mode, in memory, under the switch ledger's LedgerLab (its test-jar) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-switch-ledger</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <!-- L2a 2a: the base's session tests run HERE (their money is this module's engine) and read the base's fixtures (Lab, LabFlow,
+             BootstrapWorld, …) from its test-jar, in their own packages -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- Chronicle Queue (inside mem-ledger's jar) on Java 21: the same openings seed-switch-ledger uses -->
+                    <argLine>
+                        --add-exports=java.base/jdk.internal.ref=ALL-UNNAMED
+                        --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED
+                        --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED
+                        --add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED
+                        --add-opens=java.base/java.lang=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens=java.base/java.io=ALL-UNNAMED
+                        --add-opens=java.base/java.util=ALL-UNNAMED
+                        -Dchronicle.announcer.disable=true
+                        -Dchronicle.analytics.disable=true
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
