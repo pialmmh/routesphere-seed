@@ -154,6 +154,7 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
         @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { return of(level).settle(level, charged); }
         @Override public void release(LevelAdmission level, String why) { of(level).release(level, why); }
         @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { return of(level).refund(level, amount, why); }
+        @Override public void abandon(String why) { if (unit != null) unit.abandon(why); }
         @Override public void commit(String what) { if (unit != null) unit.commit(what); }
         @Override public void close() { if (unit != null) unit.close(); }
     }

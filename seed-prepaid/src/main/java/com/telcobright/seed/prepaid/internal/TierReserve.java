@@ -138,7 +138,7 @@ final class TierReserve<C extends RoutesphereContext> {
         level.incrementReservationCount();
     }
 
-    String notAsked(C ctx, LevelAdmission level) {
+    private String notAsked(C ctx, LevelAdmission level) {
         ctx.budgetSpent = true;
         ctx.history.note(flow.name(), "tier " + level.getLevelIndex() + " (" + level.getDbName() + ") was not reserved: no time left — the ledger was not asked");
         return SessionCause.ADMISSION_TIMEOUT;

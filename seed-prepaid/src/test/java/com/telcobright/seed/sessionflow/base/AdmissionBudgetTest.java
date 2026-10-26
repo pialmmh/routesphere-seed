@@ -84,6 +84,25 @@ class AdmissionBudgetTest {
         assertThat(ledger.timeGivenFor(ctx.sessionId() + "#L0")).isEqualTo(1800L);
     }
 
+    /**
+     * L2b gate (ad-sphere item6d / item6g): a FREE candidate that walks its tiers (the house ad: a partner, a tier, nothing to pay) is still
+     * admitted once the paid candidates spent the budget — every tier's hold is planned and asked at once (holdTheWalk), and a tier with
+     * nothing to hold is never "not asked for lack of time".
+     */
+    @Test
+    void aFreeCandidateWithItsTiers_isStillAdmitted_afterAHangingLedgerSpentTheBudget() {
+        ledger.slowOn("res_44_7", 3, 5000);                                              // the paid candidate's road hangs past the budget
+        LabContext ctx = new LabContext();
+
+        Verdict verdict = admit(List.of(new Payer(3, false), new Payer(5, true)), ctx);
+
+        assertThat(verdict.accepted()).as("the free candidate with its tiers: " + verdict.cause()).isTrue();
+        assertThat(ctx.chosen).isEqualTo(new Payer(5, true));
+        assertThat(ctx.systemFault).isEqualTo(SessionCause.BILLING_SYSTEM_ERROR);
+        assertThat(ctx.levels).as("its tiers walked, nothing held").isNotEmpty();
+        assertThat(ledger.openReserves()).isZero();
+    }
+
     @Test
     void withoutAFreeCandidate_theSystemFaultIsTheCause_neverABalanceCause() {
         ledger.slowOn("res_44_7", 3, 5000);

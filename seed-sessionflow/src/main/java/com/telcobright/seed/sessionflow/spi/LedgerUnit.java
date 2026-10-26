@@ -45,6 +45,13 @@ public interface LedgerUnit extends AutoCloseable {
     /** {@code amount} of the tier's charge given back — the port's {@code refund}. */
     TierSettlement refund(LevelAdmission level, BigDecimal amount, String why);
 
+    /**
+     * L2b gate · The business operation was refused with {@code why} (a tier that cannot pay, a fault): the unit will not be committed. A
+     * ledger that applied its moves at once gives them back at its close with THIS cause (the release's note, as before L2b). Default: nothing
+     * to say (a unit that writes nothing until its commit).
+     */
+    default void abandon(String why) { }
+
     /** Every move asked, as ONE write — all tiers or none; a refusal is a {@link LedgerPort.LedgerFault} and nothing was written. */
     void commit(String what);
 

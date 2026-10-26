@@ -61,10 +61,10 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
         if (plan == null) return null;
         TierReserve<C> tiers = TierReserve.of(flow);
         LevelAdmission first = plan.accounts().isEmpty() ? null : plan.accounts().get(0);
-        if (first != null && flow.admissionTimeLeftMs(ctx) <= 0) return tiers.notAsked(ctx, first);
         try (MoneyUnit unit = MoneyUnit.open(flow.kit().ledger(), plan.accounts())) {
-            String refusal = holdEveryTier(plan);
+            String refusal = holdEveryTier(plan);                       // each tier's hold asks the ledger within what the budget has left
             if (refusal == null) unit.commit("hold the walk of " + ctx.sessionId());
+            else unit.abandon(refusal);
             return refusal;
         } catch (LedgerPort.LedgerRefusal refused) {
             return refused.code();

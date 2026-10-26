@@ -364,6 +364,7 @@ public final class ParityScene implements AutoCloseable {
             @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { note("settle", level.getDebitReference()); return unit.settle(level, charged); }
             @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); unit.release(level, why); }
             @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { note("refund", level.getDebitReference()); return unit.refund(level, amount, why); }
+            @Override public void abandon(String why) { unit.abandon(why); }
             @Override public void commit(String what) { unit.commit(what); }
             @Override public void close() { unit.close(); }
         }

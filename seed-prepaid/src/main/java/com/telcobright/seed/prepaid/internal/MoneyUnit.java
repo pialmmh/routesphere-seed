@@ -80,6 +80,9 @@ final class MoneyUnit implements AutoCloseable {
 
     boolean committed() { return committed; }
 
+    /** The operation was refused with {@code why}: a ledger that applied its moves at once gives them back with this cause at the close. */
+    void abandon(String why) { if (outer == null) unit.abandon(why); }
+
     @Override
     public void close() {
         if (outer != null) return;

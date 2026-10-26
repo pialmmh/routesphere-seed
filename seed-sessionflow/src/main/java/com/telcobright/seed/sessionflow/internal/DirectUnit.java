@@ -18,8 +18,8 @@ import java.util.Optional;
 /**
  * L2b item 2 · The unit of a ledger that cannot write a batch (orchestrix's roads, a lane's own port, the testkit's): each move applied AT
  * ONCE through the port's own verb; {@link #commit} has nothing left to write; a unit closed without its commit gives back what it took,
- * newest first — the holds released, the charges refunded (the call switch's {@code compensateReserves}: the saga, kept only where no batch
- * exists). A give-back the ledger refuses is said once (the reaper's net stays).
+ * in the order taken (the leaf first), with the refusal's cause — the holds released, the charges refunded (the call switch's
+ * {@code compensateReserves}: the saga, kept only where no batch exists). A give-back the ledger refuses is said once (the reaper's net stays).
  */
 public final class DirectUnit implements LedgerUnit {
 
@@ -30,6 +30,7 @@ public final class DirectUnit implements LedgerUnit {
     private final LedgerPort port;
     private final List<Taken> taken = new ArrayList<>();
     private boolean committed;
+    private String why = "the unit was not committed";
 
     public DirectUnit(LedgerPort port) { this.port = port; }
 
@@ -57,22 +58,27 @@ public final class DirectUnit implements LedgerUnit {
 
     @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { return port.refund(level, amount, why); }
 
+    @Override public void abandon(String why) { if (why != null) this.why = why; }
+
     @Override public void commit(String what) { committed = true; }
 
-    /** Not committed: every hold and charge taken here goes back, newest first. */
+    /**
+     * Not committed: every hold and charge taken here goes back IN THE ORDER TAKEN (the leaf first — the call switch's compensateReserves,
+     * as the base's give-back of a refused candidate always went), each with the refusal's cause ({@link #abandon}).
+     */
     @Override
     public void close() {
         if (committed) return;
         committed = true;
-        for (int i = taken.size() - 1; i >= 0; i--) giveBack(taken.get(i));
+        for (Taken t : taken) giveBack(t);
     }
 
     private void giveBack(Taken t) {
         if (t.level().getDebitReference() == null) t.level().setDebitReference(tierOf(t.reference()));
         if (t.level().getTotalReserved() == null || t.level().getTotalReserved().signum() == 0) t.level().setReservedAmount(t.amount());
         try {
-            if (t.charge()) port.refund(t.level(), t.amount(), "the unit was not committed");
-            else port.release(t.level(), "the unit was not committed");
+            if (t.charge()) port.refund(t.level(), t.amount(), why);
+            else port.release(t.level(), why);
         } catch (RuntimeException e) {
             log.error("{} | the {} of {} at tier {} ({}) was NOT given back when its unit was not committed: {}", LogText.clean(t.reference()),
                 t.charge() ? "charge" : "hold", t.amount(), t.level().getLevelIndex(), t.level().getDbName(), LogText.failureText(e));
