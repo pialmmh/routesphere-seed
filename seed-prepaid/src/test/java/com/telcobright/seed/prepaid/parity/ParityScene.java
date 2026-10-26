@@ -315,6 +315,9 @@ public final class ParityScene implements AutoCloseable {
         /** 4: CHARGE_NOW's final debit and its refund. */
         @Override public Optional<Reservation> charge(LevelAdmission level, BigDecimal amount, String reference) { note("charge", reference); return real.charge(level, amount, reference); }
         @Override public TierSettlement refund(LevelAdmission level, BigDecimal amount, String why) { note("refund", level.getDebitReference()); return real.refund(level, amount, why); }
+        /** 5: the money roads. */
+        @Override public Credited credit(LevelAdmission account, BigDecimal amount, String reference) { note("credit", reference); return real.credit(account, amount, reference); }
+        @Override public Credited reparent(LevelAdmission account, long purchaseId) { note("reparent", "account-" + account.getPackageAccountId()); return real.reparent(account, purchaseId); }
         @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
     }
 }

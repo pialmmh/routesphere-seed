@@ -103,6 +103,12 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     }
 
     /**
+     * The money roads of this Prepaid's kit (item 5): a credit or a reparent of an account through the ledger port, a partner's accounts as
+     * the tree names them today with their live balances; a purchase refused in words (round L2b's). The application mounts them (R0).
+     */
+    public PrepaidAdmin admin() { return new PrepaidAdmin(kit); }
+
+    /**
      * The rules of one lane's Prepaid. Each method names the question it answers (■ = required); {@link #build} refuses a missing or
      * disagreeing part in words. Once built, the rules are sealed.
      */

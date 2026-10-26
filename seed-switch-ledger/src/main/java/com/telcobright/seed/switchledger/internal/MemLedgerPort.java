@@ -6,6 +6,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.switchledger.api.Credit;
 import com.telcobright.seed.switchledger.api.LiveBalance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -211,6 +212,20 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         BigDecimal taken = TierSettlement.reservedOf(level);
         return closed.remember(tier, new TierSettlement(level.getLevelIndex(), taken, taken.subtract(amount), amount, after, true, why));
     }
+
+    // ── credit · reparent (L2a: the money roads, over the existing Credit — one lock table with the verbs above) ──
+
+    @Override
+    public Credited credit(LevelAdmission account, BigDecimal amount, String reference) {
+        return creditedOf(new Credit(books, locks).credit(account.getDbName(), accountOf(account), amount, reference));
+    }
+
+    @Override
+    public Credited reparent(LevelAdmission account, long purchaseId) {
+        return creditedOf(new Credit(books, locks).reparent(account.getDbName(), accountOf(account), purchaseId));
+    }
+
+    private static Credited creditedOf(Credit.Credited done) { return new Credited(done.accountId(), done.before(), done.after(), done.purchaseId()); }
 
     // ── the peek (3b) ───────────────────────────────────────────────────────
 

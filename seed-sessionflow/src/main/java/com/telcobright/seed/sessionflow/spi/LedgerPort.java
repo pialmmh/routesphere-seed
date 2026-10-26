@@ -103,6 +103,23 @@ public interface LedgerPort {
     }
 
     /**
+     * L2a · The recharge road's credit — {@code amount} (positive) added to the account the level names (its tier's schema, its account id),
+     * under the account's lock, a DELTA (routesphere-core {@code PrepaidServiceWithCompensation.recharge} 294–383: "a recharge written
+     * DIRECTLY to MySQL is invisible to billing and gets overwritten by the next write-behind"). Default: refused in words.
+     */
+    default Credited credit(LevelAdmission account, BigDecimal amount, String reference) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no credit road: the switch ledger has");
+    }
+
+    /** L2a · The account the level names moved onto purchase {@code purchaseId} (its expiry follows the purchase), its balance kept. */
+    default Credited reparent(LevelAdmission account, long purchaseId) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no reparent road: the switch ledger has");
+    }
+
+    /** What a credit or a reparent came to: the balance before and after, the purchase the account is on now. */
+    record Credited(long accountId, BigDecimal before, BigDecimal after, long purchaseId) {}
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */
