@@ -132,6 +132,36 @@ public interface LedgerPort {
      */
     default LedgerUnit unit() { return new DirectUnit(this); }
 
+    /**
+     * L2b item 4 · A purchase made THROUGH the ledger, ONE unit: the purchase row, an account per bucket of the offer with its opening
+     * balance (and the purchase's reference row where the ledger keeps them), ids from {@code ids} above what the ledger holds today. The
+     * same reference again answers the first purchase, nothing written twice. Default: this ledger has no purchase road — refused in words.
+     */
+    default Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) {
+        throw new LedgerFault(getClass().getSimpleName() + " has no purchase road: the switch ledger has (with packagepurchase cached)");
+    }
+
+    /**
+     * L2b item 4 · The buyer's accounts (its partner, its tier) as THIS ledger holds them — each with its purchase's expiry — read from the
+     * ledger's cached purchases (S4: not prime-context's tree). Empty = this ledger cannot say (it caches no purchases): the tree's.
+     */
+    default Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return Optional.empty(); }
+
+    /** L2b item 4 · What one purchase buys (the package catalog is config: prime-context's): its buckets, each an account. */
+    record Offer(long packageId, String name, BigDecimal price, java.time.LocalDateTime at, java.time.LocalDateTime expires, java.util.List<Bucket> buckets) {
+        public Offer { buckets = buckets == null ? java.util.List.of() : java.util.List.copyOf(buckets); }
+    }
+
+    /** One bucket of an offer: an account of this unit with this opening balance. */
+    record Bucket(String uom, BigDecimal opening) {}
+
+    /** L2b item 4 · Ids from the application's source (seed-idgen's LONG counters): (table, the highest id in use) → a new id above it. */
+    @FunctionalInterface
+    interface Ids { long next(String table, long highestInUse); }
+
+    /** What a purchase came to: the purchase's id, its accounts' ids (the offer's order), and whether it was the first answer repeated. */
+    record Purchased(long purchaseId, java.util.List<Long> accounts, boolean repeated) {}
+
     /** What a credit or a reparent came to: the balance before and after, the purchase the account is on now. */
     record Credited(long accountId, BigDecimal before, BigDecimal after, long purchaseId) {}
 

@@ -33,7 +33,7 @@ class LedgerDbTest {
     private static final long SPACING_MS = 1_000;
 
     private final LedgerLab lab = LedgerLab.open().schema("btcl").schema("res_9").account("btcl", 1, 10, "BDT", "10").account("res_9", 2, 20, "BDT", "20")
-        .chargeReferences().asLedgerDb(List.of("package"), List.of("packageaccountreserve"), SPACING_MS);
+        .chargeReferences().purchaseTables().asLedgerDb(List.of("package"), List.of("packageaccountreserve"), SPACING_MS);
     private OwnedMemLedgerPort owned;
 
     @AfterEach
@@ -44,7 +44,7 @@ class LedgerDbTest {
 
     private OwnedMemLedgerPort start() {
         MemLedger memLedger = lab.start();
-        Set<String> configured = Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge");
+        Set<String> configured = Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase");
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), Clock.systemUTC(), configured).port();
         owned = new OwnedMemLedgerPort(port, memLedger, Set.of("btcl", "res_9"), AddTierLive.of(memLedger)::load, SPACING_MS, LedgerDb.of(lab.ledgerDbSettings()));
         return owned;
@@ -113,7 +113,7 @@ class LedgerDbTest {
     @Test
     void theLedgerHoldsExactlyTheConfiguredEntities_aWordThatNamesNothingIsRefused() {
         MemLedger memLedger = lab.start();
-        assertThat(TwoEntities.check(memLedger, Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge"))).hasSize(3);
+        assertThat(TwoEntities.check(memLedger, Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase"))).hasSize(4);
         assertThatThrownBy(() -> TwoEntities.check(memLedger, Set.of("PackageAccount", "PackageAccountReserve")))
             .hasMessageContaining("caches exactly its configured entities");
         assertThatThrownBy(() -> LedgerDb.of(new com.telcobright.seed.switchledger.dependencies.LedgerDbSettings(List.of("package", "partner"), List.of(),

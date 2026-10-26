@@ -114,6 +114,23 @@ public final class LedgerLab implements AutoCloseable {
         return alsoRegister(Books.CHARGE, com.telcobright.seed.switchledger.api.ChargeReference.class, ddl);
     }
 
+    /** L2b item 4 · The purchases' table ({@code packagepurchase}, its columns as routesphere-core's) in every schema, made so far and later. */
+    public LedgerLab purchaseTables() {
+        String ddl = "CREATE TABLE %s.packagepurchase (id BIGINT NOT NULL PRIMARY KEY, id_package BIGINT NOT NULL, id_Partner BIGINT NOT NULL,"
+            + " purchaseDate TIMESTAMP NOT NULL, expireDate TIMESTAMP NOT NULL, status VARCHAR(50) NOT NULL, paid BIGINT NOT NULL, autoRenewalStatus BOOLEAN NOT NULL,"
+            + " price DECIMAL(10,2) NOT NULL, vat DECIMAL(10,2) NOT NULL, AIT DECIMAL(10,2) NOT NULL, priority INT NOT NULL, onSelectPriority INT, discount INT NOT NULL)";
+        moreTables.add(ddl);
+        for (String schema : schemas) sql(String.format(ddl, schema));
+        return this;
+    }
+
+    /** L2b item 4 · A purchase row, as an outside writer (the billing portal) makes it. */
+    public LedgerLab purchase(String schema, long id, long partnerId, String expires) {
+        sql("INSERT INTO " + schema + ".packagepurchase (id, id_package, id_Partner, purchaseDate, expireDate, status, paid, autoRenewalStatus, price, vat, AIT, priority, discount)"
+            + " VALUES (" + id + ", 1, " + partnerId + ", TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '" + expires + "', 'ACTIVE', 1, FALSE, 0, 0, 0, 1, 0)");
+        return this;
+    }
+
     /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
     public MemLedger restart() {
         ledger.shutdown();

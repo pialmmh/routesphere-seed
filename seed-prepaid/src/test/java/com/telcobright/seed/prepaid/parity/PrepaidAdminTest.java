@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Prepaid): a credit is a DELTA through the kit's ledger port under the account's lock, over the switch ledger's existing {@code Credit}
  * (routesphere-core {@code PrepaidServiceWithCompensation.recharge} 294–383) — the next hold sees it; a reparent moves the account onto a new
  * purchase, its balance kept (347–351); a partner's accounts as the TREE names them today (S4: the catalog is the tree's until L2b) with the
- * ledger's live balance; a purchase is round L2b's — refused in words.
+ * ledger's live balance; L2b: a purchase without the application's id source is refused in words.
  */
 class PrepaidAdminTest {
 
@@ -76,12 +76,15 @@ class PrepaidAdminTest {
         assertThat(scene.balance("res_2", 11)).isEqualByComparingTo("2.5");
     }
 
+    /** L2b item 4: the purchase road is made (PurchaseThroughTheLedgerTest); without the application's id source it is refused in words. */
     @Test
-    void aPurchase_isRoundL2bs_refusedInWords() {
+    void aPurchaseWithoutTheApplicationsIdSource_isRefusedInWords() {
         scene = ParityScene.open(java.util.Map.of(), ParityScene.Lane.ON_PREPAID);
         PrepaidAdmin admin = CallPrepaid.of(scene.kit, ParityScene.rates()).admin();
+        LedgerPort.Offer offer = new LedgerPort.Offer(1, "BDT-100", new BigDecimal("100"), scene.now(), scene.now().plusDays(30),
+            java.util.List.of(new LedgerPort.Bucket("BDT", new BigDecimal("100"))));
 
-        assertThatThrownBy(() -> admin.purchase("btcl", "res_2", UNILEVER, "BDT-100", new BigDecimal("100")))
-            .isInstanceOf(UnsupportedOperationException.class).hasMessageContaining("round L2b's").hasMessageContaining("seed-idgen");
+        assertThatThrownBy(() -> admin.purchase("btcl", "res_2", UNILEVER, offer, "p-1"))
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("seed-idgen IdSource");
     }
 }

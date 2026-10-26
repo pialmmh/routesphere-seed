@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * ADMITTING, ONE tier of a lane with a Prepaid of its own (L2a 2b) — routesphere-core {@code ReserveBalanceStep} 62–135: the accounts
@@ -67,10 +68,16 @@ final class AccountWalk<C extends RoutesphereContext> {
     /** The accounts the rule lets pay, unexpired at the session's clock — then the lane's own choice among them. */
     private List<PackageAccount> accountsToTry(C ctx, PayingTier tier) {
         LocalDateTime now = LocalDateTime.now(flow.kit().clock());
-        List<PackageAccount> fundable = rules.accounts().fundable(tier.partner(), tier.tenant().getContext(), now);
+        List<PackageAccount> fundable = fundable(tier, now);
         if (rules.chooseAccounts() == null) return fundable;
         List<PackageAccount> chosen = rules.chooseAccounts().choose(ctx, tier, fundable);
         return chosen == null ? List.of() : chosen;
+    }
+
+    /** L2b item 4 (S4) · The partner's accounts as the LEDGER names them (its purchases' expiry) when it caches purchases; else the tree's. */
+    private List<PackageAccount> fundable(PayingTier tier, LocalDateTime now) {
+        Optional<List<PackageAccount>> ledgers = flow.kit().ledger().accountsOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
+        return ledgers.isPresent() ? rules.accounts().fundable(ledgers.get(), now) : rules.accounts().fundable(tier.partner(), tier.tenant().getContext(), now);
     }
 
     /** One account's rate for ONE unit, after the lane's gate (a refusal of the gate refuses the session with its cause). */

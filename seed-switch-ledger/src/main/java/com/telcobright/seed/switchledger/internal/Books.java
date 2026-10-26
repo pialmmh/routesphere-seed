@@ -4,6 +4,7 @@ import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.api.ChargeReference;
+import com.telcobright.seed.switchledger.api.LedgerPurchase;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerRefusal;
 
@@ -11,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -31,24 +33,31 @@ public final class Books {
     public static final String RESERVE = "PackageAccountReserve";
     /** L2b 2b · The durable reference of a final charge ({@link ChargeReference}), registered only where the root's ledger says so. */
     public static final String CHARGE = "PackageAccountCharge";
+    /** L2b item 4 · The purchase ({@link LedgerPurchase}), cached where the root's ledger DB names it. */
+    public static final String PURCHASE = "PackagePurchase";
 
     private final MemLedger ledger;
     private final Clock clock;
-    private final boolean keepsCharges;
+    private final Set<String> held;
 
-    public Books(MemLedger ledger, Clock clock) { this(ledger, clock, false); }
+    public Books(MemLedger ledger, Clock clock) { this(ledger, clock, Set.of(ACCOUNT, RESERVE)); }
 
-    /** @param keepsCharges the ledger registers {@value #CHARGE}: every final charge carries its durable reference row */
-    public Books(MemLedger ledger, Clock clock, boolean keepsCharges) {
+    /** @param held the entities the ledger holds: {@value #CHARGE} = every final charge carries its reference row; {@value #PURCHASE} = purchases */
+    public Books(MemLedger ledger, Clock clock, Set<String> held) {
         this.ledger = ledger;
         this.clock = clock;
-        this.keepsCharges = keepsCharges;
+        this.held = Set.copyOf(held);
     }
 
     public MemLedger ledger() { return ledger; }
 
+    public Clock clock() { return clock; }
+
     /** L2b 2b · Does every final charge carry its durable reference row here ({@value #CHARGE} registered)? */
-    public boolean keepsCharges() { return keepsCharges; }
+    public boolean keepsCharges() { return held.contains(CHARGE); }
+
+    /** L2b item 4 · Does this ledger cache the purchases ({@value #PURCHASE} registered)? */
+    public boolean keepsPurchases() { return held.contains(PURCHASE); }
 
     /** A new unit of work over this ledger: stage the moves of ONE money operation, then commit it as ONE record. */
     public UnitOfWork unit() { return new UnitOfWork(ledger); }
@@ -177,6 +186,34 @@ public final class Books {
     /** The charge's refund, in the same unit as its credit: the row says what came back (once). */
     public void markRefunded(UnitOfWork unit, String dbName, ChargeReference row, BigDecimal back) {
         unit.update(dbName, CHARGE, row.getReference(), row.refunded(back, now()));
+    }
+
+    // ── L2b item 4 · a purchase and its accounts ────────────────────────────
+
+    /** The purchase row, staged as an INSERT. */
+    public void insertPurchase(UnitOfWork unit, String dbName, LedgerPurchase purchase) { unit.insert(dbName, PURCHASE, purchase.getId(), purchase); }
+
+    /** A new account of a purchase with its opening balance (balanceBefore 0, lastAmount = the opening), staged as an INSERT. */
+    public PackageAccount openAccount(UnitOfWork unit, String dbName, long id, long purchaseId, String name, String uom, BigDecimal opening) {
+        PackageAccount account = new PackageAccount();
+        account.setId(id);
+        account.setIdpackagePurchase(purchaseId);
+        account.setName(name);
+        account.setUom(uom);
+        account.setBalanceBefore(BigDecimal.ZERO);
+        account.setBalanceAfter(opening);
+        account.setLastAmount(opening);
+        unit.insert(dbName, ACCOUNT, id, account);
+        return account;
+    }
+
+    /** The highest id the ledger holds for an entity, over every tier (0 = none): ids are minted above it. */
+    public long highestId(String entity) {
+        long highest = 0;
+        for (String db : guarded("list the schemas", ledger::getRegisteredDatabases)) {
+            for (Object key : ledger.getAllEntities(db, entity).keySet()) if (key instanceof Number n) highest = Math.max(highest, n.longValue());
+        }
+        return highest;
     }
 
     /** The row dies with the settlement or the release ({@code returnBalance} 254–255, {@code deletePackageAccountReserve} 704–713). */

@@ -47,10 +47,12 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private final Books books;
     private final AccountLocks locks;
     private final Answers answers = new Answers();
+    private final Purchases purchases;
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
         this.locks = locks;
+        this.purchases = new Purchases(books);
     }
 
     /** L2b · ONE unit over every tier a business operation touches: lock all, move all, ONE record. */
@@ -95,8 +97,21 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     @Override
     public Credited reparent(LevelAdmission account, long purchaseId) {
-        return creditedOf(new Credit(books, locks).reparent(account.getDbName(), SwitchUnit.accountOf(account), purchaseId));
+        Credited moved = creditedOf(new Credit(books, locks).reparent(account.getDbName(), SwitchUnit.accountOf(account), purchaseId));
+        purchases.forgetTheIndex();                                                    // the account's partner may be another's now
+        return moved;
     }
+
+    // ── L2b item 4 · purchases through the ledger; the partner's accounts from its cached purchases (S4) ──
+
+    @Override
+    public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { return purchases.purchase(buyer, offer, reference, ids); }
+
+    @Override
+    public Optional<java.util.List<PackageAccount>> accountsOf(LevelAdmission buyer) { return purchases.accountsOf(buyer); }
+
+    /** New rows were merged into the cache (a reload, a tier added): the partner → accounts index is made again on its next ask. */
+    public void newRowsMerged() { purchases.forgetTheIndex(); }
 
     private static Credited creditedOf(Credit.Credited done) { return new Credited(done.accountId(), done.before(), done.after(), done.purchaseId()); }
 

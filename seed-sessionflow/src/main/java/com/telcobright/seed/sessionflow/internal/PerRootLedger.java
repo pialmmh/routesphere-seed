@@ -62,6 +62,10 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
     /** L2b · A unit on the ledger of the root its first tier belongs to; a tier of another root in the same unit is refused in words. */
     @Override public LedgerUnit unit() { return new RootUnit(); }
 
+    @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { return ledgerOf(buyer).purchase(buyer, offer, reference, ids); }
+
+    @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return ledgerOf(buyer).accountsOf(buyer); }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {

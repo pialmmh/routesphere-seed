@@ -4,6 +4,7 @@ import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.api.ChargeReference;
+import com.telcobright.seed.switchledger.api.LedgerPurchase;
 import com.telcobright.seed.switchledger.dependencies.LedgerDbSettings;
 
 import java.util.ArrayList;
@@ -26,7 +27,8 @@ public final class LedgerEntities {
     private static final List<Known> KNOWN = List.of(
         new Known(Books.ACCOUNT, PackageAccount.class, "packageaccount"),
         new Known(Books.RESERVE, PackageAccountReserve.class, "packageaccountreserve"),
-        new Known(Books.CHARGE, ChargeReference.class, "packageaccountcharge"));
+        new Known(Books.CHARGE, ChargeReference.class, "packageaccountcharge"),
+        new Known(Books.PURCHASE, LedgerPurchase.class, "packagepurchase"));
 
     private LedgerEntities() {}
 

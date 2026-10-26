@@ -90,6 +90,10 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     @Override public Credited reparent(LevelAdmission account, long purchaseId) { return shared(() -> port.reparent(account, purchaseId)); }
 
+    @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { return shared(() -> port.purchase(buyer, offer, reference, ids)); }
+
+    @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return shared(() -> port.accountsOf(buyer)); }
+
     /** L2b · A unit holds the gate shared from its opening to its close: a new tier never loads under a unit's locks. */
     @Override
     public LedgerUnit unit() {
@@ -140,6 +144,7 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     private void mergeTheRowsBeside(String tierDb) {
         try {
             int rows = NewRowsOfATier.merge(memLedger);
+            port.newRowsMerged();
             log.info("the switch ledger merged {} new row(s) beside the tier {} (its own account at its parent among them)", rows, tierDb);
         } catch (RuntimeException e) {
             log.error("the switch ledger did NOT merge the new rows beside the tier {} — its account at its parent stays unknown until the next start: {}", tierDb, e.getMessage());
@@ -177,6 +182,7 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
         gate.writeLock().lock();
         try {
             int rows = NewRowsOfATier.merge(memLedger);
+            port.newRowsMerged();
             if (rows > 0) log.info("the switch ledger merged {} new row(s) after its tree was reloaded (an account written after its tier)", rows);
         } catch (RuntimeException e) {
             log.error("the switch ledger did NOT merge the rows written since its last look (its tree was reloaded): {}", e.getMessage());

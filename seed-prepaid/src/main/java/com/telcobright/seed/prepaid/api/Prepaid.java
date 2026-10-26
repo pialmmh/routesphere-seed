@@ -103,8 +103,9 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     }
 
     /**
-     * The money roads of this Prepaid's kit (item 5): a credit or a reparent of an account through the ledger port, a partner's accounts as
-     * the tree names them today with their live balances; a purchase refused in words (round L2b's). The application mounts them (R0).
+     * The money roads of this Prepaid's kit: a purchase through the ledger (ids from the application's source: {@code admin().withIds(…)}),
+     * a credit or a reparent of an account through the ledger port, a partner's accounts as the ledger (else the tree) names them with their
+     * live balances. The application mounts them (R0).
      */
     public PrepaidAdmin admin() { return new PrepaidAdmin(kit); }
 
