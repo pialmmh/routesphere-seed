@@ -47,6 +47,8 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     @Override public void release(LevelAdmission level, String why) { ledgerOf(level).release(level, why); }
 
+    @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return ledgerOf(level).balanceOf(level); }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {

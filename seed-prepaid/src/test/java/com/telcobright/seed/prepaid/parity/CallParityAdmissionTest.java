@@ -4,7 +4,6 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.seed.sessionflow.api.DryRun;
 import com.telcobright.seed.sessionflow.api.SessionCause;
 import com.telcobright.statewalk.session.Verdict;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -18,12 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * asserted on the REAL switch ledger — balances, the hold row, the cause. The lane is the call-shaped {@link CallLane}: no money move of
  * its own. A row the lane cannot express on today's base is written as it should be and {@code @Disabled("gap: …")}.
  */
-class CallParityAdmissionTest {
-
-    private ParityScene scene;
-
-    @AfterEach
-    void close() { if (scene != null) scene.close(); }
+class CallParityAdmissionTest extends ParityRows {
 
     /**
      * P1 · routesphere-core {@code pipeline/request/call/rules/ReserveBalanceStep} 62–135: at admission ONE unit is held per tier — a
@@ -33,7 +27,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P1_atAdmission_oneUnitIsHeldPerTier_packageMinute_cashRate_intlRootRate() {
-        scene = ParityScene.open();
+        scene = open();
 
         scene.admitted("p1-a", UNILEVER, DOMESTIC);                                   // TF_min at both tiers
         assertThat(scene.balance("res_2", 11)).isEqualByComparingTo("1.5");
@@ -60,7 +54,7 @@ class CallParityAdmissionTest {
     @Disabled("gap: the base holds on the ONE account rateAtLevel chose (AdmissionChain.rateAndReserve 171–188) — a refused account is "
         + "INSUFFICIENT_BALANCE, the next is never tried; the live ReserveBalanceStep 82–123 walks every fundable account until one pays")
     void P2_unexpiredOnly_packagesBeforeCash_eachAccountTriedUntilOnePays() {
-        scene = ParityScene.open(Map.of("res_2#11", "0.5"));                           // Unilever's package has half a minute left
+        scene = open(Map.of("res_2#11", "0.5"));                           // Unilever's package has half a minute left
 
         scene.admitted("p2", UNILEVER, DOMESTIC);
 
@@ -80,7 +74,7 @@ class CallParityAdmissionTest {
     @Disabled("gap: RoutesphereApp has no refusalCause / noBalanceCause hook — a cash account short of the intl minute is refused "
         + "INSUFFICIENT_BALANCE by the base (RoutesphereFlow.noBalanceCause 424), the live says NO_BALANCE_INT_OUT (DefaultAdmissionService 284–286)")
     void P3_intlOutgoingIsCashOnly_causeNO_BALANCE_INT_OUT() {
-        scene = ParityScene.open();
+        scene = open();
 
         Verdict packagesOnly = scene.admit(scene.call("p3-a", PACKAGES_ONLY, INTL_UK));
         Verdict cashShort = scene.admit(scene.call("p3-b", CASH_ONLY, INTL_UK));       // 1.00 of cash against a 1.50 minute
@@ -100,7 +94,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P4_theHoldIsTheBalanceCheck_aThrownErrorIsBILLING_SYSTEM_ERROR_neverNoBalance() {
-        scene = ParityScene.open();
+        scene = open();
         scene.lab.ledger().shutdown();                                                // the ledger does not answer
 
         CallContext call = scene.call("p4", UNILEVER, DOMESTIC);
@@ -118,7 +112,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P5_aLaterTierRefuses_theEarlierHoldsAreReturned() {
-        scene = ParityScene.open();
+        scene = open();
 
         Verdict verdict = scene.admit(scene.call("p5", UNILEVER, DENIED));
 
@@ -138,7 +132,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P6_theHoldRowIsKeyedByTheCall_renewalsGrowItAndRefreshItsTime() {
-        scene = ParityScene.open();
+        scene = open();
         CallContext call = scene.admitted("p6", PACKAGES_ONLY, DOMESTIC);
         scene.answer(call);
         String openedAt = scene.row("res_2", "p6#L0").getTime();
@@ -164,7 +158,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P15_theDefaultRateIs040_whenNoPrefixMatches() {
-        scene = ParityScene.open();
+        scene = open();
 
         CallContext call = scene.admitted("p15", DIRECT, UNRATED_PREFIX);
         assertThat(scene.row("btcl", "p15#L0").getReserveUnit()).isEqualByComparingTo("0.40");
@@ -183,7 +177,7 @@ class CallParityAdmissionTest {
      */
     @Test
     void P21_theOfficersSimulateMovesNoMoney() {
-        scene = ParityScene.open();
+        scene = open();
 
         DryRun run = scene.flow.simulate(scene.call("p21", UNILEVER, DOMESTIC));
 

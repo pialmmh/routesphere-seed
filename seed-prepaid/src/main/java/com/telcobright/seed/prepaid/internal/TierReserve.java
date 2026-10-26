@@ -1,6 +1,7 @@
 package com.telcobright.seed.prepaid.internal;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
+import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.LaneAnswers;
@@ -18,7 +19,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * (e) The hold of ONE tier, for every application — MOVED as it was from the base's {@code AdmissionChain} (L2a 2a, design §11: the base
@@ -86,9 +90,12 @@ final class TierReserve<C extends RoutesphereContext> {
      * §L.1 · Every money call carries the session and the tier: the first candidate reserves under {@code <session>#L<tier>}, a later one
      * under {@code <session>#<try>#L<tier>} — a second reserve, settle or release of the same (session, tier) moves nothing more.
      */
-    static String referenceOf(RoutesphereContext ctx, int levelIndex) {
-        int tryNo = Math.max(1, ctx.candidatesTried);
-        return (tryNo <= 1 ? ctx.sessionId() : ctx.sessionId() + "#" + tryNo) + "#L" + levelIndex;
+    static String referenceOf(RoutesphereContext ctx, int levelIndex) { return referenceOf(ctx.sessionId(), ctx.candidatesTried, levelIndex); }
+
+    /** 2b · The same rule on a lane's own reference (a Prepaid's {@code reference(ctx -> id)}): {@code <id>[#<try>]#L<tier>}. */
+    static String referenceOf(String id, int candidatesTried, int levelIndex) {
+        int tryNo = Math.max(1, candidatesTried);
+        return (tryNo <= 1 ? id : id + "#" + tryNo) + "#L" + levelIndex;
     }
 
     /** The ledger's reserve, inside what is left of the budget. Null = held (or nothing to hold). A ledger fault is never a balance cause. */
@@ -134,6 +141,49 @@ final class TierReserve<C extends RoutesphereContext> {
         log.error("[{}] {} | LEDGER FAULT at tier {} ({}) partner {}: {} — this is NOT a balance case", flow.name(), LogText.clean(ctx.sessionId()),
             levelIndex, dbName, partnerId, LogText.failureText(fault.getMessage()));
         return SessionCause.BILLING_SYSTEM_ERROR;
+    }
+
+    // ── 2b · a lane with a Prepaid of its own: the tier held on the first account that pays ──
+
+    /** What a walk of a tier's accounts came to: the verdict and, when held, the tier's level. */
+    record Held(Verdict verdict, LevelAdmission level) {}
+
+    /** The moved reserve's "this account cannot fund it" — never a session's cause: the walk tries the next account. */
+    private static final String CANNOT_PAY = "\u0000CANNOT_PAY";
+
+    /**
+     * 2b · P2 (routesphere-core {@code ReserveBalanceStep} 82–123): ONE tier held on the FIRST of {@code accounts} that pays, in their
+     * order — each rated by {@code rating} and held through the moved reserve (above, unchanged) under the tier's ONE reference; an account
+     * that cannot fund it is skipped ("an exhausted package falls through to the customer's cash"); a rating's refusal, a fault, a ledger
+     * refusal of its own or no time left ends the walk with its cause; none pays → {@code causeWhenNone}. A dry run rates the first and
+     * holds nothing.
+     */
+    Held holdOnTheFirstThatPays(C ctx, Tier tier, Partner partner, List<PackageAccount> accounts, Function<PackageAccount, TierRate> rating,
+                                String reference, Supplier<String> causeWhenNone) {
+        for (PackageAccount account : accounts) {
+            Held held = holdOn(ctx, tier, partner, rating, account, reference);
+            if (held != null) return held;
+        }
+        return new Held(Verdict.reject(causeWhenNone.get()), null);
+    }
+
+    /** One account: held (or, in a dry run, rated) → the tier's level; a cause that ends the walk; null = it cannot fund it, try the next. */
+    private Held holdOn(C ctx, Tier tier, Partner partner, Function<PackageAccount, TierRate> rating, PackageAccount account, String reference) {
+        TierRate rate;
+        try {
+            rate = rating.apply(account);
+        } catch (LedgerPort.LedgerRefusal refused) {
+            return new Held(Verdict.reject(refused.code()), null);
+        } catch (LedgerPort.LedgerFault fault) {
+            return new Held(Verdict.reject(ledgerFault(ctx, tier.levelIndex(), tier.dbName(), partner.getIdPartner(), fault)), null);
+        }
+        if (rate == null) return new Held(Verdict.reject(SessionCause.UNRATED), null);
+        LevelAdmission level = levelOf(tier.tenant(), partner, tier.levelIndex(), rate);
+        String refusal = ctx.dryRun ? null : reserve(ctx, level, rate.reserveAmount(), reference, CANNOT_PAY, flow.admissionTimeLeftMs(ctx));
+        if (CANNOT_PAY.equals(refusal)) return null;
+        if (refusal != null) return new Held(Verdict.reject(refusal), null);
+        ctx.walked(level);
+        return new Held(Verdict.ok(), level);
     }
 
     // ── giving it back ──────────────────────────────────────────────────────

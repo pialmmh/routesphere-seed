@@ -8,6 +8,7 @@ import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.seed.sessionflow.spi.MoneyEngine;
+import com.telcobright.seed.sessionflow.spi.MoneyRules;
 import com.telcobright.statewalk.registry.InternalEventResolver;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.Route;
@@ -450,6 +451,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * retry (the ad after its hand-over, the WiFi gate) answers FAIL_TERMINAL for every cause. Null = FAIL_TERMINAL.
      */
     protected abstract RerouteAction rerouteActionFor(String cause);
+
+    /**
+     * L2a · The lane's own money rules — seed-prepaid's {@code Prepaid} (the builder of design §10: admission, window, rate, accounts,
+     * finalize, hooks). Null, the default = none: the engine runs on this lane's answers ({@link #rateAtLevel}, {@link #refundPolicy},
+     * {@link #settleOutcome}, {@link #billedUnits}, {@link #rateNextWindow}) exactly as before. Asked once, when the engine is made.
+     */
+    protected MoneyRules<C> moneyRules() { return null; }
 
     /** CONNECTING · The signaling reported a phase (ringing, early media, the ad shown). The base stamped the first one (the PDD). */
     protected void onSignalingProgress(C ctx, SignalingProgress progress) { }

@@ -6,8 +6,9 @@ import com.telcobright.seed.sessionflow.api.RoutesphereFlow;
 import java.util.ServiceLoader;
 
 /**
- * L2a · Makes ONE lane's {@link MoneyEngine} — from the lane's answers ({@code flow.answers()}: {@code rateAtLevel}, {@code refundPolicy},
- * {@code settleOutcome}, {@code billedUnits}, {@code rateNextWindow}, …). Found on the classpath by {@code java.util.ServiceLoader}, as a
+ * L2a · Makes ONE lane's {@link MoneyEngine} — on the lane's own rules ({@link MoneyRules}: seed-prepaid's Prepaid, the flow's
+ * {@code moneyRules()}), else on its answers ({@code flow.answers()}: {@code rateAtLevel}, {@code refundPolicy}, {@code settleOutcome},
+ * {@code billedUnits}, {@code rateNextWindow}, …): one engine either way. Found on the classpath by {@code java.util.ServiceLoader}, as a
  * {@link LedgerMaker} is (design §11): seed-prepaid's. None on the classpath → the start is refused in words ({@link #NONE}); the base
  * never moves money itself.
  */

@@ -4,7 +4,6 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.sessionflow.api.CdrEvent;
 import com.telcobright.seed.switchledger.api.Credit;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -18,12 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Parity with the live statewalk-v2 call, the settlement and the roads (design §10.3 P13, P14, P16–P20): the re-rate at the end, the cost
  * per unit, the reconciliation both ways, the unanswered call, the CDR's figures, the reaper, the recharge and read roads.
  */
-class CallParitySettlementTest {
-
-    private ParityScene scene;
-
-    @AfterEach
-    void close() { if (scene != null) scene.close(); }
+class CallParitySettlementTest extends ParityRows {
 
     /**
      * P13 · {@code BalanceBillingService.finalizeBalance} 127–143: the settlement RE-LOOKS-UP the rate on the terminating number (after
@@ -34,7 +28,7 @@ class CallParitySettlementTest {
     @Disabled("gap: RoutesphereApp has no cost-per-tier hook (chargeAtSettle is a subclass's); the base charges the ADMISSION rate "
         + "(RoutesphereFlow.chargeAtSettle 491–496 reads tier.getRate()) — the live re-rates on the terminating number at the end")
     void P13_theSettlementReRatesOnTheTerminatingNumber_intlIsTheRootsRateAtEveryTier() {
-        scene = ParityScene.open();
+        scene = open();
 
         CallContext ported = scene.admitted("p13-a", DIRECT, DOMESTIC);                  // held at 0.75 (8801); ported at the answer to 88018 → 0.50
         scene.answer(ported);
@@ -63,7 +57,7 @@ class CallParitySettlementTest {
     @Disabled("gap: the base's chargeAtSettle (RoutesphereFlow 491–496) rounds to max(2, rate.scale()) decimals — 0.62, 0.46, 1.33 — where the "
         + "live keeps six (0.616667, 0.462500, 1.333333); no cost hook in RoutesphereApp to say otherwise")
     void P14_packageMinutesPerSecond_cashRateOverSixty_intlAddsMinimumTimeAndPulse() {
-        scene = ParityScene.open();
+        scene = open();
 
         CallContext minutes = scene.admitted("p14-a", UNILEVER, DOMESTIC);               // TF_min at both tiers
         scene.answer(minutes);
@@ -72,7 +66,7 @@ class CallParitySettlementTest {
         assertThat(minutes.settlements).extracting(s -> s.charged().toPlainString()).containsExactly("0.616667", "0.616667");
         assertThat(scene.balance("res_2", 11)).isEqualByComparingTo("1.883333");
 
-        CallContext cash = scene.admitted("p14-b", DIRECT, DOMESTIC);                    // 0.75 / 60 × 37
+        CallContext cash = scene.admitted("p14-b", DIRECT, NOT_PORTED);                  // 0.75 / 60 × 37 (8801; the scene ports DOMESTIC: P13's)
         scene.answer(cash);
         scene.talk(37);
         scene.hangUp(cash);
@@ -93,7 +87,7 @@ class CallParitySettlementTest {
      */
     @Test
     void P16_reconcileBothWays_theRestBack_anOverrunTaken_alwaysRuns_theRowDies() {
-        scene = ParityScene.open();
+        scene = open();
 
         CallContext under = scene.admitted("p16-under", PACKAGES_ONLY, DOMESTIC);       // 1 held
         scene.answer(under);
@@ -128,7 +122,7 @@ class CallParitySettlementTest {
      */
     @Test
     void P17_unansweredEverythingReturned() {
-        scene = ParityScene.open();
+        scene = open();
         CallContext call = scene.admitted("p17", UNILEVER, DOMESTIC);                    // 1 TF_min at the leaf, 1 at the root
 
         scene.giveUp(call);
@@ -148,7 +142,7 @@ class CallParitySettlementTest {
      */
     @Test
     void P18_chargedReturnedAndBalancePerTier_reachTheCdr() {
-        scene = ParityScene.open();
+        scene = open();
         CallContext call = scene.admitted("p18", UNILEVER, DOMESTIC);
         scene.answer(call);
         scene.talk(60);
@@ -174,7 +168,7 @@ class CallParitySettlementTest {
      */
     @Test
     void P19_theReaperReturnsRowsNotRefreshedFor30Minutes_aLiveCallsRowIsLeft() {
-        scene = ParityScene.open();
+        scene = open();
         CallContext dead = scene.admitted("p19-dead", PACKAGES_ONLY, DOMESTIC);          // its process will die: the row at T0
         CallContext live = scene.admitted("p19-live", UNILEVER, DOMESTIC);               // talks on: its row is refreshed at T0 + 20 min
         scene.answer(dead);
@@ -202,7 +196,7 @@ class CallParitySettlementTest {
      */
     @Test
     void P20_theRechargeAndReadRoads_theNextHoldSeesTheCredit() {
-        scene = ParityScene.open();
+        scene = open();
 
         Credit.Credited credited = scene.ledger.credit().credit("res_2", 11, new BigDecimal("10"), "topup-1");
         assertThat(credited.before()).isEqualByComparingTo("2.5");

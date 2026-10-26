@@ -61,6 +61,8 @@ public final class ParityScene implements AutoCloseable {
     public static final LocalDateTime LATER = LocalDateTime.of(2030, 1, 1, 0, 0), EXPIRED = LocalDateTime.of(2026, 1, 1, 0, 0);
     public static final int RESELLER = 2, DIRECT = 9, UNILEVER = 701, POORCO = 702, CASH_ONLY = 703, PACKAGES_ONLY = 704;
     public static final String DOMESTIC = "8801711000000", PORTED = "8801811000000", UNRATED_PREFIX = "8809900000000", ZERO_RATED = "8801911000000";
+    /** A number on Direct's 8801 rate (0.75) that the scene does NOT port (DOMESTIC is ported at the answer: P13). */
+    public static final String NOT_PORTED = "8801712000000";
     public static final String DENIED = "9901711000000", INTL_UK = "00442071234567", INTL_US = "0012125551234";
     /** The live reaper's thresholds ({@code ReserveReaperJob} 40–42): 30 min, 1000 rows per pass. */
     public static final SwitchLedgerSettings LEDGER_SETTINGS = new SwitchLedgerSettings(30, 1000, 5000);
@@ -78,6 +80,13 @@ public final class ParityScene implements AutoCloseable {
     public final TestChannel<String, StatemachineEvent> wire = new TestChannel<>("parity");
     public final RoutesphereEngine<CallContext> engine;
 
+    /**
+     * The lane under test. Item 1: the base's builder with the call's answers and NO Prepaid (the gaps of today's base stay disabled on it);
+     * 2b: the same call as a BIG lane (a subclass of RoutesphereFlow) on the call's Prepaid ({@link CallFlowOnPrepaid}) — the same rows, the
+     * same assertions, the gaps written as they should be and run.
+     */
+    public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID }
+
     private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
         fundTheLab(balances);
         lab.start();
@@ -93,16 +102,27 @@ public final class ParityScene implements AutoCloseable {
     public static ParityScene open() { return open(Map.of()); }
 
     /** The same with some live balances overridden ({@code "res_2#11" → "0.5"}). */
-    public static ParityScene open(Map<String, String> balances) { return new ParityScene(balances, handlerSettings(), false, ParityScene::laneOnTheBase); }
+    public static ParityScene open(Map<String, String> balances) { return open(balances, Lane.ON_THE_BASE); }
+
+    /** The handler-level scene on a lane. */
+    public static ParityScene open(Map<String, String> balances, Lane lane) { return new ParityScene(balances, handlerSettings(), false, kit -> laneOf(lane, kit)); }
 
     /** The scene on the engine: the budget child renews every {@code periodSec}, the first time after {@code firstSec} (0 = one period). */
     public static ParityScene openWithEngine(long firstSec, long periodSec, Map<String, String> balances) {
-        return new ParityScene(balances, engineSettings(firstSec, periodSec), true, ParityScene::laneOnTheBase);
+        return openWithEngine(firstSec, periodSec, balances, Lane.ON_THE_BASE);
     }
 
-    /** The lane under test — the base's builder with the call's answers (item 1); item 2 swaps it for the Prepaid builder. */
-    static RoutesphereFlow<CallContext> laneOnTheBase(RoutesphereKit kit) {
-        return CallLane.onTheBase(kit, rates(), Map.of(DOMESTIC, PORTED), kit.clock());
+    /** The scene on the engine, on a lane. */
+    public static ParityScene openWithEngine(long firstSec, long periodSec, Map<String, String> balances, Lane lane) {
+        return new ParityScene(balances, engineSettings(firstSec, periodSec), true, kit -> laneOf(lane, kit));
+    }
+
+    /** The lane under test on the scene's kit: the call's answers on the base (item 1), or the call's Prepaid (2b). */
+    static RoutesphereFlow<CallContext> laneOf(Lane lane, RoutesphereKit kit) {
+        return switch (lane) {
+            case ON_THE_BASE -> CallLane.onTheBase(kit, rates(), Map.of(DOMESTIC, PORTED), kit.clock());
+            case ON_A_SUBCLASS_PREPAID -> new CallFlowOnPrepaid(kit, rates(), Map.of(DOMESTIC, PORTED));
+        };
     }
 
     public static RoutesphereSettings handlerSettings() {
@@ -174,7 +194,12 @@ public final class ParityScene implements AutoCloseable {
         return ctx;
     }
 
-    public void answer(CallContext ctx) { ctx.answer = new Established(clock.millis(), "carrier-a", "PCMA", null); }
+    /** The answer as the library delivers it: on the context, then the flow's own step (the lane's onAnswered: the call learns its ported number). */
+    public void answer(CallContext ctx) {
+        Established answer = new Established(clock.millis(), "carrier-a", "PCMA", null);
+        ctx.answer = answer;
+        flow.onEstablished(ctx, answer);
+    }
 
     public void talk(long seconds) { clock.advance(seconds * 1000); }
 
@@ -275,6 +300,8 @@ public final class ParityScene implements AutoCloseable {
         @Override public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) { note("reserve", reference); return real.reserve(level, amount, reference); }
         @Override public TierSettlement settle(LevelAdmission level, BigDecimal charged) { note("settle", level.getDebitReference()); return real.settle(level, charged); }
         @Override public void release(LevelAdmission level, String why) { note("release", level.getDebitReference()); real.release(level, why); }
+        /** 2b: the peek of the C14 remainder (a read: not recorded as a money move). */
+        @Override public Optional<BigDecimal> balanceOf(LevelAdmission level) { return real.balanceOf(level); }
         @Override public long slowestAnswerMs() { return real.slowestAnswerMs(); }
     }
 }

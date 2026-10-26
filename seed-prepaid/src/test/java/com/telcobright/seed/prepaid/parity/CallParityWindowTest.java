@@ -4,7 +4,6 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
 import com.telcobright.seed.sessionflow.internal.BudgetChild;
 import com.telcobright.statewalk.session.Outcome;
 import com.telcobright.statewalk.session.SessionTimings;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -19,12 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * machine, the whole unit or the remainder, the narrowest tier and the cut, the cut that never settles, the money's lifetime. The rows
  * with a timer run on the engine with a short cadence (1 s / 2 s); the money rows at the handler level with the manual clock.
  */
-class CallParityWindowTest {
-
-    private ParityScene scene;
-
-    @AfterEach
-    void close() { if (scene != null) scene.close(); }
+class CallParityWindowTest extends ParityRows {
 
     /**
      * P7 · statewalk-v2-call {@code CallSupervisor.startPeriodicReserve} 881–897: the timer starts at the answer (447) — the first tick after
@@ -39,7 +33,7 @@ class CallParityWindowTest {
         assertThat(live.firstRenewalSec()).isEqualTo(58);
         assertThat(live.withReservePeriodSec(0).renews()).as("off when not configured").isFalse();
 
-        scene = ParityScene.openWithEngine(1, 2, Map.of());
+        scene = openWithEngine(1, 2, Map.of());
         scene.dial("p7", PACKAGES_ONLY, DOMESTIC);
         assertThat(scene.engine.registry().childStateOf("p7", BudgetChild.TYPE)).as("before the answer: resting").isEqualTo(BudgetChild.HOLDING);
         Thread.sleep(1500);
@@ -64,7 +58,7 @@ class CallParityWindowTest {
      */
     @Test
     void P8_eachRenewalIsAnEventOnTheCallsOwnMachine_neverOnTheTimerThread() throws Exception {
-        scene = ParityScene.openWithEngine(0, 1, Map.of());
+        scene = openWithEngine(0, 1, Map.of());
         scene.dial("p8", PACKAGES_ONLY, DOMESTIC);
         scene.answerOnTheWire("p8");
         scene.awaitRenewals("p8", 3, 4000);
@@ -85,7 +79,7 @@ class CallParityWindowTest {
     @Disabled("gap: RoutesphereApp has no renewWindowSeconds hook; the base's default renewal (AdmissionChain.renewThroughLedger 342–350) "
         + "answers 0 when the whole window is refused — the remainder lives only in seed-switch-ledger's WindowRenewal, reachable by a subclass")
     void P9_aWholeUnit_elseTheRemainderInSeconds_aZeroRateKeepsTheCadence() {
-        scene = ParityScene.open(Map.of("res_2#41", "2.5"));
+        scene = open(Map.of("res_2#41", "2.5"));
         CallContext call = scene.admitted("p9", PACKAGES_ONLY, DOMESTIC);                    // 1 held, 1.5 left
         scene.answer(call);
 
@@ -105,26 +99,28 @@ class CallParityWindowTest {
     /**
      * P10 · statewalk-v2-call {@code BalanceTracker.renewOrSignal} 224–250: the narrowest tier decides (228–236); a final partial window
      * is published and the cut scheduled for the moment the credit ends ({@code CallSupervisor.scheduleFinalCut} 907–925 — not at the next
-     * tick); nothing left → the cut now (241–244).
+     * tick); nothing left → the cut now (241–244). The cadence here is a first renewal at 1 s, then every 2 s (2b: with a 1 s period no
+     * partial window can exist — a remainder is less than one unit, so less than 1 s, and the live floor {@code MIN_FINAL_WINDOW_SEC} = 1 s
+     * of P9 makes it "nothing left"; the row first ran in 2b and its scene moved to a 2 s window, its rule unchanged).
      */
     @Test
     @Disabled("gap: a partial window cannot happen on the base through RoutesphereApp (P9's gap) — the cut comes at the next tick, not when "
         + "the credit ends; the narrowest tier and the cut-now halves pass")
     void P10_theNarrowestTierDecides_aPartialWindowCutsAtItsEnd_nothingLeftCutsNow() throws Exception {
-        scene = ParityScene.openWithEngine(0, 1, Map.of("res_2#11", "2.5", "res_2#41", "2.0"));
+        scene = openWithEngine(1, 2, Map.of("res_2#11", "2.5", "res_2#41", "2.0"));
 
         scene.dial("p10-partial", UNILEVER, DOMESTIC);                                     // leaf 1.5 left, root 9 left: the leaf is the narrowest
         scene.answerOnTheWire("p10-partial");
-        long partialMs = scene.awaitEnd("p10-partial", 6000);                              // tick 1 s: whole (0.5 left); tick 2 s: 0.5 s remainder → the cut at ~2.5 s
+        long partialMs = scene.awaitEnd("p10-partial", 8000);                              // tick 1 s: whole (0.5 left); tick 3 s: 0.5 unit = 1 s of a 2 s window → the cut at ~4 s
         assertThat(scene.ctx("p10-partial").endCause).isEqualTo("BALANCE_EXHAUSTED");
-        assertThat(partialMs).as("cut when the remainder ended, before the third tick").isBetween(2200L, 2950L);
+        assertThat(partialMs).as("cut when the remainder ended, before the third tick (5 s)").isBetween(3700L, 4900L);
         assertThat(scene.ctx("p10-partial").tiers.get(1).reservationCount).as("the root held every tick too").isGreaterThanOrEqualTo(3);
 
         scene.dial("p10-now", PACKAGES_ONLY, DOMESTIC);                                    // 1 held, 1 left
         scene.answerOnTheWire("p10-now");
-        long nowMs = scene.awaitEnd("p10-now", 6000);                                      // tick 1 s: whole (0 left); tick 2 s: nothing → the cut now
+        long nowMs = scene.awaitEnd("p10-now", 8000);                                      // tick 1 s: whole (0 left); tick 3 s: nothing → the cut now
         assertThat(scene.ctx("p10-now").endCause).isEqualTo("BALANCE_EXHAUSTED");
-        assertThat(nowMs).isBetween(1900L, 2950L);
+        assertThat(nowMs).isBetween(2900L, 3950L);
         assertThat(scene.rows("res_2")).isZero();
     }
 
@@ -135,7 +131,7 @@ class CallParityWindowTest {
      */
     @Test
     void P11_theCutDoesNotSettle_theHangupSettlesOnTheRealTalkTime() throws Exception {
-        scene = ParityScene.openWithEngine(0, 1, Map.of("res_2#41", "2.0"));
+        scene = openWithEngine(0, 1, Map.of("res_2#41", "2.0"));
         scene.dial("p11", PACKAGES_ONLY, DOMESTIC);
         scene.answerOnTheWire("p11");
         assertThat(scene.rows("res_2")).as("the row is open while the call talks").isEqualTo(1);
@@ -162,7 +158,7 @@ class CallParityWindowTest {
         assertThatThrownBy(() -> new RoutesphereSettings(8, 2, 3600, new SessionTimings(5, 5, 60, 3600), 60, 58, 0, false, 200))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("longer than the longest healthy session");
 
-        scene = ParityScene.open();
+        scene = open();
         CallContext call = scene.admitted("p12", PACKAGES_ONLY, DOMESTIC);
         scene.answer(call);
         scene.talk(7200);                                                                  // two hours, no renewal in between

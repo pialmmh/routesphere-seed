@@ -77,6 +77,13 @@ public interface LedgerPort {
     default boolean tierLoaded(String tierDb) { return true; }
 
     /**
+     * L2a · A tier's account as the ledger holds it right now — a read, no write, no lock (the C14 remainder's peek: the whole window was
+     * refused, what is left is spent, routesphere-core {@code BalanceBillingService.reserveNextWindowSeconds} 86–120). Empty = this ledger
+     * cannot say (orchestrix's roads, a ledger of a lane's own): the renewal then holds whole windows only.
+     */
+    default Optional<BigDecimal> balanceOf(LevelAdmission level) { return Optional.empty(); }
+
+    /**
      * The longest one reserve may take before this ledger gives up by itself, in milliseconds. 0 = it answers at once
      * (a ledger in the process). The engine says at start how many such answers fit one admission.
      */

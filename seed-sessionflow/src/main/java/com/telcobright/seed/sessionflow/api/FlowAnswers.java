@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.spi.MoneyRules;
 import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
@@ -21,6 +22,7 @@ final class FlowAnswers<C extends RoutesphereContext> implements LaneAnswers<C> 
 
     @Override public String name() { return flow.name(); }
     @Override public RoutesphereKit kit() { return flow.kit(); }
+    @Override public MoneyRules<C> moneyRules() { return flow.moneyRules(); }
     @Override public boolean isFree(C ctx, Candidate candidate) { return flow.isFree(ctx, candidate); }
     @Override public TierRate rateAtLevel(C ctx, Tier tier, Partner partner) { return flow.rateAtLevel(ctx, tier, partner); }
     @Override public String noBalanceCause(C ctx) { return flow.noBalanceCause(ctx); }

@@ -4,6 +4,7 @@ import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.seed.sessionflow.dependencies.RefundPolicy;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
+import com.telcobright.seed.sessionflow.spi.MoneyRules;
 import com.telcobright.statewalk.session.Outcome;
 
 import java.math.BigDecimal;
@@ -24,6 +25,9 @@ public interface LaneAnswers<C extends RoutesphereContext> {
 
     /** What the host handed the lane: the ledger port, the journal, the clock, the settings, the counters. */
     RoutesphereKit kit();
+
+    /** The lane's own money rules (seed-prepaid's Prepaid), or null: the engine runs on these answers. */
+    MoneyRules<C> moneyRules();
 
     /** ADMITTING · this candidate costs nothing (the house ad). */
     boolean isFree(C ctx, Candidate candidate);
