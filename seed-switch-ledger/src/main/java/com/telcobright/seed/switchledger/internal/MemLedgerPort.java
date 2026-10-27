@@ -48,12 +48,20 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private final AccountLocks locks;
     private final Answers answers = new Answers();
     private final Purchases purchases;
+    private final LedgerCrud crud;
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
         this.locks = locks;
         this.purchases = new Purchases(books);
+        this.crud = new LedgerCrud(books, locks, purchases::forgetTheIndex);
     }
+
+    /** C1 · The root's cached ledger: this port is ONE root's, so the root is not asked. */
+    @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) { return Optional.of(crud); }
+
+    /** C1 · The cached ledger itself — the owned port puts its gate around it; the credit door shares it (one memory, one index told). */
+    public LedgerCrud crud() { return crud; }
 
     /** L2b · ONE unit over every tier a business operation touches: lock all, move all, ONE record. */
     @Override public LedgerUnit unit() { return new SwitchUnit(books, locks, answers); }
@@ -88,18 +96,17 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         }
     }
 
-    // ── credit · reparent (L2a: the money roads, over the existing Credit — one lock table with the verbs above) ──
+    // ── credit · reparent (L2a: the money roads; C1: over the cached ledger — one lock table with the verbs above) ──
 
     @Override
     public Credited credit(LevelAdmission account, BigDecimal amount, String reference) {
-        return creditedOf(new Credit(books, locks).credit(account.getDbName(), SwitchUnit.accountOf(account), amount, reference));
+        return creditedOf(new Credit(crud).credit(account.getDbName(), SwitchUnit.accountOf(account), amount, reference));
     }
 
+    /** The account moved onto another purchase; the cached ledger tells the partner → accounts index (its partner may be another's now). */
     @Override
     public Credited reparent(LevelAdmission account, long purchaseId) {
-        Credited moved = creditedOf(new Credit(books, locks).reparent(account.getDbName(), SwitchUnit.accountOf(account), purchaseId));
-        purchases.forgetTheIndex();                                                    // the account's partner may be another's now
-        return moved;
+        return creditedOf(new Credit(crud).reparent(account.getDbName(), SwitchUnit.accountOf(account), purchaseId));
     }
 
     // ── L2b item 4 · purchases through the ledger; the partner's accounts from its cached purchases (S4) ──

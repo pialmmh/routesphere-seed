@@ -59,6 +59,9 @@ public final class Books {
     /** L2b item 4 · Does this ledger cache the purchases ({@value #PURCHASE} registered)? */
     public boolean keepsPurchases() { return held.contains(PURCHASE); }
 
+    /** C1 · Does this ledger cache the entity (registered by its ledger DB, or one of the two)? */
+    public boolean holds(String entity) { return held.contains(entity); }
+
     /** A new unit of work over this ledger: stage the moves of ONE money operation, then commit it as ONE record. */
     public UnitOfWork unit() { return new UnitOfWork(ledger); }
 
@@ -111,17 +114,6 @@ public final class Books {
      */
     public PackageAccount debit(UnitOfWork unit, String dbName, PackageAccount live, BigDecimal amount) {
         return moveBalance(unit, dbName, live, balanceOf(live).subtract(amount), amount.negate());
-    }
-
-    /** The account moves onto another purchase ({@code recharge} 347–351): the copy carries the NEW purchase, the balance stays. */
-    public PackageAccount reparent(UnitOfWork unit, String dbName, PackageAccount live, long purchaseId) {
-        PackageAccount updated = copyOf(live);
-        updated.setBalanceBefore(live.getBalanceBefore());
-        updated.setBalanceAfter(live.getBalanceAfter());
-        updated.setLastAmount(live.getLastAmount());
-        updated.setIdpackagePurchase(purchaseId);
-        unit.update(dbName, ACCOUNT, updated.getId(), updated);
-        return updated;
     }
 
     private static PackageAccount copyOf(PackageAccount source) {

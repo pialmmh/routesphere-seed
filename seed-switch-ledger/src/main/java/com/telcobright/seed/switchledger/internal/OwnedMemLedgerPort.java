@@ -96,6 +96,9 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return shared(() -> port.purchasesOf(buyer)); }
 
+    /** C1 · The root's cached ledger behind the gate: every read and every commit holds it shared — a new tier never loads under a unit. */
+    @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) { return Optional.of(port.crud().within(gate.readLock())); }
+
     /** L2b · A unit holds the gate shared from its opening to its close: a new tier never loads under a unit's locks. */
     @Override
     public LedgerUnit unit() {

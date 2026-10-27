@@ -51,7 +51,7 @@ final class SwitchUnit implements LedgerUnit {
         List<AccountLocks.Key> keys = new ArrayList<>();
         for (LevelAdmission a : accounts) if (a.getPackageAccountId() != null && a.getDbName() != null) keys.add(new AccountLocks.Key(a.getDbName(), a.getPackageAccountId()));
         if (held == null) { held = locks.holdAll(keys); return; }
-        for (AccountLocks.Key key : AccountLocks.inTheGlobalOrder(keys)) held.alsoHold(key.tier(), key.accountId());
+        for (AccountLocks.Key key : AccountLocks.inTheGlobalOrder(keys)) held.alsoHold(key);
     }
 
     private void holdTheLockOf(String db, long accountId) {

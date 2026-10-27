@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
+import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.core.wal.WALEntry;
 import com.telcobright.core.wal.WALEntryBatch;
 import com.telcobright.memledger.api.MemLedger;
@@ -65,6 +66,21 @@ public final class UnitOfWork {
         if (row != null) return row.op == Op.DELETE ? null : (T) row.image;
         return Books.guarded("read " + entity + " " + id + " of " + tier, () -> ledger.getEntity(tier, entity, id));
     }
+
+    /** C1 · Every row of {@code entity} in {@code tier} as this unit will leave it: the cached rows, the unit's own moves over them. */
+    public List<Object> rowsAsLeft(String tier, String entity) {
+        Map<String, Object> rows = new LinkedHashMap<>();
+        Map<?, ?> cached = Books.guarded("list " + entity + " of " + tier, () -> ledger.<Object, CacheableEntity<Object, ?>>getAllEntities(tier, entity));
+        cached.forEach((key, row) -> rows.put(String.valueOf(key), row));
+        for (Staged row : staged.values()) {
+            if (!row.tier.equals(tier) || !row.entity.equals(entity)) continue;
+            if (row.op == Op.DELETE) rows.remove(String.valueOf(row.id)); else rows.put(String.valueOf(row.id), row.image);
+        }
+        return new ArrayList<>(rows.values());
+    }
+
+    /** C1 · The rows this unit writes (its inserts and updates, not its deletes), as it writes them, in the order first staged. */
+    public List<Object> images() { return staged.values().stream().filter(row -> row.op != Op.DELETE).map(row -> row.image).toList(); }
 
     // ── staging ─────────────────────────────────────────────────────────────
 

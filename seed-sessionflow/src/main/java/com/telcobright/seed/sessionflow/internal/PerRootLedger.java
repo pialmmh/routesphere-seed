@@ -68,6 +68,11 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return ledgerOf(buyer).purchasesOf(buyer); }
 
+    /** C1 · The root's own cached ledger; a root without a ledger here, or a ledger that caches nothing: empty. */
+    @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) {
+        return root == null ? Optional.empty() : of(root).flatMap(ledger -> ledger.cachedLedgerOf(root));
+    }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {

@@ -36,7 +36,7 @@ public final class SwitchLedgers {
         Books books = new Books(memLedger, clock, held);
         AccountLocks locks = AccountLocks.of(memLedger, settings.lockTimeoutMs());
         MemLedgerPort port = new MemLedgerPort(books, locks);
-        return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock), new Credit(books, locks));
+        return new SwitchLedger(port, port, new OrphanReaper(books, locks, settings, clock), new Credit(port.crud()));
     }
 
     /** The credit primitive alone, for a switch's {@code /api/v1/billing/recharge} road; it shares the port's per-account lock. */

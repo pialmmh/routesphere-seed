@@ -153,6 +153,12 @@ public interface LedgerPort {
      */
     default Optional<java.util.List<Purchase>> purchasesOf(LevelAdmission buyer) { return Optional.empty(); }
 
+    /**
+     * C1 · The cached ledger of {@code root} — the CRUD of the tables its ledger caches (design §14): a ledger that caches tables answers its
+     * own; the kit's ledger of many roots answers the root's. Empty = this ledger caches no tables (orchestrix's roads, the testkit's).
+     */
+    default Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) { return Optional.empty(); }
+
     /** L2b item 4 · What one purchase buys (the package catalog is config: prime-context's): its buckets, each an account. */
     record Offer(long packageId, String name, BigDecimal price, java.time.LocalDateTime at, java.time.LocalDateTime expires, java.util.List<Bucket> buckets) {
         public Offer { buckets = buckets == null ? java.util.List.of() : java.util.List.copyOf(buckets); }

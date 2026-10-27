@@ -35,6 +35,9 @@ public final class LedgerEntities {
     /** Every known entity, in its order. */
     public static List<Known> known() { return KNOWN; }
 
+    /** C1 · The known entity of this class; empty = the ledger knows no such entity. */
+    public static java.util.Optional<Known> ofType(Class<?> type) { return KNOWN.stream().filter(k -> k.type().equals(type)).findFirst(); }
+
     /** The entities the settings name — name → known — in the known order; refused in words when a word names nothing or a must is missing. */
     public static Map<String, Known> named(LedgerDbSettings settings) {
         Map<String, Known> named = new LinkedHashMap<>();
