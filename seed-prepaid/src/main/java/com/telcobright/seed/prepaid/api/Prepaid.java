@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -30,12 +31,20 @@ import java.util.function.Function;
  * ({@code RoutesphereApp.Builder.prepaid}); a lane that gives none runs on its own answers ({@link #ofTheLanesAnswers}).
  *
  * <pre>
- *   Prepaid&lt;CallContext&gt; prepaid = Prepaid.&lt;CallContext&gt;builder("call")
+ *   Prepaid&lt;CallContext&gt; call = Prepaid.&lt;CallContext&gt;builder("call")
  *       .admission(Admission.HOLD_WINDOW).window(cfg.window()).firstRenewal(cfg.firstRenewal())     // 60 s, 58 s
- *       .rate((call, tier, account) -&gt; rates.unitRate(call, tier, account))
- *       .chooseAccounts((call, tier, fundable) -&gt; intlOut(call) ? cashOnly(fundable) : fundable)
- *       .refusalCause((call, tier) -&gt; intlOut(call) ? NO_BALANCE_INT_OUT : INSUFFICIENT_BALANCE)
- *       .finalize(call -&gt; call.answered() ? Final.charge(tier -&gt; rates.cost(call, tier)) : Final.releaseAll())
+ *       .packageUnits(c -&gt; Set.of("TF_min"))                              // the best matching minutes package first, then cash
+ *       .rate((c, tier, account) -&gt; rates.unitRate(c, tier, account))       // a package: 1 minute; cash: the rate plan's price
+ *       .chooseAccounts((c, tier, fundable) -&gt; intlOut(c) ? cashOnly(fundable) : fundable)
+ *       .refusalCause((c, tier) -&gt; intlOut(c) ? NO_BALANCE_INT_OUT : INSUFFICIENT_BALANCE)
+ *       .actualCharge((c, tier) -&gt; rates.cost(c, tier))                    // finalizeBalance: holds back, the actual charge taken
+ *       .onExhausted(c -&gt; c.killBothLegs())
+ *       .build(kit);
+ *
+ *   Prepaid&lt;AdViewContext&gt; ad = Prepaid.&lt;AdViewContext&gt;builder("ad")
+ *       .admission(Admission.CHARGE_NOW)                                      // charged at admission; finalizeBalance does nothing
+ *       .packageUnits(v -&gt; v.isVideo() ? Set.of("AD_sec") : Set.of("AD_view"))
+ *       .rate((v, tier, account) -&gt; switch (account.getUom()) { case "AD_view" -&gt; ONE; case "AD_sec" -&gt; v.seconds(); default -&gt; ratePlanPrice(v, tier); })
  *       .build(kit);
  * </pre>
  *
@@ -50,6 +59,10 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     /** (ctx, tier, account) → what ONE unit costs on this account at this tier (a window, a view, a message). Null = {@code UNRATED}. */
     @FunctionalInterface
     public interface RateRule<C> { BigDecimal rate(C ctx, PayingTier tier, PackageAccount account); }
+
+    /** (ctx, tier) → the ACTUAL charge of a tier at the end (the call: the real seconds × that tier's rate). */
+    @FunctionalInterface
+    public interface ActualCharge<C> { BigDecimal cost(C ctx, LevelAdmission tier); }
 
     /** (ctx, tier, fundable) → the accounts to try, in order, from the fundable ones (the call abroad: cash only). */
     @FunctionalInterface
@@ -121,6 +134,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         private RateRule<C> rate;
         private Function<C, Final> finalize;
         private AccountRule accounts = AccountRule.UNITS_THEN_CASH;
+        private Function<C, Set<String>> packageUnits = ctx -> PackageMatch.CALL_AND_SMS_UNITS;
         private AccountChoice<C> chooseAccounts;
         private RefusalCause<C> refusalCause;
         private PrepaidHooks<C> hooks;
@@ -155,8 +169,25 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         }
         /** ■ What ONE unit costs on an account at a tier (null = UNRATED). */
         public Builder<C> rate(RateRule<C> v) { open(); this.rate = v; return this; }
-        /** ■ What the end does with every tier's money. */
+        /** ■ What the end does with every tier's money (a CHARGE_NOW lane may say nothing: its charge stands). */
         public Builder<C> finalize(Function<C, Final> v) { open(); this.finalize = v; return this; }
+
+        /**
+         * HOLD lanes · {@code finalizeBalance} the call's way (the owner, 2026-10-27: "for calls, we calculate call's actual charge, return
+         * balance and apply the final charge"): answered → every tier's holds go back and its {@code actualCharge} is taken; never answered
+         * → every hold goes back. The same as {@code finalize(ctx -> ctx.answered() ? Final.charge(...) : Final.releaseAll())}.
+         */
+        public Builder<C> actualCharge(ActualCharge<C> v) {
+            Objects.requireNonNull(v, "actualCharge");
+            return finalize(ctx -> ctx.answered() ? Final.charge(tier -> v.cost(ctx, tier)) : Final.releaseAll());
+        }
+
+        /**
+         * The package units that may pay THIS request — the best matching active package of them pays first, then cash at the lane's rate
+         * ({@link PackageMatch}; the owner, 2026-10-27). The ad: an image view {@code AD_view}, a video {@code AD_sec}. Default: the call's
+         * minutes and the SMS's messages ({@code TF_min}, {@code OTH_ea}).
+         */
+        public Builder<C> packageUnits(Function<C, Set<String>> v) { open(); this.packageUnits = Objects.requireNonNull(v, "packageUnits"); return this; }
         /** Which accounts may pay (default UNITS_THEN_CASH: package units before cash, unexpired only). */
         public Builder<C> accounts(AccountRule v) { open(); this.accounts = Objects.requireNonNull(v, "accounts"); return this; }
         /** The accounts to try, in order, from the rule's fundable ones (the call abroad: cash only). */
@@ -183,15 +214,16 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             refuseADisagreeingCadence(kit);
             sealed = true;
             PrepaidHooks<C> merged = LaneHooks.of(hooks, beforeHold, onExhausted, onLowBalance, onFinished);
-            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, finalize, accounts, chooseAccounts, refusalCause,
-                merged, lowBalanceAt, reference));
+            Function<C, Final> end = finalize != null ? finalize : ctx -> Final.nothing();     // a charge-now lane: the charge stands
+            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, chooseAccounts, refusalCause,
+                merged, lowBalanceAt, reference, packageUnits));
         }
 
         private void refuseAMissingPart() {
             List<String> missing = new java.util.ArrayList<>();
             if (admission == null) missing.add("admission(HOLD_WINDOW | HOLD | CHARGE_NOW) — how is money taken at admission?");
             if (rate == null) missing.add("rate((ctx, tier, account) -> amount) — what does one unit cost?");
-            if (finalize == null) missing.add("finalize(ctx -> Final) — what does the end do with the money?");
+            if (finalize == null && admission != Admission.CHARGE_NOW) missing.add("finalize(ctx -> Final) or actualCharge((ctx, tier) -> cost) — what does the end do with the money?");
             if (admission == Admission.HOLD_WINDOW && window == null) missing.add("window(duration) — how long is one window (the call: 60 s)?");
             if (admission == Admission.HOLD_WINDOW && firstRenewal == null) missing.add("firstRenewal(duration) — when is the first renewal (the call: 58 s)?");
             if (missing.isEmpty()) return;

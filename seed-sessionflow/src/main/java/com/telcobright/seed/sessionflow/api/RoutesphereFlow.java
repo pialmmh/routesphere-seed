@@ -42,9 +42,9 @@ import java.util.function.Supplier;
  *   onStart       IDLE → INIT     startSession: the root (the ingress's, facts.root(),      (a) identifyRootLevelTenant■ · buildTask
  *                                 else the lane's rule), its snapshot, the task
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       admitSession, per candidate: the leaf, the tiers        (c) identifyPartner■ · (b) iterateResellerTenants
- *                                 leaf → root, per tier performAdmission: check ·        (c) partnerAbove · (e) reserveBalance → rateAtLevel■
- *                                 authorize · root rules · reserve
+ *   admit         ADMITTING       admitSession, per candidate: the legs, the leaf,       (c) invertLegs · identifyPartner■
+ *                                 the tiers leaf → root, per tier performAdmission:      (b) iterateResellerTenants · (c) partnerAbove
+ *                                 check · authorize · root rules · reserve               (e) reserveBalance → rateAtLevel■
  *                                 the route at the root, the last gate                   (d) route■ · confirmAdmission
  *   nextHop       ROUTING         the plan's current hop                                 (d) route■ (made once, at admission)
  *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
@@ -294,6 +294,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
 
     /** (b) Leaf → reseller → … → root, one tier at a time, inside the session's own tree: the base rule, never overridden. */
     protected final List<Tier> iterateResellerTenants(Tier leaf) { return leaf.ancestorChain(); }
+
+    /**
+     * (c) The lane's pre-processing step AFTER pre-routing — per candidate, before its payer is found (the owner, 2026-10-27: "a
+     * pre-processing step that inverts the customer and supplier leg after pre-routing"). The ad: the candidate's advertiser becomes the
+     * paying (customer) leg and the App that called the supplier leg. The call, the SMS, the WiFi: nothing — the caller pays (the default).
+     */
+    protected void invertLegs(C ctx, Candidate candidate) { }
 
     /**
      * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —

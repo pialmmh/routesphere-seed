@@ -23,18 +23,10 @@ public enum AccountRule {
     /** The accounts this rule lets pay, best first, unexpired at {@code now}. */
     /** L2b item 4 · The same rule over the accounts the LEDGER names (its cached purchases and their expiry, S4). */
     public List<PackageAccount> fundable(List<PackageAccount> accounts, LocalDateTime now) {
-        return switch (this) {
-            case UNITS_THEN_CASH -> AccountOrder.fundable(accounts, now);
-            case UNITS_ONLY -> AccountOrder.buckets(accounts, now);
-            case CASH_ONLY -> AccountOrder.cashOnly(accounts, now);
-        };
+        return PackageMatch.payable(accounts, PackageMatch.CALL_AND_SMS_UNITS, this, now);
     }
 
     public List<PackageAccount> fundable(Partner partner, DynamicContext tree, LocalDateTime now) {
-        return switch (this) {
-            case UNITS_THEN_CASH -> AccountOrder.fundable(partner, tree, now);
-            case UNITS_ONLY -> AccountOrder.buckets(partner, tree, now);
-            case CASH_ONLY -> AccountOrder.cashOnly(partner, tree, now);
-        };
+        return fundable(PackageMatch.accountsOf(partner, tree), now);
     }
 }

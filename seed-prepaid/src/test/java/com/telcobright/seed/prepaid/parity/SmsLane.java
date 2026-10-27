@@ -11,6 +11,7 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.switchledger.api.AccountOrder;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 /**
  * The SMS-shaped lane of item 4 (design §10.1's sms-service builder, as an application writes it): CHARGE_NOW — every tier charged at
@@ -43,7 +44,7 @@ public final class SmsLane {
         return Prepaid.<CallContext>builder("sms")
             .admission(Admission.CHARGE_NOW)
             .rate((sms, tier, account) -> AccountOrder.OTH_EA.equals(account.getUom()) ? BigDecimal.ONE : new BigDecimal(PER_MESSAGE))
-            .chooseAccounts((sms, tier, fundable) -> fundable.stream().filter(a -> !AccountOrder.TF_MIN.equals(a.getUom())).toList())
+            .packageUnits(sms -> Set.of(AccountOrder.OTH_EA))                       // a message pays an SMS package, never talk minutes
             .finalize(sms -> DELIVERED.equals(sms.endCause) ? Final.nothing() : refundOnFailure ? Final.refundAll() : Final.nothing())
             .build(kit);
     }

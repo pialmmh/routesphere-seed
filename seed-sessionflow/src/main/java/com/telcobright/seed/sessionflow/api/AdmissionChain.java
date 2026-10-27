@@ -79,6 +79,7 @@ final class AdmissionChain<C extends RoutesphereContext> {
 
     private String walkCandidate(C ctx, Candidate candidate) {
         ctx.identificationCause = null;                          // P1-O: this candidate's own helper says why it found nobody
+        flow.step(ctx, "INVERT_LEGS", () -> { flow.invertLegs(ctx, candidate); return null; });
         Tier leaf = flow.step(ctx, "IDENTIFY_PARTNER", () -> flow.identifyPartner(ctx, candidate));
         String refusal = leaf == null ? admitWithoutPartner(ctx, candidate) : admitThroughTheTiers(ctx, leaf);
         if (refusal == null) refusal = flow.money().reserveBalance(ctx);
