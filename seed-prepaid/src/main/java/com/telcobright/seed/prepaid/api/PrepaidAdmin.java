@@ -29,7 +29,8 @@ import java.util.Optional;
  *       — onto a new purchase, the balance kept;</li>
  *   <li>{@link #accounts} — a partner's accounts as the LEDGER names them (its cached purchases, their expiry: S4) where it caches
  *       purchases, else as the tree names them; each with its live balance;</li>
- *   <li>{@link #balance} — one account's live balance.</li>
+ *   <li>{@link #balance} — one account's live balance;</li>
+ *   <li>{@link #purchases} — a partner's purchases as the ledger caches them (L3: the officer's purchase list).</li>
  * </ul>
  * Each refuses in words: a tier not in the root's tree, an account the tier's ledger does not hold, a delta of 0 or less, a purchase with
  * no buckets or no id source, a ledger with no purchase road.
@@ -114,6 +115,11 @@ public final class PrepaidAdmin {
         List<Account> accounts = new ArrayList<>(rows.size());
         for (PackageAccount row : rows) accounts.add(accountWithBalance(tier, row));
         return List.copyOf(accounts);
+    }
+
+    /** The purchases of {@code partnerId} at {@code tierDb} as the ledger holds them, oldest first; empty when the ledger caches no purchases. */
+    public List<LedgerPort.Purchase> purchases(String root, String tierDb, int partnerId) {
+        return kit.ledger().purchasesOf(buyerAt(tierOf(root, tierDb), partnerId)).orElse(List.of());
     }
 
     /** One account's live balance; refused in words when the tier's ledger does not hold it. */

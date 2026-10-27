@@ -79,7 +79,8 @@ class PurchaseThroughTheLedgerTest {
         assertThat(lab.dbBalance("res_2", bought.accounts().get(1))).as("the minutes, under the cache's id").isEqualByComparingTo("300");
         assertThat(lab.dbPurchase("res_2", bought.accounts().get(0))).isEqualByComparingTo(String.valueOf(bought.purchaseId()));
         assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(PrepaidAdmin.Account::id)
-            .containsExactly(11L, 12L, bought.accounts().get(0), bought.accounts().get(1));
+            .as("prime-context's order (S6): by expiry — 11 (2026-01-01), the new purchase's (30 days), 12 (2030)")
+            .containsExactly(11L, bought.accounts().get(0), bought.accounts().get(1), 12L);
     }
 
     /** S4 · the partner's accounts as the LEDGER names them (its cached purchases), each with its purchase's expiry and its live balance. */
@@ -92,6 +93,44 @@ class PurchaseThroughTheLedgerTest {
         assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(PrepaidAdmin.Account::expiresAt)
             .containsExactly(LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2030, 1, 1, 0, 0));
         assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(a -> a.balance().stripTrailingZeros().toPlainString()).containsExactly("100", "40");
+    }
+
+    /** L3 · the partner's purchases as the LEDGER caches them (the officer's list), oldest first; a purchase made through it is listed at once. */
+    @Test
+    void aPartnersPurchases_comeFromTheLedgersCache_oldestFirst_aNewOneAtOnce() {
+        start();
+        lab.purchase("res_2", 3, 702, "2030-01-01 00:00:00");                                  // another partner's purchase: not listed
+
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).extracting(LedgerPort.Purchase::id).containsExactly(1L, 2L);
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).extracting(LedgerPort.Purchase::expires)
+            .containsExactly(LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2030, 1, 1, 0, 0));
+
+        LedgerPort.Purchased bought = admin.purchase("btcl", "res_2", CLIENT, offer(30), "pay-2");
+
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).last().satisfies(p -> {
+            assertThat(p.id()).isEqualTo(bought.purchaseId());
+            assertThat(p.packageId()).isEqualTo(7L);
+            assertThat(p.at()).isEqualTo(now());
+            assertThat(p.expires()).isEqualTo(now().plusDays(30));
+            assertThat(p.price()).isEqualByComparingTo("99.00");
+        });
+    }
+
+    /**
+     * S6 · The ledger's catalog is prime-context's: the accounts of ACTIVE purchases only (a cancelled one never pays, never listed), in
+     * prime-context's order — the operator's priority first, then the soonest expiry, then the older purchase.
+     */
+    @Test
+    void theLedgersCatalog_isPrimeContexts_activePurchasesOnly_theOperatorsPriorityThenTheSoonestExpiry() {
+        lab.purchase("res_2", 3, CLIENT, "2026-02-01 00:00:00", "2028-01-01 00:00:00", "CANCELLED", null)
+            .purchase("res_2", 4, CLIENT, "2026-03-01 00:00:00", "2031-01-01 00:00:00", "ACTIVE", 1)              // the operator's choice
+            .purchase("res_2", 5, CLIENT, "2026-04-01 00:00:00", "2029-01-01 00:00:00", "active", null)
+            .account("res_2", 31, 3, "TF_min", "7").account("res_2", 41, 4, "TF_min", "8").account("res_2", 51, 5, "TF_min", "9");
+        start();
+
+        assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(PrepaidAdmin.Account::id)
+            .as("41 (the operator's priority), then by expiry 11 (2026, expired: listed, never paid), 51 (2029), 12 (2030); 31 cancelled: never")
+            .containsExactly(41L, 11L, 51L, 12L);
     }
 
     @Test

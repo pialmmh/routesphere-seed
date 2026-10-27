@@ -32,7 +32,7 @@ public final class CallPrepaid {
             .rate((call, tier, account) -> rates.ratePerMinute(call, tier.tier(), tier.partner(), account))
             .chooseAccounts((call, tier, fundable) -> CallRates.isIntlOut(call) ? cashOnly(fundable) : fundable)
             .refusalCause((call, tier) -> CallRates.isIntlOut(call) ? CallLane.NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
-            .finalize(call -> call.answered() ? Final.charge(tier -> costAtTheEnd(rates, call, tier)) : Final.releaseAll())
+            .actualCharge((call, tier) -> costAtTheEnd(rates, call, tier))          // answered: holds back, the actual charge taken; else every hold back
             .build(kit);
     }
 

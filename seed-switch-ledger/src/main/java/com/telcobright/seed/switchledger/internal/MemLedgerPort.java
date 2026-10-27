@@ -110,6 +110,9 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     @Override
     public Optional<java.util.List<PackageAccount>> accountsOf(LevelAdmission buyer) { return purchases.accountsOf(buyer); }
 
+    @Override
+    public Optional<java.util.List<Purchase>> purchasesOf(LevelAdmission buyer) { return purchases.purchasesOf(buyer); }
+
     /** New rows were merged into the cache (a reload, a tier added): the partner → accounts index is made again on its next ask. */
     public void newRowsMerged() { purchases.forgetTheIndex(); }
 

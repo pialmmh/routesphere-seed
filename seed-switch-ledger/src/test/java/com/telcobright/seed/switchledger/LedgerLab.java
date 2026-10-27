@@ -131,6 +131,14 @@ public final class LedgerLab implements AutoCloseable {
         return this;
     }
 
+    /** L3 S6 · A purchase row with its status and the operator's priority ({@code onSelectPriority}; null = none), bought on {@code bought}. */
+    public LedgerLab purchase(String schema, long id, long partnerId, String bought, String expires, String status, Integer onSelectPriority) {
+        sql("INSERT INTO " + schema + ".packagepurchase (id, id_package, id_Partner, purchaseDate, expireDate, status, paid, autoRenewalStatus, price, vat, AIT, priority, onSelectPriority, discount)"
+            + " VALUES (" + id + ", 1, " + partnerId + ", TIMESTAMP '" + bought + "', TIMESTAMP '" + expires + "', '" + status + "', 1, FALSE, 0, 0, 0, 1, "
+            + (onSelectPriority == null ? "NULL" : onSelectPriority) + ", 0)");
+        return this;
+    }
+
     /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
     public MemLedger restart() {
         ledger.shutdown();

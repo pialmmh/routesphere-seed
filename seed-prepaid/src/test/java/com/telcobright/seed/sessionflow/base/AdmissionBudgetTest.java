@@ -86,7 +86,7 @@ class AdmissionBudgetTest {
 
     /**
      * L2b gate (ad-sphere item6d / item6g): a FREE candidate that walks its tiers (the house ad: a partner, a tier, nothing to pay) is still
-     * admitted once the paid candidates spent the budget — every tier's hold is planned and asked at once (holdTheWalk), and a tier with
+     * admitted once the paid candidates spent the budget — every tier's hold is planned and asked at once (reserveBalance), and a tier with
      * nothing to hold is never "not asked for lack of time".
      */
     @Test

@@ -3,6 +3,7 @@ package com.telcobright.seed.prepaid.internal;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.seed.prepaid.api.PackageMatch;
 import com.telcobright.seed.prepaid.api.PayingTier;
 import com.telcobright.seed.sessionflow.api.LaneAnswers;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
@@ -38,9 +39,9 @@ final class AccountWalk<C extends RoutesphereContext> {
 
     /**
      * L2b item 2 · A dry run rates the first account at once (nothing held, as before); otherwise the tier is PLANNED — its accounts to lock
-     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.holdTheWalk}).
+     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.reserveBalance}).
      */
-    Verdict admit(C ctx, Tier tier, Partner partner) {
+    Verdict planReserve(C ctx, Tier tier, Partner partner) {
         PayingTier paying = new PayingTier(tier, partner);
         List<PackageAccount> accounts = accountsToTry(ctx, paying);
         String reference = TierReserve.referenceOf(referenceOf(ctx), ctx.candidatesTried, tier.levelIndex());
@@ -68,16 +69,20 @@ final class AccountWalk<C extends RoutesphereContext> {
     /** The accounts the rule lets pay, unexpired at the session's clock — then the lane's own choice among them. */
     private List<PackageAccount> accountsToTry(C ctx, PayingTier tier) {
         LocalDateTime now = LocalDateTime.now(flow.kit().clock());
-        List<PackageAccount> fundable = fundable(tier, now);
+        List<PackageAccount> fundable = fundable(ctx, tier, now);
         if (rules.chooseAccounts() == null) return fundable;
         List<PackageAccount> chosen = rules.chooseAccounts().choose(ctx, tier, fundable);
         return chosen == null ? List.of() : chosen;
     }
 
-    /** L2b item 4 (S4) · The partner's accounts as the LEDGER names them (its purchases' expiry) when it caches purchases; else the tree's. */
-    private List<PackageAccount> fundable(PayingTier tier, LocalDateTime now) {
+    /**
+     * L3 · The library's ONE package rule ({@link PackageMatch}): the partner's accounts as the LEDGER names them (its purchases' expiry) when
+     * it caches purchases, else the tree's; the best matching active package of the lane's units for THIS request first, then cash.
+     */
+    private List<PackageAccount> fundable(C ctx, PayingTier tier, LocalDateTime now) {
         Optional<List<PackageAccount>> ledgers = flow.kit().ledger().accountsOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
-        return ledgers.isPresent() ? rules.accounts().fundable(ledgers.get(), now) : rules.accounts().fundable(tier.partner(), tier.tenant().getContext(), now);
+        List<PackageAccount> catalog = ledgers.orElseGet(() -> PackageMatch.accountsOf(tier.partner(), tier.tenant().getContext()));
+        return PackageMatch.payable(catalog, rules.packageUnits().apply(ctx), rules.accounts(), now);
     }
 
     /** One account's rate for ONE unit, after the lane's gate (a refusal of the gate refuses the session with its cause). */

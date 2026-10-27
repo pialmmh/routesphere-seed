@@ -51,6 +51,8 @@ import java.util.function.Function;
  *   btcl    partner 2 = the reseller (accounts 21 TF_min 10, 22 BDT 50) · partner 9 Direct (91 BDT 100; plan 8801 → 0.75, 88018 → 0.50, 88019 → 0.00)
  *   res_2   701 Unilever (11 TF_min 2.5 · 12 BDT 100 · 13 TF_min 100 EXPIRED; plan 88017 → 0.60, 88018 → 0.50)
  *           702 Poorco (no account) · 703 CashOnly (31 BDT 1.00) · 704 PackagesOnly (41 TF_min 100)
+ *           705 Adco, an advertiser (L3): 51 AD_view 100 (2030) · 52 AD_view 5 (2027, the soonest) · 53 AD_sec 300 · 54 BDT 20 ·
+ *               55 AD_view 50 EXPIRED
  *   117     the root's international plan: 44 → 1.50/min (no minimum, 1 s pulse) · 1 → 2.00/min (30 s minimum, 10 s pulse)
  * </pre>
  */
@@ -60,7 +62,8 @@ public final class ParityScene implements AutoCloseable {
     public static final Instant T0 = Instant.parse("2026-10-26T04:00:00Z");
     public static final Ingress ESL_DOOR = Ingress.esl("10.0.0.1", 8021);
     public static final LocalDateTime LATER = LocalDateTime.of(2030, 1, 1, 0, 0), EXPIRED = LocalDateTime.of(2026, 1, 1, 0, 0);
-    public static final int RESELLER = 2, DIRECT = 9, UNILEVER = 701, POORCO = 702, CASH_ONLY = 703, PACKAGES_ONLY = 704;
+    public static final LocalDateTime SOONER = LocalDateTime.of(2027, 6, 1, 0, 0);
+    public static final int RESELLER = 2, DIRECT = 9, UNILEVER = 701, POORCO = 702, CASH_ONLY = 703, PACKAGES_ONLY = 704, ADCO = 705;
     public static final String DOMESTIC = "8801711000000", PORTED = "8801811000000", UNRATED_PREFIX = "8809900000000", ZERO_RATED = "8801911000000";
     /** A number on Direct's 8801 rate (0.75) that the scene does NOT port (DOMESTIC is ported at the answer: P13). */
     public static final String NOT_PORTED = "8801712000000";
@@ -169,8 +172,11 @@ public final class ParityScene implements AutoCloseable {
             .account(DIRECT, 91, 9, "BDT", "100", LATER);
         b.tenant("res_2", "btcl").partner(UNILEVER, "Unilever", PartnerType.CUSTOMER).partner(POORCO, "Poorco", PartnerType.CUSTOMER)
             .partner(CASH_ONLY, "CashOnly", PartnerType.CUSTOMER).partner(PACKAGES_ONLY, "PackagesOnly", PartnerType.CUSTOMER)
+            .partner(ADCO, "Adco", PartnerType.CUSTOMER)
             .account(UNILEVER, 11, 1, "TF_min", "2.5", LATER).account(UNILEVER, 12, 2, "BDT", "100", LATER).account(UNILEVER, 13, 3, "TF_min", "100", EXPIRED)
-            .account(CASH_ONLY, 31, 4, "BDT", "1.00", LATER).account(PACKAGES_ONLY, 41, 7, "TF_min", "100", LATER);
+            .account(CASH_ONLY, 31, 4, "BDT", "1.00", LATER).account(PACKAGES_ONLY, 41, 7, "TF_min", "100", LATER)
+            .account(ADCO, 52, 12, "AD_view", "5", SOONER).account(ADCO, 51, 11, "AD_view", "100", LATER).account(ADCO, 53, 13, "AD_sec", "300", LATER)   // prime-context's order: the soonest first
+            .account(ADCO, 54, 14, "BDT", "20", LATER).account(ADCO, 55, 15, "AD_view", "50", EXPIRED);
         return b.build();
     }
 
@@ -185,7 +191,14 @@ public final class ParityScene implements AutoCloseable {
         lab.schema("btcl").schema("res_2");
         row("btcl", 21, 5, "TF_min", "10", balances).row("btcl", 22, 6, "BDT", "50", balances).row("btcl", 91, 9, "BDT", "100", balances)
             .row("res_2", 11, 1, "TF_min", "2.5", balances).row("res_2", 12, 2, "BDT", "100", balances).row("res_2", 13, 3, "TF_min", "100", balances)
-            .row("res_2", 31, 4, "BDT", "1.00", balances).row("res_2", 41, 7, "TF_min", "100", balances);
+            .row("res_2", 31, 4, "BDT", "1.00", balances).row("res_2", 41, 7, "TF_min", "100", balances)
+            .row("res_2", 51, 11, "AD_view", "100", balances).row("res_2", 52, 12, "AD_view", "5", balances).row("res_2", 53, 13, "AD_sec", "300", balances)
+            .row("res_2", 54, 14, "BDT", "20", balances).row("res_2", 55, 15, "AD_view", "50", balances);
+    }
+
+    /** The purchase's expiry as the tree names it: 3 and 15 EXPIRED, 12 the soonest (2027), the rest 2030. */
+    private static String defaultExpiry(long purchase) {
+        return purchase == 3 || purchase == 15 ? "2026-01-01 00:00:00" : purchase == 12 ? "2027-06-01 00:00:00" : "2030-01-01 00:00:00";
     }
 
     /** Every account's purchase as the tree names it (partner, expiry; 3 = EXPIRED), the ledger as a ledger DB over them. */
@@ -193,8 +206,8 @@ public final class ParityScene implements AutoCloseable {
         lab.purchaseTables();
         long[][] purchases = {{5, RESELLER}, {6, RESELLER}, {9, DIRECT}};
         for (long[] p : purchases) lab.purchase("btcl", p[0], p[1], expiries.getOrDefault(p[0], "2030-01-01 00:00:00"));
-        long[][] inRes2 = {{1, UNILEVER}, {2, UNILEVER}, {3, UNILEVER}, {4, CASH_ONLY}, {7, PACKAGES_ONLY}};
-        for (long[] p : inRes2) lab.purchase("res_2", p[0], p[1], expiries.getOrDefault(p[0], p[0] == 3 ? "2026-01-01 00:00:00" : "2030-01-01 00:00:00"));
+        long[][] inRes2 = {{1, UNILEVER}, {2, UNILEVER}, {3, UNILEVER}, {4, CASH_ONLY}, {7, PACKAGES_ONLY}, {11, ADCO}, {12, ADCO}, {13, ADCO}, {14, ADCO}, {15, ADCO}};
+        for (long[] p : inRes2) lab.purchase("res_2", p[0], p[1], expiries.getOrDefault(p[0], defaultExpiry(p[0])));
         lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase"), List.of("packageaccountreserve"), 5_000);
     }
 

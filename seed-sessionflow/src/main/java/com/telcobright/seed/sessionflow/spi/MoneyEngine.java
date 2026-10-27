@@ -14,14 +14,17 @@ import java.util.List;
 /**
  * L2a · The money of a session, in the verbs the base CALLS and never does itself (design {@code prepaid-engine-design.md} §11, the
  * architect's module cut of 2026-10-26): the base keeps the lifecycle, the tiers, the ledger port and the lane's answers; EVERY money step —
- * the hold at admission ({@link #admit}), the give-back of a refused candidate ({@link #release}), the renewal of a window
- * ({@link #renewWindow}), the settlement in both directions and the release at the end ({@link #finish}), the closing of what a stopped
+ * the hold at admission ({@link #planReserve}), the give-back of a refused candidate ({@link #release}), the renewal of a window
+ * ({@link #reserveNextWindow}), the settlement in both directions and the release at the end ({@link #finalizeBalance}), the closing of what a stopped
  * process left in the air — is ONE call into the engine. The engine is seed-prepaid's ({@code PrepaidEngine}: the base's money steps moved
  * there, the Prepaid builder on top); the kit finds its maker on the classpath ({@link MoneyEngineMaker}).
  *
- * <p>L2b: {@link #admit} rates a tier as the chain walks it and {@link #holdTheWalk} holds every tier at once (one unit of the ledger,
- * nothing to give back when a tier refuses); the renewal of every tier and the settlement of every tier are each ONE unit too. Every verb is idempotent per (session, tier) through the ledger port's references; every
- * write goes through the kit's ONE ledger port.
+ * <p><b>The two APIs (the owner, 2026-10-27: "two apis must: reserveBalance() and finalizeBalance()").</b> {@link #reserveBalance} at
+ * admission — every tier the walk planned ({@link #planReserve}) held, or charged at once for a charge-now lane (SMS, ad), in ONE unit of the
+ * ledger; {@link #reserveNextWindow} is the same reserve for the next window of a windowed lane (the call), asked by the base's budget child
+ * — the live call's periodic {@code reserveBalance}. {@link #finalizeBalance} at the end — "for calls, we calculate call's actual charge,
+ * return balance and apply the final charge. for sms, ad and other applications using charge now, may not do anything" — ONE unit too.
+ * Every verb is idempotent per (session, tier) through the ledger port's references; every write goes through the kit's ONE ledger port.
  *
  * @param <C> the lane's context
  */
@@ -31,14 +34,14 @@ public interface MoneyEngine<C extends RoutesphereContext> {
      * ADMITTING, ONE tier as the chain walks it — the default of the lane's {@code reserveBalance}: rated by the lane, its first unit held
      * on its account through the ledger under the tier's reference, the tier recorded on the walk. The verdict: ok, or the cause.
      */
-    Verdict admit(C ctx, Tier tier, Partner partner);
+    Verdict planReserve(C ctx, Tier tier, Partner partner);
 
     /**
      * L2b item 2 · ADMITTING, after EVERY tier of the candidate passed its checks: the money of every tier the engine was asked to
-     * {@link #admit} — rated and authorized as one, under the accounts' locks — held in ONE unit of the ledger (all tiers or none). Null =
+     * {@link #planReserve} — rated and authorized as one, under the accounts' locks — held in ONE unit of the ledger (all tiers or none). Null =
      * held (or nothing to hold); else the cause, nothing held anywhere. Default: nothing (an engine that holds as the chain walks).
      */
-    default String holdTheWalk(C ctx) { return null; }
+    default String reserveBalance(C ctx) { return null; }
 
     /** ADMITTING · a refused candidate (the call switch's {@code compensateReserves}): every tier it held goes back, in the order held. */
     void release(C ctx, List<LevelAdmission> held, String why);
@@ -47,7 +50,7 @@ public interface MoneyEngine<C extends RoutesphereContext> {
      * ACTIVE, one tick of the budget child: every tier renews its window; the narrowest answer, in seconds — the period = on; 0 = a tier
      * can pay nothing more; between = a partial window (the cut comes when it ends). Called under the session's money lock.
      */
-    double renewWindow(C ctx);
+    double reserveNextWindow(C ctx);
 
     /** ACTIVE · ONE tier's next window — the default of the lane's {@code renewWindowSeconds}: the seconds it funds. */
     double renewTier(C ctx, LevelAdmission tier);
@@ -57,12 +60,12 @@ public interface MoneyEngine<C extends RoutesphereContext> {
 
     /**
      * The final state, exactly once per session, under the session's money lock: answered — every tier finalized (the lane's
-     * {@code finalizeTier}); never answered — every reserve back, unless the refund rule charges a session offered and never consumed.
+     * {@code finalizeBalance}); never answered — every reserve back, unless the refund rule charges a session offered and never consumed.
      * Writes {@code ctx.settlements}; a tier the ledger did not take is OWED.
      */
-    void finish(C ctx, Outcome outcome, boolean answered);
+    void finalizeBalance(C ctx, Outcome outcome, boolean answered);
 
-    /** The final state, ONE tier — the default of the lane's {@code finalizeTier}: delivered → its charge, else the refund rule; settled. */
+    /** The final state, ONE tier — the default of the lane's {@code finalizeBalance}: delivered → its charge, else the refund rule; settled. */
     TierSettlement settleTier(C ctx, LevelAdmission tier, Outcome outcome);
 
     /**

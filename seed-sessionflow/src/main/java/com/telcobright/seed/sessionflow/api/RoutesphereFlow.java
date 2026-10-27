@@ -42,14 +42,14 @@ import java.util.function.Supplier;
  *   onStart       IDLE → INIT     startSession: the root (the ingress's, facts.root(),      (a) identifyRootLevelTenant■ · buildTask
  *                                 else the lane's rule), its snapshot, the task
  *   prepare       INIT            the candidates; the budget child when it renews        selectCandidates · renewsBudget
- *   admit         ADMITTING       admitSession, per candidate: the leaf, the tiers        (c) identifyPartner■ · (b) iterateResellerTenants
- *                                 leaf → root, per tier performAdmission: check ·        (c) partnerAbove · (e) reserveBalance → rateAtLevel■
- *                                 authorize · root rules · reserve
+ *   admit         ADMITTING       admitSession, per candidate: the legs, the leaf,       (c) invertLegs · identifyPartner■
+ *                                 the tiers leaf → root, per tier performAdmission:      (b) iterateResellerTenants · (c) partnerAbove
+ *                                 check · authorize · root rules · reserve               (e) reserveBalance → rateAtLevel■
  *                                 the route at the root, the last gate                   (d) route■ · confirmAdmission
  *   nextHop       ROUTING         the plan's current hop                                 (d) route■ (made once, at admission)
  *   retry         CONNECTING      by cause: the same hop · the next hop · the end        (f) handleRerouting → rerouteActionFor■
  *   onActive      ACTIVE          the budget child starts on statewalk's SessionActive    onServiceStarted
- *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeTier → chargeAtSettle, billedUnits,
+ *   settle        SUCCEEDED/ans.  per tier: delivered → rate × units, else the refund    (e) finalizeBalance → chargeAtSettle, billedUnits,
  *                                 rule; the rest back                                        delivered■, settleOutcome, refundPolicy■
  *   release       FAILED, never   every reserve back (the refund rule decides an offered one)
  *   record        both finals     teardown, the slot, CDR per tier, the task, the SDR    (g) finishSession → onTeardown, cdrPerTier,
@@ -59,7 +59,7 @@ import java.util.function.Supplier;
  * <p><b>Every lane states its rules (■, the owner's word of 2026-10-23).</b> What no lane may inherit from another is abstract: its name,
  * its CDR group, who pays, where it goes, its rate, what "delivered" means, its refund rule and its failover by cause — an SMS or an ad
  * lane that forgot one would be billed like a call. Each one's javadoc gives the call's answer as the example. The money stays shared
- * with its defaults ({@code reserveBalance}, {@code finalizeTier}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
+ * with its defaults ({@code reserveBalance}, {@code finalizeBalance}, {@code settleOutcome}, {@code partnerAbove}); the tier walk
  * (b), the finish (g) and every statewalk call are final.
  *
  * <p><b>Two ways to write a lane (R5).</b> A big lane subclasses this class and overrides; a small lane answers the same questions as
@@ -191,14 +191,14 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     @Override
     public final void settle(C ctx, Outcome outcome) {
         bringBackTheLiveTiers(ctx);
-        money().finish(ctx, outcome, true);
+        money().finalizeBalance(ctx, outcome, true);
     }
 
     /** FAILED, never answered: every reserve back — the refund rule decides only a session offered and never consumed. */
     @Override
     public final void release(C ctx) {
         bringBackTheLiveTiers(ctx);
-        money().finish(ctx, Outcome.FAILED, false);
+        money().finalizeBalance(ctx, Outcome.FAILED, false);
     }
 
     /** Both finals (g): the finish; then the registry resets every machine of the session and returns it to its pool. */
@@ -296,6 +296,13 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
     protected final List<Tier> iterateResellerTenants(Tier leaf) { return leaf.ancestorChain(); }
 
     /**
+     * (c) The lane's pre-processing step AFTER pre-routing — per candidate, before its payer is found (the owner, 2026-10-27: "a
+     * pre-processing step that inverts the customer and supplier leg after pre-routing"). The ad: the candidate's advertiser becomes the
+     * paying (customer) leg and the App that called the supplier leg. The call, the SMS, the WiFi: nothing — the caller pays (the default).
+     */
+    protected void invertLegs(C ctx, Candidate candidate) { }
+
+    /**
      * (c) ■ Who pays for this candidate at the leaf, found in which tier of the session's OWN tree (the lowest in-partner first): the call —
      * the caller's partner (by its ip or number prefix); the ad — the chosen campaign's advertiser (the candidate names it); the WiFi — the
      * subscriber; the SMS — the bind's account. The helpers find a partner inside the session's tree: {@link #byPartnerId},
@@ -361,14 +368,14 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
      * account through the one ledger port, under the session's and the tier's own reference. Override only to hold in one move of your
      * own — or answer {@link TierRate#held} from {@link #rateAtLevel} instead. L2a: the default is ONE call into the money engine.
      */
-    protected Verdict reserveBalance(C ctx, Tier tier, Partner partner) { return money().admit(ctx, tier, partner); }
+    protected Verdict reserveBalance(C ctx, Tier tier, Partner partner) { return money().planReserve(ctx, tier, partner); }
 
     /**
      * (e) The tier's final cost, in the final state: delivered → charged = rate × billed units ({@link #chargeAtSettle}), the rest back
      * (negative = an extra debit, the call's rule); not delivered → the refund rule ({@link #refundPolicy} on {@link #settleOutcome}).
      * Through the one ledger port, idempotent per (session, tier). L2a: the default is ONE call into the money engine.
      */
-    protected TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome) { return money().settleTier(ctx, tier, outcome); }
+    protected TierSettlement finalizeBalance(C ctx, LevelAdmission tier, Outcome outcome) { return money().settleTier(ctx, tier, outcome); }
 
     /**
      * (f) Failover by cause, after a signaling failure: RETRY_SAME → the same hop; REROUTE → the plan's next hop while the attempts are under
@@ -620,7 +627,7 @@ public abstract class RoutesphereFlow<C extends RoutesphereContext> implements S
         try {
             if (ctx.reservesClosed) return period;
             bringBackTheLiveTiers(ctx);
-            double narrowest = money().renewWindow(ctx);
+            double narrowest = money().reserveNextWindow(ctx);
             ctx.keepTiers();
             return narrowest;
         } finally {

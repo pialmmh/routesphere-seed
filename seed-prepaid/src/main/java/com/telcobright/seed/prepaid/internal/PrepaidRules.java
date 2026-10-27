@@ -9,6 +9,7 @@ import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -19,11 +20,13 @@ import java.util.function.Function;
  * @param refusalCause   null = {@code INSUFFICIENT_BALANCE}
  * @param reference      null = the session's id
  * @param lowBalanceAt   null = never told
+ * @param packageUnits   the package units that may pay THIS request (PackageMatch); the default: the call's minutes and the SMS's messages
  */
 public record PrepaidRules<C extends RoutesphereContext>(String name, Admission admission, Duration window, Duration firstRenewal,
                                                          Prepaid.RateRule<C> rate, Function<C, Final> finalRule, AccountRule accounts,
                                                          Prepaid.AccountChoice<C> chooseAccounts, Prepaid.RefusalCause<C> refusalCause,
-                                                         PrepaidHooks<C> hooks, BigDecimal lowBalanceAt, Function<C, String> reference) {
+                                                         PrepaidHooks<C> hooks, BigDecimal lowBalanceAt, Function<C, String> reference,
+                                                         Function<C, Set<String>> packageUnits) {
 
     public boolean windowed() { return admission == Admission.HOLD_WINDOW; }
 

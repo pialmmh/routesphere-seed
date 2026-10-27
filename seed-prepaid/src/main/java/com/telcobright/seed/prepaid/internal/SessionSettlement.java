@@ -22,14 +22,14 @@ import java.util.List;
  * money lock (the budget child renews on its own cell):
  * <ul>
  *   <li>{@link #settle} — an ANSWERED session (statewalk's SUCCEEDED, and its FAILED after the answer, D-A1): every tier is finalized by
- *       {@code finalizeTier} — delivered → rate × billed units, the rest back; not delivered → the refund rule;</li>
+ *       {@code finalizeBalance} — delivered → rate × billed units, the rest back; not delivered → the refund rule;</li>
  *   <li>{@link #release} — a session never answered: every reserve back; only a session OFFERED and never consumed may pay, when the lane's
  *       refund rule charges it (the ad's {@code unshown}).</li>
  * </ul>
  * A tier the ledger did not take is OWED: one ERROR names the reference, the CDR says {@code settle: OWED}.
  *
  * <p>L2a 2a: MOVED as it was from the base ({@code seed-sessionflow api/SessionSettlement}, design §11), with the base's default
- * {@code finalizeTier} ({@link #settleTier}) and its refund-rule charge ({@link #chargeByTheRefundRule}); the lane's answers are read
+ * {@code finalizeBalance} ({@link #settleTier}) and its refund-rule charge ({@link #chargeByTheRefundRule}); the lane's answers are read
  * through {@link LaneAnswers} (the flow's own hooks).
  */
 final class SessionSettlement<C extends RoutesphereContext> {
@@ -49,7 +49,7 @@ final class SessionSettlement<C extends RoutesphereContext> {
             if (!closeOnce(ctx)) return;
             fixBilledDuration(ctx);
             List<TierSettlement> settlements = new ArrayList<>(ctx.levels.size());
-            for (LevelAdmission level : ctx.levels) settlements.add(finalizeTier(ctx, level, outcome));
+            for (LevelAdmission level : ctx.levels) settlements.add(finalizeBalance(ctx, level, outcome));
             ctx.settlements = List.copyOf(settlements);
         } finally {
             ctx.money.unlock();
@@ -81,10 +81,10 @@ final class SessionSettlement<C extends RoutesphereContext> {
         ctx.durationSec = Math.max(0, flow.safely(ctx, "billedDuration", () -> flow.billedDuration(ctx, flow.kit().clock().millis()), ctx.durationSec));
     }
 
-    private TierSettlement finalizeTier(C ctx, LevelAdmission level, Outcome outcome) {
+    private TierSettlement finalizeBalance(C ctx, LevelAdmission level, Outcome outcome) {
         if (!holdsReserve(level)) return TierSettlement.nothing(level.getLevelIndex());
         try {
-            TierSettlement done = flow.finalizeTier(ctx, level, outcome);
+            TierSettlement done = flow.finalizeBalance(ctx, level, outcome);
             return done != null ? done : TierSettlement.nothing(level.getLevelIndex());
         } catch (RuntimeException e) {
             return owed(ctx, level, null, e);
@@ -107,7 +107,7 @@ final class SessionSettlement<C extends RoutesphereContext> {
     }
 
     /**
-     * (e) The tier's final cost, in the final state — the base's default {@code finalizeTier}: delivered → charged = rate × billed units
+     * (e) The tier's final cost, in the final state — the base's default {@code finalizeBalance}: delivered → charged = rate × billed units
      * ({@code chargeAtSettle}), the rest back (negative = an extra debit, the call's rule); not delivered → the refund rule
      * ({@code refundPolicy} on {@code settleOutcome}). Through the one ledger port, idempotent per (session, tier).
      */
