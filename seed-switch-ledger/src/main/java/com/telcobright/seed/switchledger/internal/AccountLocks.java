@@ -29,14 +29,44 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>ONE table per MemLedger: whichever door is built first makes it, every later door over the same ledger shares it — a credit and a
  * settle on the same account never run side by side, however the doors were wired.
+ *
+ * <p>C1 · A lock is ONE ROW's: (tier, entity, id). An account's key is the row key of its {@code PackageAccount} — the cached ledger's
+ * units ({@code LedgerCrud}) and the sessions' verbs take the very same lock for the same account. The global order is (tier, entity, id),
+ * an id that is a number by its value: for the accounts of a tier it is the order of their ids, as before.
  */
 public final class AccountLocks {
 
     private static final Map<MemLedger, AccountLocks> PER_LEDGER = Collections.synchronizedMap(new WeakHashMap<>());
 
-    /** One account of one tier: the key of its lock, and its place in the global order. */
-    public record Key(String tier, long accountId) {
-        static final Comparator<Key> GLOBAL_ORDER = Comparator.comparing(Key::tier).thenComparingLong(Key::accountId);
+    /** One row of one tier — an account, or (C1) any row a unit of the cached ledger names: the key of its lock, its place in the global order. */
+    public record Key(String tier, String entity, String id) {
+        static final Comparator<Key> GLOBAL_ORDER = Comparator.comparing(Key::tier).thenComparing(Key::entity).thenComparing(Key::id, AccountLocks::byValue);
+
+        /** An account's lock: the row key of its {@code PackageAccount}. */
+        public Key(String tier, long accountId) { this(tier, Books.ACCOUNT, Long.toString(accountId)); }
+
+        /** The lock of a row of {@code entity} keyed {@code id}. */
+        public static Key row(String tier, String entity, Object id) { return new Key(tier, entity, String.valueOf(id)); }
+
+        /** The row in words: "account 11", "PackagePurchase 9". */
+        String what() { return Books.ACCOUNT.equals(entity) ? "account " + id : entity + " " + id; }
+    }
+
+    /** Two ids of one entity: numbers by their value, before any id that is not a number; the rest as text. */
+    private static int byValue(String a, String b) {
+        Long x = numberOf(a), y = numberOf(b);
+        if (x != null && y != null) return Long.compare(x, y);
+        if (x != null) return -1;
+        if (y != null) return 1;
+        return a.compareTo(b);
+    }
+
+    private static Long numberOf(String id) {
+        try {
+            return Long.valueOf(id);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static final class Slot {
@@ -86,10 +116,10 @@ public final class AccountLocks {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             leave(key);
-            throw new LedgerFault("interrupted while waiting for the lock of account " + key.accountId() + " in " + key.tier(), e);
+            throw new LedgerFault("interrupted while waiting for the lock of " + key.what() + " in " + key.tier(), e);
         }
         leave(key);
-        throw new LedgerFault("the lock of account " + key.accountId() + " in " + key.tier() + " was not free within " + timeoutMs + " ms");
+        throw new LedgerFault("the lock of " + key.what() + " in " + key.tier() + " was not free within " + timeoutMs + " ms");
     }
 
     private void leave(Key key) { slots.compute(key, (k, s) -> s == null || --s.users <= 0 ? null : s); }
@@ -107,8 +137,10 @@ public final class AccountLocks {
         public boolean holds(String tier, long accountId) { return keys.contains(new Key(tier, accountId)); }
 
         /** One more account's lock, taken now (a unit that meets an account it did not name at its start: bounded by the timeout). */
-        public void alsoHold(String tier, long accountId) {
-            Key key = new Key(tier, accountId);
+        public void alsoHold(String tier, long accountId) { alsoHold(new Key(tier, accountId)); }
+
+        /** One more row's lock, taken now — bounded by the timeout, as above. */
+        public void alsoHold(Key key) {
             if (!keys.contains(key)) add(key, take(key));
         }
 
