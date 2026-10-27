@@ -33,6 +33,24 @@ import java.util.Optional;
  * </ul>
  * Each refuses in words: a tier not in the root's tree, an account the tier's ledger does not hold, a delta of 0 or less, a purchase with
  * no buckets or no id source, a ledger with no purchase road.
+ *
+ * <p><b>The application's setting (L2c).</b> A purchase's ids come from bucket-next, the sharded id service, through seed-idgen's client —
+ * the application builds it from ONE value of ITS OWN config and hands it in; the seed has no config file and names no service (R0):
+ * <pre>
+ *   IdSource ids = BucketNext.builder()
+ *       .shards("http://10.10.199.21:7001,http://10.10.198.21:7001")   // EVERY shard's base URL, comma-separated
+ *       .timeout(Duration.ofSeconds(2))
+ *       .build();
+ *   PrepaidAdmin admin = prepaid.admin().withIds(ids);
+ * </pre>
+ * Like Kafka's server list, but EVERY shard is named: a shard does not tell about the others (shard k of N hands out k, k+N, k+2N, …; the
+ * client asks them in turn, skips one that is down, and fails closed when none answers — nothing is minted then, the purchase writes
+ * nothing). The ids are minted ABOVE the highest the ledger holds ({@code mintAbove}), so a table that existed before keeps its ids.
+ *
+ * <p><b>The one-creator rule.</b> The ledger writes these ids into the database as they are (the ledger DB names the account's
+ * {@code @GeneratedValue} key as minted by the caller — mem-ledger's {@code keysMintedByTheCaller}): in a lane on this engine nothing else
+ * creates accounts (or purchases) in those tables by the database's counter — no portal INSERT, no auto-increment; every creator takes
+ * its ids from the same bucket-next cluster.
  */
 public final class PrepaidAdmin {
 
@@ -49,7 +67,10 @@ public final class PrepaidAdmin {
         this.ids = ids;
     }
 
-    /** The same roads, purchases taking their ids from the application's source (its seed-idgen client; a test's InMemoryIdSource). */
+    /**
+     * The same roads, purchases taking their ids from the application's source: its seed-idgen client over EVERY bucket-next shard
+     * ({@code BucketNext.builder().shards(<one config value: every shard's URL, comma-separated>)}), a test's {@code InMemoryIdSource}.
+     */
     public PrepaidAdmin withIds(IdSource ids) { return new PrepaidAdmin(kit, Objects.requireNonNull(ids, "ids")); }
 
     // ── purchase ────────────────────────────────────────────────────────────

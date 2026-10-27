@@ -6,6 +6,7 @@ import com.telcobright.seed.switchledger.internal.LedgerEntities;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -15,7 +16,8 @@ import java.util.Set;
  * crud shall be configurable, but shall match entity name prefix … signal the cache … then the cache shall reload the new entities"):
  * <ul>
  *   <li>{@link #register} — the entities the settings name (names or table prefixes) registered in the MemLedger being built; a cache-only
- *       table loaded at the start only (never re-read: no ghosts); every tier of the root's tree, never a configured list;</li>
+ *       table loaded at the start only (never re-read: no ghosts); every tier of the root's tree, never a configured list; every key the
+ *       database would generate (the account's) named as minted by the caller (L2c: the purchase's accounts keep their minted ids);</li>
  *   <li>{@link #decide} — what a ring of the doorbell asks of the cache: an INSERT on a cached table (not cache-only) → a reload of the new
  *       rows (coalesced by the caller); {@code *:SNAPSHOT} or {@code what} = start, stream-open, reload, migrate-all, nightly → the full
  *       catch-up (the same reload, every table); a tier the ring names that the ledger lacks → that tier loaded (a lost
@@ -58,8 +60,21 @@ public final class LedgerDb {
             if (startOnly) builder.registerEntityLoadedAtStartOnly(k.name(), k.type());
             else builder.registerEntity(k.name(), k.type());
         }
+        nameTheKeysTheSeedMints(builder, named.values());
         builder.walPath(settings.walDir().toString()).queuePath(settings.queueDir().toString());
         return named.keySet();
+    }
+
+    /**
+     * L2c (mem-ledger L1b, the owner's option A) · Every registered entity whose key the database would generate — the account — is named as
+     * minted by the caller: the purchase mints its accounts' ids (the application's {@code IdSource}, bucket-next) and the ledger writes
+     * them on every INSERT, so the database's ids are the cache's. The rule that comes with it: in a lane on this ledger nothing else creates
+     * accounts in those tables by the database's counter (one creator per table, S7).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void nameTheKeysTheSeedMints(MemLedgerBuilder builder, Collection<LedgerEntities.Known> entities) {
+        List<Class<? extends com.telcobright.core.cache.CacheableEntity>> minted = LedgerEntities.keysTheDatabaseWouldGenerate(entities);
+        if (!minted.isEmpty()) builder.keysMintedByTheCaller(minted.toArray(new Class[0]));
     }
 
     /** The tables cached (lower case). */

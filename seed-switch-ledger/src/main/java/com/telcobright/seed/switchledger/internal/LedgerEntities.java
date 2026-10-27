@@ -55,6 +55,26 @@ public final class LedgerEntities {
         return named;
     }
 
+    /**
+     * L2c · The entities among these whose key the DATABASE would generate ({@code @Id} with {@code @GeneratedValue}: rtc-domain's
+     * {@code PackageAccount.id} is {@code IDENTITY}). A ledger DB names them as keys minted by the caller (mem-ledger's
+     * {@code keysMintedByTheCaller}): the seed mints those ids (the application's {@code IdSource}) and the ledger writes them, so a
+     * purchase's accounts get in the database the very ids the cache holds. The purchase's row ({@link LedgerPurchase}) and the reference
+     * row ({@link ChargeReference}) carry no generated key: their keys are written already.
+     */
+    public static List<Class<? extends CacheableEntity>> keysTheDatabaseWouldGenerate(java.util.Collection<Known> entities) {
+        List<Class<? extends CacheableEntity>> generated = new ArrayList<>();
+        for (Known k : entities) if (hasAGeneratedKey(k.type())) generated.add(k.type());
+        return generated;
+    }
+
+    private static boolean hasAGeneratedKey(Class<?> type) {
+        for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+            if (f.isAnnotationPresent(jakarta.persistence.Id.class) && f.isAnnotationPresent(jakarta.persistence.GeneratedValue.class)) return true;
+        }
+        return false;
+    }
+
     /** The tables the settings cache (lower case). */
     public static Set<String> tablesOf(Map<String, Known> named) {
         Set<String> tables = new java.util.LinkedHashSet<>();

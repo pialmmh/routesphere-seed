@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * L2b item 4 · the seed's part of a purchase through the ledger, on the cache and the REAL WAL (a ledger DB with purchases and references):
  * ONE record with every row — the purchase, an account per bucket with its opening balance, its reference row — the ids asked above what
  * the ledger holds; the partner's accounts then name them (S4); the same reference again → the first purchase, no record, no second row.
- * The accounts' write-behind is not asserted: mem-ledger leaves rtc-domain's {@code @GeneratedValue} account id to the database (the road
- * refuses in production until it writes the minted key — the report); this test builds the purchases as if it did.
+ * L2c: the write-behind lands under the SAME ids — the ledger DB names rtc-domain's {@code @GeneratedValue} account key as minted by the
+ * caller, so the consumer writes the account's own id (the lab's table has no counter of its own: a key left out could not be written).
  */
 class PurchasesTest {
 
@@ -40,7 +40,7 @@ class PurchasesTest {
     void aPurchaseIsOneRecordWithEveryRow_aRepeatIsTheFirst_andThePartnersAccountsNameIt() {
         MemLedger memLedger = lab.start();
         Books books = new Books(memLedger, Clock.systemUTC(), Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE));
-        Purchases purchases = new Purchases(books, true);
+        Purchases purchases = new Purchases(books);
         long before = lab.walRecords();
 
         LedgerPort.Purchased bought = purchases.purchase(buyer(4), offer(), "pay-9", this::above);
@@ -56,6 +56,10 @@ class PurchasesTest {
         assertThat(minutes.getIdpackagePurchase()).isEqualTo(bought.purchaseId());
         assertThat(purchases.accountsOf(buyer(4)).orElseThrow()).extracting(PackageAccount::getId)
             .containsExactly(30L, bought.accounts().get(0), bought.accounts().get(1));
+        long minutesId = bought.accounts().get(1);
+        LedgerLab.await("the minutes account in the database under its minted id", () -> lab.dbBalance("btcl", minutesId) != null);
+        assertThat(lab.dbBalance("btcl", minutesId)).as("the database row of the cache's id").isEqualByComparingTo("300");
+        assertThat(lab.dbPurchase("btcl", minutesId)).as("of the purchase the cache holds").isEqualByComparingTo(String.valueOf(bought.purchaseId()));
 
         LedgerPort.Purchased again = purchases.purchase(buyer(4), offer(), "pay-9", this::above);
 
