@@ -6,7 +6,6 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,7 +19,9 @@ import java.util.Set;
  * <pre>
  *   payable(accounts, units, rule, now)
  *     packages = the ACTIVE accounts (unexpired at now) whose unit is one the lane names for THIS request (its packageUnits),
- *                best match first: the soonest expiry, then the catalog's own order
+ *                best match first = the CATALOG's order, which is prime-context's (AllCacheLoader.comparePurchases): the operator's
+ *                own priority (onSelectPriority), then the soonest expiry, then the older purchase, then the lower id — the ledger's
+ *                catalog keeps the same order (seed-switch-ledger Purchases, S6)
  *     cash     = the ACTIVE cash accounts (BDT), in the catalog's order — pay as you go, priced by the lane's rate plan
  *     UNITS_THEN_CASH → packages, then cash   (the default of every lane)
  *     UNITS_ONLY      → packages only          (the WiFi: no package, no wifi)
@@ -65,11 +66,13 @@ public final class PackageMatch {
         return active;
     }
 
-    /** The packages of the lane's units, the soonest expiry first; equal expiries keep the catalog's order (the sort is stable). */
+    /**
+     * The packages of the lane's units in the CATALOG's order — prime-context's: the operator's priority, then the soonest expiry (L3 S6:
+     * never re-sorted by expiry alone, which would undo an operator's choice; the live call keeps the tree's order, AccountOrder.fundable).
+     */
     static List<PackageAccount> bestMatching(List<PackageAccount> active, Set<String> units) {
         List<PackageAccount> matching = new ArrayList<>();
         for (PackageAccount a : active) if (units != null && units.contains(a.getUom())) matching.add(a);
-        matching.sort(Comparator.comparing(PackageAccount::getExpireDate, Comparator.nullsLast(Comparator.naturalOrder())));
         return List.copyOf(matching);
     }
 

@@ -103,17 +103,41 @@ final class Purchases {
 
     // ── S4 · the partner's accounts from the ledger's purchases ─────────────
 
-    /** The buyer's accounts at its tier, each a COPY with its purchase's expiry; empty = this ledger caches no purchases. */
+    /**
+     * The buyer's accounts at its tier, each a COPY with its purchase's expiry; empty = this ledger caches no purchases. L3 S6 — as
+     * prime-context serves the catalog ({@code AllCacheLoader.buildPartnerAccountMap}): the accounts of ACTIVE purchases only (a cancelled
+     * or suspended purchase never pays), in prime-context's order — the operator's priority ({@code onSelectPriority} > 0), then the
+     * soonest expiry, then the older purchase, then the lower purchase id; an account's own id last. Expired purchases stay listed with
+     * their expiry (the walk skips them, the officer sees them).
+     */
     Optional<List<PackageAccount>> accountsOf(LevelAdmission buyer) {
         if (!books.keepsPurchases() || buyer.getDbName() == null) return Optional.empty();
         String db = buyer.getDbName();
         List<Long> ids = indexOf(db).getOrDefault((long) buyer.getPartnerId(), List.of());
-        List<PackageAccount> accounts = new ArrayList<>(ids.size());
+        List<Held> held = new ArrayList<>(ids.size());
         for (Long id : List.copyOf(ids)) {
             PackageAccount live = books.liveAccount(db, id);
-            if (live != null) accounts.add(withItsExpiry(db, live));
+            LedgerPurchase purchase = live == null || live.getIdpackagePurchase() == null ? null : books.ledger().getEntity(db, Books.PURCHASE, live.getIdpackagePurchase());
+            if (purchase != null && "ACTIVE".equalsIgnoreCase(purchase.getStatus())) held.add(new Held(withItsExpiry(live, purchase), purchase));
         }
-        return Optional.of(List.copyOf(accounts));
+        held.sort(PRIME_CONTEXTS_ORDER);
+        return Optional.of(held.stream().map(Held::account).toList());
+    }
+
+    /** An account with its purchase, for the order. */
+    private record Held(PackageAccount account, LedgerPurchase purchase) {}
+
+    /** prime-context's order of use ({@code AllCacheLoader.comparePurchases}), then the account's id. */
+    private static final Comparator<Held> PRIME_CONTEXTS_ORDER = Comparator.<Held>comparingInt(h -> priorityOrLast(h.purchase()))
+        .thenComparing(h -> h.purchase().getExpireDate(), Comparator.nullsLast(Comparator.naturalOrder()))
+        .thenComparing(h -> h.purchase().getPurchaseDate(), Comparator.nullsLast(Comparator.naturalOrder()))
+        .thenComparing(h -> h.purchase().getId(), Comparator.nullsLast(Comparator.naturalOrder()))
+        .thenComparing(h -> h.account().getId(), Comparator.nullsLast(Comparator.naturalOrder()));
+
+    /** A positive onSelectPriority is the operator's manual override; unset or not positive, the purchase sorts after every override. */
+    private static int priorityOrLast(LedgerPurchase purchase) {
+        Integer priority = purchase.getOnSelectPriority();
+        return priority != null && priority > 0 ? priority : Integer.MAX_VALUE;
     }
 
     /** L3 · The buyer's purchases at its tier from the cache, oldest first (an officer's read, off the session's path); empty = none cached. */
@@ -150,8 +174,7 @@ final class Purchases {
         return index;
     }
 
-    private PackageAccount withItsExpiry(String db, PackageAccount live) {
-        LedgerPurchase purchase = books.ledger().getEntity(db, Books.PURCHASE, live.getIdpackagePurchase());
+    private static PackageAccount withItsExpiry(PackageAccount live, LedgerPurchase purchase) {
         PackageAccount copy = new PackageAccount();
         copy.setId(live.getId());
         copy.setIdpackagePurchase(live.getIdpackagePurchase());

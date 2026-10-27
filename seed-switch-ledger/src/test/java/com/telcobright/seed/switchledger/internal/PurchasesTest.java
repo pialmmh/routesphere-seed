@@ -55,7 +55,8 @@ class PurchasesTest {
         assertThat(minutes.getBalanceAfter()).isEqualByComparingTo("300");
         assertThat(minutes.getIdpackagePurchase()).isEqualTo(bought.purchaseId());
         assertThat(purchases.accountsOf(buyer(4)).orElseThrow()).extracting(PackageAccount::getId)
-            .containsExactly(30L, bought.accounts().get(0), bought.accounts().get(1));
+            .as("prime-context's order (S6): the new purchase expires before purchase 9 (2030), so its accounts come first")
+            .containsExactly(bought.accounts().get(0), bought.accounts().get(1), 30L);
         long minutesId = bought.accounts().get(1);
         LedgerLab.await("the minutes account in the database under its minted id", () -> lab.dbBalance("btcl", minutesId) != null);
         assertThat(lab.dbBalance("btcl", minutesId)).as("the database row of the cache's id").isEqualByComparingTo("300");

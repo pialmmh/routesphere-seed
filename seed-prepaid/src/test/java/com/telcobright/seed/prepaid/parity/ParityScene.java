@@ -175,7 +175,7 @@ public final class ParityScene implements AutoCloseable {
             .partner(ADCO, "Adco", PartnerType.CUSTOMER)
             .account(UNILEVER, 11, 1, "TF_min", "2.5", LATER).account(UNILEVER, 12, 2, "BDT", "100", LATER).account(UNILEVER, 13, 3, "TF_min", "100", EXPIRED)
             .account(CASH_ONLY, 31, 4, "BDT", "1.00", LATER).account(PACKAGES_ONLY, 41, 7, "TF_min", "100", LATER)
-            .account(ADCO, 51, 11, "AD_view", "100", LATER).account(ADCO, 52, 12, "AD_view", "5", SOONER).account(ADCO, 53, 13, "AD_sec", "300", LATER)
+            .account(ADCO, 52, 12, "AD_view", "5", SOONER).account(ADCO, 51, 11, "AD_view", "100", LATER).account(ADCO, 53, 13, "AD_sec", "300", LATER)   // prime-context's order: the soonest first
             .account(ADCO, 54, 14, "BDT", "20", LATER).account(ADCO, 55, 15, "AD_view", "50", EXPIRED);
         return b.build();
     }
