@@ -101,6 +101,11 @@
                 <artifactId>seed-switch-ledger</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-ledger-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <!-- the session machines of every lane (P1, 2026-10-22): statewalk 4.0.0 — the final SessionSupervisor the base
                  RoutesphereFlow implements the handler of. statewalk-v2 and state-walk v1 stay out of the seed. -->
             <dependency>

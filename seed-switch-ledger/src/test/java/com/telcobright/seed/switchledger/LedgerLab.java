@@ -139,6 +139,25 @@ public final class LedgerLab implements AutoCloseable {
         return this;
     }
 
+    /**
+     * C2 · TelcoREST's columns beside the ledger's (RTC-Manager e20ea766): {@code packageaccount.creditLimit} and {@code isSelected},
+     * {@code packagepurchase.paymentRef} (unique) — in every schema made so far. The ledger's rows do not map them.
+     */
+    public LedgerLab telcoRestColumns() {
+        for (String schema : schemas) {
+            sql("ALTER TABLE " + schema + ".packageaccount ADD COLUMN creditLimit DECIMAL(20,6)");
+            sql("ALTER TABLE " + schema + ".packageaccount ADD COLUMN isSelected BOOLEAN DEFAULT FALSE NOT NULL");
+            sql("ALTER TABLE " + schema + ".packagepurchase ADD COLUMN paymentRef VARCHAR(100) UNIQUE");
+        }
+        return this;
+    }
+
+    /** C2 · A statement as an outside writer runs it (TelcoREST's own column). */
+    public void execute(String statement) { sql(statement); }
+
+    /** C2 · One number the database holds now (null = no row). */
+    public BigDecimal dbDecimal(String query) { return queryDecimal(query); }
+
     /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
     public MemLedger restart() {
         ledger.shutdown();

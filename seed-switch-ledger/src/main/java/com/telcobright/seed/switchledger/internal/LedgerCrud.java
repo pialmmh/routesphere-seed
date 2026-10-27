@@ -68,9 +68,10 @@ public final class LedgerCrud implements CachedLedger {
     @Override
     public <T> Optional<T> get(String tier, Class<T> type, Object id) {
         Known known = readable(type);
+        Object key = RowFields.keyAs(type, id);
         requireTier(tier);
         return gated(() -> {
-            Object row = books.ledger().getEntity(tier, known.name(), id);
+            Object row = books.ledger().getEntity(tier, known.name(), key);
             return row == null ? Optional.<T>empty() : Optional.of(type.cast(RowFields.copyOf(row)));
         });
     }

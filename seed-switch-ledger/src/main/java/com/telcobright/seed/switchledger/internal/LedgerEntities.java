@@ -21,14 +21,35 @@ import java.util.Set;
  */
 public final class LedgerEntities {
 
-    /** One entity the ledger knows: its name in the MemLedger, its class, its table. */
-    public record Known(String name, Class<? extends CacheableEntity<?, ?>> type, String table) {}
+    /** One entity the ledger knows: its name in the MemLedger, its class, its table, the shape its table holds. */
+    public record Known(String name, Class<? extends CacheableEntity<?, ?>> type, String table, Shape shape) {}
+
+    /**
+     * C2 · What the table's columns hold (prime-context's DDL, its PostgreSQL and MySQL twins; the narrower where they differ): the fields
+     * that may not be empty, the longest text, the digits of a number. A row outside it would be refused by the database at the
+     * write-behind — and a batch the database refuses stops the WAL consumer (mem-ledger: after 10 failures in a row) — so the cached
+     * ledger refuses it first ({@link RowRules}). The key is not listed: it is minted or named before.
+     */
+    public record Shape(Set<String> required, Map<String, Integer> textLimits, Map<String, Digits> digits) {
+        static final Shape NONE = new Shape(Set.of(), Map.of(), Map.of());
+    }
+
+    /** A number column's digits: {@code precision} in all, {@code scale} after the point. */
+    public record Digits(int precision, int scale) {}
+
+    private static final Digits BALANCE = new Digits(20, 6), PRICE = new Digits(10, 2);
 
     private static final List<Known> KNOWN = List.of(
-        new Known(Books.ACCOUNT, PackageAccount.class, "packageaccount"),
-        new Known(Books.RESERVE, PackageAccountReserve.class, "packageaccountreserve"),
-        new Known(Books.CHARGE, ChargeReference.class, "packageaccountcharge"),
-        new Known(Books.PURCHASE, LedgerPurchase.class, "packagepurchase"));
+        new Known(Books.ACCOUNT, PackageAccount.class, "packageaccount", new Shape(
+            Set.of("idpackagePurchase", "lastAmount", "balanceBefore", "balanceAfter", "uom"),
+            Map.of("name", 255, "uom", 45),
+            Map.of("lastAmount", BALANCE, "balanceBefore", BALANCE, "balanceAfter", BALANCE))),
+        new Known(Books.RESERVE, PackageAccountReserve.class, "packageaccountreserve", Shape.NONE),
+        new Known(Books.CHARGE, ChargeReference.class, "packageaccountcharge", Shape.NONE),
+        new Known(Books.PURCHASE, LedgerPurchase.class, "packagepurchase", new Shape(
+            Set.of("idPackage", "idPartner", "purchaseDate", "expireDate", "status", "paid", "autoRenewalStatus", "price", "vat", "ait", "priority", "discount"),
+            Map.of("status", 50),
+            Map.of("price", PRICE, "vat", PRICE, "ait", PRICE))));
 
     private LedgerEntities() {}
 
@@ -37,6 +58,12 @@ public final class LedgerEntities {
 
     /** C1 · The known entity of this class; empty = the ledger knows no such entity. */
     public static java.util.Optional<Known> ofType(Class<?> type) { return KNOWN.stream().filter(k -> k.type().equals(type)).findFirst(); }
+
+    /** C2 · The known entity of this table (any case); empty = none. */
+    public static java.util.Optional<Known> ofTable(String table) { return KNOWN.stream().filter(k -> k.table().equalsIgnoreCase(table == null ? "" : table.trim())).findFirst(); }
+
+    /** C2 · The known entity of this MemLedger name; empty = none. */
+    static java.util.Optional<Known> ofName(String name) { return KNOWN.stream().filter(k -> k.name().equals(name)).findFirst(); }
 
     /** The entities the settings name — name → known — in the known order; refused in words when a word names nothing or a must is missing. */
     public static Map<String, Known> named(LedgerDbSettings settings) {

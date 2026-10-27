@@ -124,6 +124,12 @@ public final class AccountLocks {
 
     private void leave(Key key) { slots.compute(key, (k, s) -> s == null || --s.users <= 0 ? null : s); }
 
+    /** C2 · Does THIS thread hold the row's lock already (the locks are re-entrant: a second hold by the same thread never waits)? */
+    public boolean heldByThisThread(Key key) {
+        Slot slot = slots.get(key);
+        return slot != null && slot.lock.isHeldByCurrentThread();
+    }
+
     /** The locks one verb or one unit holds, released together (newest first). */
     public final class Held implements AutoCloseable {
         private final List<Key> keys = new ArrayList<>();
