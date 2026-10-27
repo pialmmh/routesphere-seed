@@ -94,6 +94,8 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return shared(() -> port.accountsOf(buyer)); }
 
+    @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return shared(() -> port.purchasesOf(buyer)); }
+
     /** L2b · A unit holds the gate shared from its opening to its close: a new tier never loads under a unit's locks. */
     @Override
     public LedgerUnit unit() {

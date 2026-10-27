@@ -7,6 +7,7 @@ import com.telcobright.seed.sessionflow.spi.LedgerPort.Bucket;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.Ids;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.Offer;
+import com.telcobright.seed.sessionflow.spi.LedgerPort.Purchase;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.Purchased;
 import com.telcobright.seed.switchledger.api.ChargeReference;
 import com.telcobright.seed.switchledger.api.LedgerPurchase;
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -112,6 +114,23 @@ final class Purchases {
             if (live != null) accounts.add(withItsExpiry(db, live));
         }
         return Optional.of(List.copyOf(accounts));
+    }
+
+    /** L3 · The buyer's purchases at its tier from the cache, oldest first (an officer's read, off the session's path); empty = none cached. */
+    Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) {
+        if (!books.keepsPurchases() || buyer.getDbName() == null) return Optional.empty();
+        long partner = buyer.getPartnerId();
+        List<Purchase> purchases = new ArrayList<>();
+        for (LedgerPurchase p : books.ledger().<Long, LedgerPurchase>getAllEntities(buyer.getDbName(), Books.PURCHASE).values()) {
+            if (p.getIdPartner() != null && p.getIdPartner() == partner) purchases.add(purchaseOf(p));
+        }
+        purchases.sort(Comparator.comparingLong(Purchase::id));
+        return Optional.of(List.copyOf(purchases));
+    }
+
+    private static Purchase purchaseOf(LedgerPurchase p) {
+        return new Purchase(p.getId(), p.getIdPackage() == null ? 0 : p.getIdPackage(), p.getPurchaseDate(), p.getExpireDate(), p.getStatus(),
+            p.getPrice(), p.getPriority() == null ? 0 : p.getPriority());
     }
 
     /** New rows merged, a tier added, an account moved: the index of every tier made again on its next ask. */

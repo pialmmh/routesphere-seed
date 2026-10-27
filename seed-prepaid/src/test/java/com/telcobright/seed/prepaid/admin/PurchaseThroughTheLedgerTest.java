@@ -94,6 +94,27 @@ class PurchaseThroughTheLedgerTest {
         assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(a -> a.balance().stripTrailingZeros().toPlainString()).containsExactly("100", "40");
     }
 
+    /** L3 · the partner's purchases as the LEDGER caches them (the officer's list), oldest first; a purchase made through it is listed at once. */
+    @Test
+    void aPartnersPurchases_comeFromTheLedgersCache_oldestFirst_aNewOneAtOnce() {
+        start();
+        lab.purchase("res_2", 3, 702, "2030-01-01 00:00:00");                                  // another partner's purchase: not listed
+
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).extracting(LedgerPort.Purchase::id).containsExactly(1L, 2L);
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).extracting(LedgerPort.Purchase::expires)
+            .containsExactly(LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2030, 1, 1, 0, 0));
+
+        LedgerPort.Purchased bought = admin.purchase("btcl", "res_2", CLIENT, offer(30), "pay-2");
+
+        assertThat(admin.purchases("btcl", "res_2", CLIENT)).last().satisfies(p -> {
+            assertThat(p.id()).isEqualTo(bought.purchaseId());
+            assertThat(p.packageId()).isEqualTo(7L);
+            assertThat(p.at()).isEqualTo(now());
+            assertThat(p.expires()).isEqualTo(now().plusDays(30));
+            assertThat(p.price()).isEqualByComparingTo("99.00");
+        });
+    }
+
     @Test
     void anExpiredPurchasesAccount_isSkippedByTheOrder_theExpiryFromTheLedger() {
         start();

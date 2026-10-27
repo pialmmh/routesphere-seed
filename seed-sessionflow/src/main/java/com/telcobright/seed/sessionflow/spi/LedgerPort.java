@@ -147,6 +147,12 @@ public interface LedgerPort {
      */
     default Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return Optional.empty(); }
 
+    /**
+     * L3 · The buyer's purchases (its partner, its tier) as THIS ledger holds them, oldest first — read from the ledger's cached purchases
+     * (the officer's purchase list; never prime-context's tree). Empty = this ledger cannot say (it caches no purchases).
+     */
+    default Optional<java.util.List<Purchase>> purchasesOf(LevelAdmission buyer) { return Optional.empty(); }
+
     /** L2b item 4 · What one purchase buys (the package catalog is config: prime-context's): its buckets, each an account. */
     record Offer(long packageId, String name, BigDecimal price, java.time.LocalDateTime at, java.time.LocalDateTime expires, java.util.List<Bucket> buckets) {
         public Offer { buckets = buckets == null ? java.util.List.of() : java.util.List.copyOf(buckets); }
@@ -158,6 +164,9 @@ public interface LedgerPort {
     /** L2b item 4 · Ids from the application's source (seed-idgen's LONG counters): (table, the highest id in use) → a new id above it. */
     @FunctionalInterface
     interface Ids { long next(String table, long highestInUse); }
+
+    /** L3 · One purchase as the ledger holds it: its id, its package, when it was bought, its expiry, its status, its price, its priority. */
+    record Purchase(long id, long packageId, java.time.LocalDateTime at, java.time.LocalDateTime expires, String status, BigDecimal price, int priority) {}
 
     /** What a purchase came to: the purchase's id, its accounts' ids (the offer's order), and whether it was the first answer repeated. */
     record Purchased(long purchaseId, java.util.List<Long> accounts, boolean repeated) {}

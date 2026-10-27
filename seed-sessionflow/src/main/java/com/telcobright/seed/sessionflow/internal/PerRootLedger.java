@@ -66,6 +66,8 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
 
     @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return ledgerOf(buyer).accountsOf(buyer); }
 
+    @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return ledgerOf(buyer).purchasesOf(buyer); }
+
     @Override public long slowestAnswerMs() { return byRoot.values().stream().mapToLong(LedgerPort::slowestAnswerMs).max().orElse(0); }
 
     private LedgerPort ledgerOf(LevelAdmission level) {
