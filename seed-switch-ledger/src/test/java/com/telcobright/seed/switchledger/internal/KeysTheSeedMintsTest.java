@@ -14,6 +14,9 @@ class KeysTheSeedMintsTest {
 
     @Test
     void ofTheFourKnownEntities_onlyTheAccountsKeyIsOneTheDatabaseWouldGenerate() {
-        assertThat(LedgerEntities.keysTheDatabaseWouldGenerate(LedgerEntities.known())).containsExactly(PackageAccount.class);
+        assertThat(LedgerEntities.keysTheDatabaseWouldGenerate(LedgerEntities.known()))
+            .as("C2b: the cached account is the seed's LedgerAccount, its IDENTITY key rtc-domain's PackageAccount's, inherited")
+            .containsExactly(com.telcobright.seed.switchledger.api.LedgerAccount.class);
+        assertThat(PackageAccount.class).isAssignableFrom(com.telcobright.seed.switchledger.api.LedgerAccount.class);
     }
 }

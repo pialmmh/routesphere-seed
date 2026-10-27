@@ -43,12 +43,13 @@ class TelcoRestContractTest {
     private static final byte[] SALT = "c2-lab-salt".getBytes(StandardCharsets.UTF_8);
     private static final String TOKEN = "telcorest-lab-token";
     private static final List<String> PURCHASE_FIELDS = List.of("idPackage", "idPartner", "purchaseDate", "expireDate", "status", "paid",
-        "autoRenewalStatus", "price", "vat", "ait", "priority", "onSelectPriority", "discount");
-    private static final List<String> ACCOUNT_FIELDS = List.of("idpackagePurchase", "name", "uom", "lastAmount", "balanceBefore", "balanceAfter");
+        "autoRenewalStatus", "price", "vat", "ait", "priority", "onSelectPriority", "discount", "paymentRef");
+    /** C2b · every column of the account, TelcoREST's two included: nothing is written beside the ledger by SQL. */
+    private static final List<String> ACCOUNT_FIELDS = List.of("idpackagePurchase", "name", "uom", "lastAmount", "balanceBefore", "balanceAfter", "creditLimit", "isSelected");
 
     private final LedgerLab lab = LedgerLab.open().schema("btcl")
         .account("btcl", 30, 9, "BDT", "50").account("btcl", 31, 8, "BDT", "1000").account("btcl", 32, 9, "OTH_ea", "100").account("btcl", 33, 9, "LEN_A", "5")
-        .chargeReferences().purchaseTables().telcoRestColumns()
+        .chargeReferences().purchaseTables()
         .purchase("btcl", 9, 4, "2030-01-01 00:00:00").purchase("btcl", 8, 5, "2030-01-01 00:00:00")
         .asLedgerDb(List.of("package"), List.of(), 5_000);
     private LedgerPort port;
@@ -169,22 +170,39 @@ class TelcoRestContractTest {
         assertThat((BigDecimal) account.get("balanceAfter")).as("credited once").isEqualByComparingTo("550");
         assertThat(account.get("idpackagePurchase")).as("on the top-up's purchase").isEqualTo(again.keys().get(0));
         LedgerLab.await("the write-behind", () -> lab.dbBalance("btcl", topUp).compareTo(new BigDecimal("550")) == 0);
+        assertThat(telcoRest.row("btcl", "packagepurchase", again.keys().get(0)).orElseThrow()).as("the purchase carries its payment").containsEntry("paymentRef", "pay-77");
     }
 
     @Test
-    void aPostpaidLimitIsTelcoRestsColumn_theLedgerLeavesItAlone() {
+    void aPaymentIsOnePurchase_aSecondUnitForItIsRefused_byTheCheckOrByTheUniqueColumn() {
+        long topUp = (Long) telcoRest.rows("btcl", "packageaccount", Map.of("name", "TopUp", "uom", "BDT")).get(0).get("id");
+        assertThat(topUp(topUp, "pay-88").commit()).isInstanceOf(Committed.class);
+        long records = lab.walRecords();
+
+        RemoteLedger.Unit redriven = telcoRest.unit("gateway-redrive-2").requireNone("btcl", "packagepurchase", Map.of("paymentRef", "pay-88"));
+        redriven.insert("btcl", "packagepurchase", fields(purchase(2, 4, 2, "ACTIVE"), "paymentRef", "pay-88"));
+        RemoteLedger.Unit unchecked = telcoRest.unit("gateway-redrive-3");
+        unchecked.insert("btcl", "packagepurchase", fields(purchase(2, 4, 2, "ACTIVE"), "paymentRef", "pay-88"));
+
+        assertThat(((Refused) redriven.commit()).reason()).as("TelcoREST's AlreadyApplied, from the data itself").contains("(require none)");
+        assertThat(((Refused) unchecked.commit()).reason()).as("never a row the database's unique key would refuse").contains("paymentRef pay-88 is PackagePurchase", "the column is unique");
+        assertThat(lab.walRecords()).isEqualTo(records);
+        assertThat((BigDecimal) telcoRest.row("btcl", "packageaccount", topUp).orElseThrow().get("balanceAfter")).as("credited once").isEqualByComparingTo("550");
+    }
+
+    @Test
+    void aPostpaidLimitGoesThroughTheLedger_andASessionsMoveKeepsIt() {
         RemoteLedger.Unit setup = telcoRest.unit("postpaid:6:setup");
         Key purchase = setup.insert("btcl", "packagepurchase", purchase(9999, 6, 3, "ACTIVE"));
-        Key credit = setup.insert("btcl", "packageaccount", account(purchase, "Postpaid_Credit", "BDT", "5000"));
+        Key credit = setup.insert("btcl", "packageaccount", fields(account(purchase, "Postpaid_Credit", "BDT", "5000"), "creditLimit", new BigDecimal("5000")));
         long account = (Long) ((Committed) setup.commit()).keyOf(credit);
-        LedgerLab.await("the account in the database", () -> lab.dbBalance("btcl", account) != null);
 
-        lab.execute("UPDATE btcl.packageaccount SET creditLimit = 5000 WHERE id_packageaccount = " + account);
-        telcoRest.unit().add("btcl", "packageaccount", account, "balanceAfter", new BigDecimal("-100")).commit();
+        port.charge(level(account), new BigDecimal("100"), "call-6#L0").orElseThrow();
 
-        LedgerLab.await("the ledger's move", () -> lab.dbBalance("btcl", account).compareTo(new BigDecimal("4900")) == 0);
+        LedgerLab.await("the session's move in the database", () -> lab.dbBalance("btcl", account) != null && lab.dbBalance("btcl", account).compareTo(new BigDecimal("4900")) == 0);
         assertThat(lab.dbDecimal("SELECT creditLimit FROM btcl.packageaccount WHERE id_packageaccount = " + account))
-            .as("the ledger writes its own columns only").isEqualByComparingTo("5000");
+            .as("written by the ledger, and every copy of the row keeps it").isEqualByComparingTo("5000");
+        assertThat((BigDecimal) telcoRest.row("btcl", "packageaccount", account).orElseThrow().get("creditLimit")).isEqualByComparingTo("5000");
     }
 
     @Test
@@ -196,11 +214,11 @@ class TelcoRestContractTest {
         RemoteLedger.Unit unit = telcoRest.unit("postpaid:5:600");
         Key purchase = unit.insert("btcl", "packagepurchase", purchase(9999, 5, 3, "ACTIVE"));
         unit.requireEqual("btcl", "packageaccount", 31, "balanceAfter", available)
-            .update("btcl", "packageaccount", 31, fields("idpackagePurchase", purchase, "balanceAfter", newAvailable, "lastAmount", oldLimit.subtract(newLimit)));
+            .update("btcl", "packageaccount", 31, fields("idpackagePurchase", purchase, "balanceAfter", newAvailable, "lastAmount", oldLimit.subtract(newLimit), "creditLimit", newLimit));
 
         assertThat(unit.commit()).as("today CANNOT_DEBIT").isInstanceOf(Committed.class);
         LedgerLab.await("the write-behind", () -> lab.dbBalance("btcl", 31).compareTo(new BigDecimal("600")) == 0);
-        assertThat(lab.dbDecimal("SELECT creditLimit FROM btcl.packageaccount WHERE id_packageaccount = 31")).as("TelcoREST's column, untouched").isEqualByComparingTo("1000");
+        assertThat(lab.dbDecimal("SELECT creditLimit FROM btcl.packageaccount WHERE id_packageaccount = 31")).as("the limit with the balance, ONE record").isEqualByComparingTo("600");
     }
 
     // ── the door ────────────────────────────────────────────────────────────
@@ -249,7 +267,7 @@ class TelcoRestContractTest {
 
     private RemoteLedger.Unit topUp(long account, String paymentRef) {
         RemoteLedger.Unit unit = telcoRest.unit("topup:" + paymentRef);
-        Key purchase = unit.insert("btcl", "packagepurchase", purchase(2, 4, 2, "ACTIVE"));
+        Key purchase = unit.insert("btcl", "packagepurchase", fields(purchase(2, 4, 2, "ACTIVE"), "paymentRef", paymentRef));
         return unit.update("btcl", "packageaccount", account, Map.of("idpackagePurchase", purchase))
             .add("btcl", "packageaccount", account, "balanceAfter", new BigDecimal("500"));
     }

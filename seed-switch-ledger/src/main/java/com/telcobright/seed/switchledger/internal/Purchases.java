@@ -175,14 +175,7 @@ final class Purchases {
     }
 
     private static PackageAccount withItsExpiry(PackageAccount live, LedgerPurchase purchase) {
-        PackageAccount copy = new PackageAccount();
-        copy.setId(live.getId());
-        copy.setIdpackagePurchase(live.getIdpackagePurchase());
-        copy.setName(live.getName());
-        copy.setUom(live.getUom());
-        copy.setBalanceBefore(live.getBalanceBefore());
-        copy.setBalanceAfter(live.getBalanceAfter());
-        copy.setLastAmount(live.getLastAmount());
+        PackageAccount copy = RowFields.copyOf(live);                                   // C2b: every field, its class kept
         copy.setExpireDate(purchase == null ? null : purchase.getExpireDate());
         return copy;
     }

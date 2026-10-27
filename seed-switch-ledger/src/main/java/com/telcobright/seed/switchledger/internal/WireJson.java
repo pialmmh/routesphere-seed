@@ -18,11 +18,13 @@ import java.util.Map;
  */
 public final class WireJson {
 
-    /** Exact numbers in (a JSON decimal is read as BigDecimal, its scale kept) and out (never "1E+3"; 50.000000 stays 50.000000). */
+    /**
+     * Exact numbers in (a JSON decimal is read as BigDecimal, never a double) and out (never "1E+3"). A number's scale on the way in does not
+     * matter: every number is written at its column's scale ({@code RowRules.scaleToColumns}) and compared by value.
+     */
     public static final JsonMapper JSON = JsonMapper.builder()
         .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
         .enable(StreamWriteFeature.WRITE_BIGDECIMAL_AS_PLAIN)
-        .nodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true))
         .build();
 
     private WireJson() {}

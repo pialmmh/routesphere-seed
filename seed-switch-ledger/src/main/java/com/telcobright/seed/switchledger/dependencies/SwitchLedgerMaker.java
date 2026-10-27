@@ -2,7 +2,6 @@ package com.telcobright.seed.switchledger.dependencies;
 
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.memledger.config.ReplicationConfig;
-import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootResources;
@@ -70,7 +69,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
 
     /** Before L2b's ledger DB: the two tables (+ the charges' references when said), under the root's {@code <dir>/ledger}. */
     private static void registerTheTwo(com.telcobright.memledger.api.MemLedgerBuilder builder, RootResources root) {
-        builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
+        builder.registerEntity(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
             .walPath(root.dir().resolve("ledger").resolve("wal").toString()).queuePath(root.dir().resolve("ledger").resolve("queue").toString());
         if (keepsChargeReferences(root)) builder.registerEntity(Books.CHARGE, ChargeReference.class);
     }

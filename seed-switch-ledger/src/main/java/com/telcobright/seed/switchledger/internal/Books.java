@@ -116,15 +116,11 @@ public final class Books {
         return moveBalance(unit, dbName, live, balanceOf(live).subtract(amount), amount.negate());
     }
 
-    private static PackageAccount copyOf(PackageAccount source) {
-        PackageAccount copy = new PackageAccount();
-        copy.setId(source.getId());
-        copy.setIdpackagePurchase(source.getIdpackagePurchase());
-        copy.setName(source.getName());
-        copy.setUom(source.getUom());
-        copy.setExpireDate(source.getExpireDate());
-        return copy;
-    }
+    /**
+     * C2b · The row as it is — its class and EVERY field (a {@link com.telcobright.seed.switchledger.api.LedgerAccount}'s limit too): the
+     * move then sets the balances. A copy of a few fields would write the rest empty — TelcoREST's {@code creditLimit} gone at every call.
+     */
+    private static PackageAccount copyOf(PackageAccount source) { return RowFields.copyOf(source); }
 
     // ── the reserve row ─────────────────────────────────────────────────────
 
@@ -187,7 +183,7 @@ public final class Books {
 
     /** A new account of a purchase with its opening balance (balanceBefore 0, lastAmount = the opening), staged as an INSERT. */
     public PackageAccount openAccount(UnitOfWork unit, String dbName, long id, long purchaseId, String name, String uom, BigDecimal opening) {
-        PackageAccount account = new PackageAccount();
+        PackageAccount account = new com.telcobright.seed.switchledger.api.LedgerAccount();
         account.setId(id);
         account.setIdpackagePurchase(purchaseId);
         account.setName(name);

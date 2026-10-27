@@ -119,7 +119,7 @@ class UnitOfWorkTest {
     }
 
     private static PackageAccount account(long id, String balance) {
-        PackageAccount a = new PackageAccount();
+        PackageAccount a = new com.telcobright.seed.switchledger.api.LedgerAccount();   // C2b: the class the ledger caches (mem-ledger refuses another)
         a.setId(id);
         a.setIdpackagePurchase(10L);
         a.setName("BDT-" + id);

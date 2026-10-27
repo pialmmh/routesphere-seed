@@ -1,7 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
 import com.telcobright.core.cache.CacheableEntity;
-import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.api.ChargeReference;
 import com.telcobright.seed.switchledger.api.LedgerPurchase;
@@ -30,8 +29,8 @@ public final class LedgerEntities {
      * write-behind — and a batch the database refuses stops the WAL consumer (mem-ledger: after 10 failures in a row) — so the cached
      * ledger refuses it first ({@link RowRules}). The key is not listed: it is minted or named before.
      */
-    public record Shape(Set<String> required, Map<String, Integer> textLimits, Map<String, Digits> digits) {
-        static final Shape NONE = new Shape(Set.of(), Map.of(), Map.of());
+    public record Shape(Set<String> required, Map<String, Integer> textLimits, Map<String, Digits> digits, Set<String> unique) {
+        static final Shape NONE = new Shape(Set.of(), Map.of(), Map.of(), Set.of());
     }
 
     /** A number column's digits: {@code precision} in all, {@code scale} after the point. */
@@ -40,24 +39,33 @@ public final class LedgerEntities {
     private static final Digits BALANCE = new Digits(20, 6), PRICE = new Digits(10, 2);
 
     private static final List<Known> KNOWN = List.of(
-        new Known(Books.ACCOUNT, PackageAccount.class, "packageaccount", new Shape(
+        new Known(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class, "packageaccount", new Shape(
             Set.of("idpackagePurchase", "lastAmount", "balanceBefore", "balanceAfter", "uom"),
             Map.of("name", 255, "uom", 45),
-            Map.of("lastAmount", BALANCE, "balanceBefore", BALANCE, "balanceAfter", BALANCE))),
+            Map.of("lastAmount", BALANCE, "balanceBefore", BALANCE, "balanceAfter", BALANCE, "creditLimit", BALANCE),
+            Set.of())),
         new Known(Books.RESERVE, PackageAccountReserve.class, "packageaccountreserve", Shape.NONE),
         new Known(Books.CHARGE, ChargeReference.class, "packageaccountcharge", Shape.NONE),
         new Known(Books.PURCHASE, LedgerPurchase.class, "packagepurchase", new Shape(
             Set.of("idPackage", "idPartner", "purchaseDate", "expireDate", "status", "paid", "autoRenewalStatus", "price", "vat", "ait", "priority", "discount"),
-            Map.of("status", 50),
-            Map.of("price", PRICE, "vat", PRICE, "ait", PRICE))));
+            Map.of("status", 50, "paymentRef", 64),
+            Map.of("price", PRICE, "vat", PRICE, "ait", PRICE),
+            Set.of("paymentRef"))));
 
     private LedgerEntities() {}
 
     /** Every known entity, in its order. */
     public static List<Known> known() { return KNOWN; }
 
-    /** C1 · The known entity of this class; empty = the ledger knows no such entity. */
-    public static java.util.Optional<Known> ofType(Class<?> type) { return KNOWN.stream().filter(k -> k.type().equals(type)).findFirst(); }
+    /**
+     * C1 · The known entity of this class; empty = the ledger knows no such entity. C2b: a persistent parent of the cached class names it
+     * too — {@code PackageAccount} is the cached {@code LedgerAccount}'s parent, and the rows the ledger answers are of the cached class.
+     */
+    public static java.util.Optional<Known> ofType(Class<?> type) {
+        java.util.Optional<Known> exact = KNOWN.stream().filter(k -> k.type().equals(type)).findFirst();
+        if (exact.isPresent() || type == null || !type.isAnnotationPresent(jakarta.persistence.Entity.class)) return exact;
+        return KNOWN.stream().filter(k -> type.isAssignableFrom(k.type())).findFirst();
+    }
 
     /** C2 · The known entity of this table (any case); empty = none. */
     public static java.util.Optional<Known> ofTable(String table) { return KNOWN.stream().filter(k -> k.table().equalsIgnoreCase(table == null ? "" : table.trim())).findFirst(); }
@@ -98,9 +106,12 @@ public final class LedgerEntities {
         return generated;
     }
 
+    /** The key, declared by the class or a parent it extends (C2b: {@code LedgerAccount}'s key is rtc-domain's {@code PackageAccount}'s). */
     private static boolean hasAGeneratedKey(Class<?> type) {
-        for (java.lang.reflect.Field f : type.getDeclaredFields()) {
-            if (f.isAnnotationPresent(jakarta.persistence.Id.class) && f.isAnnotationPresent(jakarta.persistence.GeneratedValue.class)) return true;
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (f.isAnnotationPresent(jakarta.persistence.Id.class) && f.isAnnotationPresent(jakarta.persistence.GeneratedValue.class)) return true;
+            }
         }
         return false;
     }

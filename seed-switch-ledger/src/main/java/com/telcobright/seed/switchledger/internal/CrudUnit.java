@@ -58,7 +58,7 @@ final class CrudUnit implements Unit {
         if (row == null) throw new IllegalArgumentException("an insert names its row");
         Known known = crud.writable(row.getClass());
         crud.requireTier(tier);
-        Object copy = RowFields.copyOf(row);
+        Object copy = RowFields.copyAs(known.type(), row);                               // C2b: the class the ledger caches (all its columns)
         if (RowFields.keyOf(copy) == null) RowFields.set(copy, RowFields.keyField(copy.getClass()), mint(known));
         Object key = RowFields.keyOf(copy);
         name(new CrudMoves.Insert(tier, known.name(), key, copy));

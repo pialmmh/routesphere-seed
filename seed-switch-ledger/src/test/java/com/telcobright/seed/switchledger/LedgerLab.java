@@ -78,7 +78,8 @@ public final class LedgerLab implements AutoCloseable {
         schemas.add(name);
         sql("CREATE SCHEMA IF NOT EXISTS " + name);
         sql("CREATE TABLE " + name + ".packageaccount (id_packageaccount BIGINT NOT NULL PRIMARY KEY, id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255),"
-            + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL)");
+            + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL,"
+            + " creditLimit DECIMAL(20,6), isSelected BOOLEAN DEFAULT FALSE NOT NULL)");
         sql("CREATE TABLE " + name + ".packageaccountreserve (channel_call_uuid VARCHAR(255) NOT NULL PRIMARY KEY, id_packageaccount BIGINT NOT NULL,"
             + " id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255) NOT NULL, reserveUnit DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL, time VARCHAR(64))");
         for (String ddl : moreTables) sql(String.format(ddl, name));
@@ -118,7 +119,8 @@ public final class LedgerLab implements AutoCloseable {
     public LedgerLab purchaseTables() {
         String ddl = "CREATE TABLE %s.packagepurchase (id BIGINT NOT NULL PRIMARY KEY, id_package BIGINT NOT NULL, id_Partner BIGINT NOT NULL,"
             + " purchaseDate TIMESTAMP NOT NULL, expireDate TIMESTAMP NOT NULL, status VARCHAR(50) NOT NULL, paid BIGINT NOT NULL, autoRenewalStatus BOOLEAN NOT NULL,"
-            + " price DECIMAL(10,2) NOT NULL, vat DECIMAL(10,2) NOT NULL, AIT DECIMAL(10,2) NOT NULL, priority INT NOT NULL, onSelectPriority INT, discount INT NOT NULL)";
+            + " price DECIMAL(10,2) NOT NULL, vat DECIMAL(10,2) NOT NULL, AIT DECIMAL(10,2) NOT NULL, priority INT NOT NULL, onSelectPriority INT, discount INT NOT NULL,"
+            + " paymentRef VARCHAR(64) UNIQUE)";
         moreTables.add(ddl);
         for (String schema : schemas) sql(String.format(ddl, schema));
         return this;
@@ -136,19 +138,6 @@ public final class LedgerLab implements AutoCloseable {
         sql("INSERT INTO " + schema + ".packagepurchase (id, id_package, id_Partner, purchaseDate, expireDate, status, paid, autoRenewalStatus, price, vat, AIT, priority, onSelectPriority, discount)"
             + " VALUES (" + id + ", 1, " + partnerId + ", TIMESTAMP '" + bought + "', TIMESTAMP '" + expires + "', '" + status + "', 1, FALSE, 0, 0, 0, 1, "
             + (onSelectPriority == null ? "NULL" : onSelectPriority) + ", 0)");
-        return this;
-    }
-
-    /**
-     * C2 · TelcoREST's columns beside the ledger's (RTC-Manager e20ea766): {@code packageaccount.creditLimit} and {@code isSelected},
-     * {@code packagepurchase.paymentRef} (unique) — in every schema made so far. The ledger's rows do not map them.
-     */
-    public LedgerLab telcoRestColumns() {
-        for (String schema : schemas) {
-            sql("ALTER TABLE " + schema + ".packageaccount ADD COLUMN creditLimit DECIMAL(20,6)");
-            sql("ALTER TABLE " + schema + ".packageaccount ADD COLUMN isSelected BOOLEAN DEFAULT FALSE NOT NULL");
-            sql("ALTER TABLE " + schema + ".packagepurchase ADD COLUMN paymentRef VARCHAR(100) UNIQUE");
-        }
         return this;
     }
 
@@ -182,7 +171,7 @@ public final class LedgerLab implements AutoCloseable {
         if (ledgerDb != null) {
             com.telcobright.seed.switchledger.api.LedgerDb.register(builder, ledgerDb);
         } else {
-            builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
+            builder.registerEntity(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
                 .walPath(dir.resolve("wal").toString()).queuePath(dir.resolve("queue").toString());
             more.forEach(builder::registerEntity);
         }

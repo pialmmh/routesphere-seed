@@ -40,6 +40,8 @@ final class RowRules {
         String what = row.entity() + " " + row.id() + " of " + row.tier();
         String outOfShape = refusalOfShape(known.shape(), row.image(), what);
         if (outOfShape != null) return outOfShape;
+        String taken = refusalOfATakenValue(work, known, row, what);
+        if (taken != null) return taken;
         return Books.ACCOUNT.equals(row.entity()) && books.keepsPurchases() ? refusalOfItsPurchase(work, books, row, what) : null;
     }
 
@@ -77,6 +79,20 @@ final class RowRules {
                 }
             });
         }
+    }
+
+    /** C2b · A unique column (a purchase's {@code paymentRef}): no other row of the tier, as the unit leaves them, holds the same value. */
+    private static String refusalOfATakenValue(UnitOfWork work, Known known, UnitOfWork.Row row, String what) {
+        for (String field : known.shape().unique()) {
+            Object value = RowFields.get(row.image(), field);
+            if (value == null) continue;
+            for (Object other : work.rowsAsLeft(row.tier(), row.entity())) {
+                if (!String.valueOf(RowFields.keyOf(other)).equals(String.valueOf(row.id())) && value.equals(RowFields.get(other, field))) {
+                    return what + ": " + field + " " + value + " is " + row.entity() + " " + RowFields.keyOf(other) + "'s already — the column is unique";
+                }
+            }
+        }
+        return null;
     }
 
     /** At most {@code scale} decimals, at most {@code precision − scale} digits before the point. */

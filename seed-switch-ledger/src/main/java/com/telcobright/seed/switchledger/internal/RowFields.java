@@ -34,6 +34,19 @@ final class RowFields {
         return copy;
     }
 
+    /** C2b · The row as an instance of {@code type} — a class that extends the row's (a {@code PackageAccount} as the cached {@code LedgerAccount}). */
+    static <T> T copyAs(Class<T> type, Object row) {
+        if (type.isInstance(row)) return type.cast(copyOf(row));
+        if (!row.getClass().isAssignableFrom(type)) throw new IllegalArgumentException("a " + row.getClass().getSimpleName() + " is no " + type.getSimpleName());
+        T copy = newInstance(type);
+        try {
+            for (Field f : fieldsOf(row.getClass()).values()) f.set(copy, f.get(row));
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+        return copy;
+    }
+
     /** C2 · A new row of {@code type}, the named fields set (each value as its field's type); the rest as the type's constructor leaves them. */
     static <T> T newRow(Class<T> type, Map<String, ?> fields) {
         T row = newInstance(type);
