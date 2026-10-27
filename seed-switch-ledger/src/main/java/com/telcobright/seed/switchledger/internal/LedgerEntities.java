@@ -40,7 +40,7 @@ public final class LedgerEntities {
 
     private static final List<Known> KNOWN = List.of(
         new Known(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class, "packageaccount", new Shape(
-            Set.of("idpackagePurchase", "lastAmount", "balanceBefore", "balanceAfter", "uom"),
+            Set.of("idpackagePurchase", "name", "lastAmount", "balanceBefore", "balanceAfter", "uom"),   // name: NOT NULL in RTC-Manager's MySQL template
             Map.of("name", 255, "uom", 45),
             Map.of("lastAmount", BALANCE, "balanceBefore", BALANCE, "balanceAfter", BALANCE, "creditLimit", BALANCE),
             Set.of())),

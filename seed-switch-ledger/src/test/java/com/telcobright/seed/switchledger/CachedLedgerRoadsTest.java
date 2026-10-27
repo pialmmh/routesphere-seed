@@ -116,6 +116,22 @@ class CachedLedgerRoadsTest {
     }
 
     @Test
+    void onlyWhatTheUnitWritesIsChecked_anOldRowWithNoNameStillTakesAMove_aNewRowWithoutOneIsRefused() {
+        lab.execute("UPDATE btcl.packageaccount SET name = NULL WHERE id_packageaccount = 40");     // as an old PostgreSQL row may be
+        lab.restart();                                                                              // the cache loads it so
+        CachedLedger ledger = SwitchLedgers.over(lab.ledger(), new SwitchLedgerSettings(60, 500, 300), Clock.systemUTC(),
+            Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)).port().cachedLedgerOf("btcl").orElseThrow().withIds((table, highest) -> highest + 1);
+        PackageAccount nameless = CachedLedgerTest.accountOf(9, "BDT", "1");
+        nameless.setName(null);
+        CachedLedger.Unit insert = ledger.unit();
+        insert.insert("btcl", nameless);
+
+        assertThat(((Refused) insert.commit()).reason()).as("a new row: its name may not be empty (RTC-Manager's MySQL template)").contains("name is empty, its column may not be");
+        assertThat(ledger.unit().add("btcl", PackageAccount.class, 40L, "balanceAfter", BigDecimal.ONE).commit())
+            .as("the old row's empty name is the database's own: its balance still moves").isInstanceOf(Committed.class);
+    }
+
+    @Test
     void aPurchaseUnderItsAccounts_anAccountUnderASessionsReserve_areNotDeleted() {
         CachedLedger.Outcome purchase = crud.unit().delete("btcl", LedgerPurchase.class, 9L).commit();
         CachedLedger.Outcome account = crud.unit().delete("btcl", PackageAccount.class, 30L).commit();

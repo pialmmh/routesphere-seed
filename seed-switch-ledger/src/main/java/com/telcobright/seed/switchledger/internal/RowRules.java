@@ -38,16 +38,22 @@ final class RowRules {
         Known known = LedgerEntities.ofName(row.entity()).orElse(null);
         if (known == null) return null;
         String what = row.entity() + " " + row.id() + " of " + row.tier();
-        String outOfShape = refusalOfShape(known.shape(), row.image(), what);
+        Object before = row.op() == UnitOfWork.Op.INSERT ? null : books.ledger().getEntity(row.tier(), row.entity(), row.id());
+        String outOfShape = refusalOfShape(known.shape(), row.image(), before, what);
         if (outOfShape != null) return outOfShape;
         String taken = refusalOfATakenValue(work, known, row, what);
         if (taken != null) return taken;
         return Books.ACCOUNT.equals(row.entity()) && books.keepsPurchases() ? refusalOfItsPurchase(work, books, row, what) : null;
     }
 
-    /** Field by field, in the class's order: empty where it may not be, too long, too many digits. */
-    private static String refusalOfShape(Shape shape, Object image, String what) {
+    /**
+     * Field by field, in the class's order: empty where it may not be, too long, too many digits — only what the unit WRITES new: every
+     * field of a new row, the changed fields of a row the database already holds (an old value it holds, the database took: an old row
+     * on PostgreSQL may have no name, and still takes a move of its balance).
+     */
+    private static String refusalOfShape(Shape shape, Object image, Object before, String what) {
         for (Map.Entry<String, Object> field : RowFields.valuesOf(image).entrySet()) {
+            if (before != null && Objects.equals(field.getValue(), RowFields.get(before, field.getKey()))) continue;
             String refusal = refusalOfField(shape, field.getKey(), field.getValue());
             if (refusal != null) return what + ": " + refusal;
         }
