@@ -35,7 +35,7 @@ final class FlowAnswers<C extends RoutesphereContext> implements LaneAnswers<C> 
     @Override public SettleOutcome settleOutcome(C ctx) { return flow.settleOutcome(ctx); }
     @Override public RefundPolicy refundPolicy(C ctx) { return flow.refundPolicy(ctx); }
     @Override public double billedDuration(C ctx, long nowMs) { return flow.billedDuration(ctx, nowMs); }
-    @Override public TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome) { return flow.finalizeTier(ctx, tier, outcome); }
+    @Override public TierSettlement finalizeBalance(C ctx, LevelAdmission tier, Outcome outcome) { return flow.finalizeBalance(ctx, tier, outcome); }
     @Override public String lostRecordsOf(C ctx) { return SessionCdr.of(flow).lostRecordsOf(ctx); }
     @Override public String rootDbOf(C ctx) { return AdmissionChain.rootDbOf(ctx); }
     @Override public <T> T step(C ctx, String stepName, Supplier<T> body) { return flow.step(ctx, stepName, body); }

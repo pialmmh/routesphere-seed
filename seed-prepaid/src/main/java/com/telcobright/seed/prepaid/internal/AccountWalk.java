@@ -38,9 +38,9 @@ final class AccountWalk<C extends RoutesphereContext> {
 
     /**
      * L2b item 2 · A dry run rates the first account at once (nothing held, as before); otherwise the tier is PLANNED — its accounts to lock
-     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.holdTheWalk}).
+     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.reserveBalance}).
      */
-    Verdict admit(C ctx, Tier tier, Partner partner) {
+    Verdict planReserve(C ctx, Tier tier, Partner partner) {
         PayingTier paying = new PayingTier(tier, partner);
         List<PackageAccount> accounts = accountsToTry(ctx, paying);
         String reference = TierReserve.referenceOf(referenceOf(ctx), ctx.candidatesTried, tier.levelIndex());

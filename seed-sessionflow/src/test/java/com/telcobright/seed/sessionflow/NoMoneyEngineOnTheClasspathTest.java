@@ -147,12 +147,12 @@ class NoMoneyEngineOnTheClasspathTest {
 
     /** An engine that moves nothing (the kit's own maker answers it). */
     private static final class NothingMoves implements MoneyEngine<Ctx> {
-        @Override public Verdict admit(Ctx ctx, Tier tier, Partner partner) { return Verdict.ok(); }
+        @Override public Verdict planReserve(Ctx ctx, Tier tier, Partner partner) { return Verdict.ok(); }
         @Override public void release(Ctx ctx, List<LevelAdmission> held, String why) { }
-        @Override public double renewWindow(Ctx ctx) { return 0; }
+        @Override public double reserveNextWindow(Ctx ctx) { return 0; }
         @Override public double renewTier(Ctx ctx, LevelAdmission tier) { return 0; }
         @Override public String hold(Ctx ctx, LevelAdmission tier, BigDecimal amount, String reference) { return null; }
-        @Override public void finish(Ctx ctx, Outcome outcome, boolean answered) { }
+        @Override public void finalizeBalance(Ctx ctx, Outcome outcome, boolean answered) { }
         @Override public TierSettlement settleTier(Ctx ctx, LevelAdmission tier, Outcome outcome) { return TierSettlement.nothing(tier.getLevelIndex()); }
         @Override public int[] closeAsReserved(SessionJournal.Leftover left) { return new int[] {0, 0}; }
         @Override public boolean giveBackLeftover(String sessionId, SessionJournal.Held held) { return true; }

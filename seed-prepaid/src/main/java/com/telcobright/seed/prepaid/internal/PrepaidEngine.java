@@ -20,7 +20,7 @@ import java.util.List;
  * The ONE money engine of the seed (L2a, design {@code prepaid-engine-design.md} §11): the base's money steps MOVED here as they were —
  * the tier's hold at admission and its give-back ({@link TierReserve}, from the base's {@code AdmissionChain}), the window renewal under the
  * session's money lock (the base's {@code renewReserves} loop) with the account rotation ({@link SpanRotation}), the settlement in both
- * directions and the release ({@link SessionSettlement}, with the base's default {@code finalizeTier}), the money of the sessions a stopped
+ * directions and the release ({@link SessionSettlement}, with the base's default {@code finalizeBalance}), the money of the sessions a stopped
  * process left in the air ({@link LeftoverMoney}, from the base's {@code SessionCdr}) — and, for a lane with a Prepaid of its own (2b),
  * the Prepaid's rules over those same steps: the account walk ({@link AccountWalk}), the window with its remainder
  * ({@link WindowedRenewal}), the end by the lane's {@code Final} ({@link FinalMoney}), the hooks. Each verb is ONE call the base makes; the
@@ -46,9 +46,9 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
     public PrepaidRules<C> rules() { return rules; }
 
     @Override
-    public Verdict admit(C ctx, Tier tier, Partner partner) {
+    public Verdict planReserve(C ctx, Tier tier, Partner partner) {
         if (rules == null || flow.isFree(ctx, ctx.candidateBeingAdmitted())) return TierReserve.of(flow).rateAndReserve(ctx, tier, partner);
-        return new AccountWalk<>(flow, rules).admit(ctx, tier, partner);
+        return new AccountWalk<>(flow, rules).planReserve(ctx, tier, partner);
     }
 
     /**
@@ -56,7 +56,7 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
      * global order): all tiers or none — a tier that cannot pay refuses the candidate with nothing held anywhere. Null = held.
      */
     @Override
-    public String holdTheWalk(C ctx) {
+    public String reserveBalance(C ctx) {
         WalkPlan plan = WalkPlan.takeFrom(ctx);
         if (plan == null) return null;
         TierReserve<C> tiers = TierReserve.of(flow);
@@ -100,7 +100,7 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
 
     /** L2b item 2 · Every tier renews in ONE unit (the narrowest tier decides, as the live call); then the lane hears of an end. */
     @Override
-    public double renewWindow(C ctx) {
+    public double reserveNextWindow(C ctx) {
         double period = flow.kit().settings().reservePeriodSec();
         double narrowest = narrowestInOneUnit(ctx, period);
         if (rules != null && narrowest < period) flow.safely(ctx, "onExhausted", () -> { rules.hooks().onExhausted(ctx); return null; }, null);
@@ -142,10 +142,10 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
 
     /**
      * The final state. The lane's answers: answered → settle, else release (moved). A Prepaid of its own: its {@code finalize} decides every
-     * tier, answered or not (through the lane's {@code finalizeTier}, whose default is {@link #settleTier}); then {@code onFinished}, once.
+     * tier, answered or not (through the lane's {@code finalizeBalance}, whose default is {@link #settleTier}); then {@code onFinished}, once.
      */
     @Override
-    public void finish(C ctx, Outcome outcome, boolean answered) {
+    public void finalizeBalance(C ctx, Outcome outcome, boolean answered) {
         boolean open = !ctx.reservesClosed;
         settleInOneUnit(ctx, () -> {
             if (rules != null || answered) SessionSettlement.of(flow).settle(ctx, outcome);

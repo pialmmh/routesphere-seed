@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * L2b item 2 · The ONE unit of the ledger an engine verb runs in — every tier's hold at admission ({@code holdTheWalk}), every tier's
- * renewal ({@code renewWindow}), every tier's settlement ({@code finish}), a refused candidate's give-back ({@code release}): opened on the
+ * L2b item 2 · The ONE unit of the ledger an engine verb runs in — every tier's hold at admission ({@code reserveBalance}), every tier's
+ * renewal ({@code reserveNextWindow}), every tier's settlement ({@code finish}), a refused candidate's give-back ({@code release}): opened on the
  * session's thread, its accounts locked once in the global order, every move the moved steps ask staged in it ({@link #moves}), written by
  * {@link #commit} as ONE (all tiers or none), and only THEN what the moves recorded on the session (a tier's reserve facts, the journal of
  * the sessions in the air, the walk) is applied ({@link #afterTheRecord}). Closed without its commit: nothing written, nothing recorded.

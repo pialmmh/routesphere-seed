@@ -66,7 +66,7 @@ public interface LaneAnswers<C extends RoutesphereContext> {
     double billedDuration(C ctx, long nowMs);
 
     /** The final state · the lane's finalize of one tier (its default is the engine's {@code settleTier}). */
-    TierSettlement finalizeTier(C ctx, LevelAdmission tier, Outcome outcome);
+    TierSettlement finalizeBalance(C ctx, LevelAdmission tier, Outcome outcome);
 
     /** The call's records as the next start would publish them if this process died now (the journal of the sessions in the air). */
     String lostRecordsOf(C ctx);
