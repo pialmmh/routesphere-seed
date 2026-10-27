@@ -29,13 +29,13 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L2b item 4 · the money roads over the REAL switch ledger as a ledger DB ("package": accounts, reserves cache-only, references, purchases):
- * a purchase is refused in words while mem-ledger leaves rtc-domain's {@code @GeneratedValue} account id to the database (the seed's part
- * of a purchase — ONE record, ids above today's, a repeat = the first — is {@code PurchasesTest}'s); the partner's accounts and their expiry
- * come from the ledger's purchases (S4), and an expired purchase's account is skipped by the order.
+ * L2c · a purchase makes its accounts — ONE record, ids from the application's source, the database rows under those very ids (the
+ * ledger DB names rtc-domain's {@code @GeneratedValue} account key as minted by the caller); the partner's accounts and their expiry come
+ * from the ledger's purchases (S4), and an expired purchase's account is skipped by the order. The engines' scenario (H2, MySQL,
+ * PostgreSQL: a restart, a hold across it, a repeat) is {@code PurchaseMakesItsAccountsScenario}'s.
  */
 class PurchaseThroughTheLedgerTest {
 
@@ -63,20 +63,23 @@ class PurchaseThroughTheLedgerTest {
     }
 
     /**
-     * The production account (rtc-domain {@code PackageAccount.id} is {@code @GeneratedValue}): mem-ledger would write the account's row with
-     * the DATABASE's id, not the minted one — so the road refuses in words and writes nothing (the seed's part of a purchase, on the cache
-     * and the WAL, is {@code PurchasesTest}'s; the mem-ledger need is in the report).
+     * L2c · The production account (rtc-domain {@code PackageAccount.id} is {@code @GeneratedValue}): the purchase is ONE record, its accounts
+     * carry the ids the application's source minted above every account held, and the database rows carry those very ids.
      */
     @Test
-    void aPurchaseIsRefusedInWords_whileTheDatabaseMakesTheAccountIds_nothingWritten() {
+    void aPurchaseMakesItsAccounts_underTheMintedIds_inTheCacheAndTheDatabase() {
         start();
         long before = lab.walRecords();
 
-        assertThatThrownBy(() -> admin.purchase("btcl", "res_2", CLIENT, offer(30), "pay-1"))
-            .hasMessageContaining("cannot make accounts yet: PackageAccount.id is @GeneratedValue").hasMessageContaining("nothing written");
+        LedgerPort.Purchased bought = admin.purchase("btcl", "res_2", CLIENT, offer(30), "pay-1");
 
-        assertThat(lab.walRecords()).isEqualTo(before);
-        assertThat(admin.accounts("btcl", "res_2", CLIENT)).hasSize(2);
+        assertThat(lab.walRecords()).as("ONE record").isEqualTo(before + 1);
+        assertThat(bought.accounts()).as("two accounts above every account held (21)").hasSize(2).allMatch(id -> id > 21);
+        for (long id : bought.accounts()) LedgerLab.await("account " + id + " in the database", () -> lab.dbBalance("res_2", id) != null);
+        assertThat(lab.dbBalance("res_2", bought.accounts().get(1))).as("the minutes, under the cache's id").isEqualByComparingTo("300");
+        assertThat(lab.dbPurchase("res_2", bought.accounts().get(0))).isEqualByComparingTo(String.valueOf(bought.purchaseId()));
+        assertThat(admin.accounts("btcl", "res_2", CLIENT)).extracting(PrepaidAdmin.Account::id)
+            .containsExactly(11L, 12L, bought.accounts().get(0), bought.accounts().get(1));
     }
 
     /** S4 · the partner's accounts as the LEDGER names them (its cached purchases), each with its purchase's expiry and its live balance. */

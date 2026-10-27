@@ -27,7 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * (S4). A purchase is ONE unit: the purchase row, an account per bucket of the offer with its opening balance, and — where the ledger keeps
  * references ({@code packageaccountcharge}) — its reference row {@code purchase:<reference>} (its {@code id_packageaccount} = the PURCHASE's
  * id), so a repeated reference answers the first purchase even after a restart; without that table, the first answers are remembered in
- * memory (bounded). Ids come from the application's source above what the ledger holds today (one creator per table, S7).
+ * memory (bounded). Ids come from the application's source above what the ledger holds today (one creator per table, S7) — and the
+ * database gets those very ids (L2c): the ledger DB names the account's {@code @GeneratedValue} key as minted by the caller
+ * ({@code LedgerDb.register}, mem-ledger's {@code keysMintedByTheCaller}), so every INSERT writes the id the account carries.
  *
  * <p>The partner → accounts index of a tier is made from the cache on its first ask (off the session's path: the admin roads, the first
  * admission of the tier), kept up to date by the purchases made here, and dropped when new rows were merged (a reload, a tier added) or an
@@ -40,40 +42,17 @@ final class Purchases {
     static final String REFERENCE_UOM = "PURCHASE";
 
     private final Books books;
-    /** The ledger writes the accounts' ids it is given (false while mem-ledger leaves a {@code @GeneratedValue} key to the database). */
-    private final boolean accountIdsWritten;
     private final Map<String, Purchased> answered = new LinkedHashMap<>(1024, 0.75f, false) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, Purchased> eldest) { return size() > KEPT; }
     };
     /** tier → partner → its accounts' ids (made from the cache on the first ask). */
     private final Map<String, Map<Long, List<Long>>> accountsByPartner = new ConcurrentHashMap<>();
 
-    Purchases(Books books) { this(books, !databaseMakesTheAccountIds()); }
-
-    /** A test's: the seed's part of a purchase on the cache and the WAL, as if the ledger wrote the accounts' minted ids. */
-    Purchases(Books books, boolean accountIdsWritten) {
-        this.books = books;
-        this.accountIdsWritten = accountIdsWritten;
-    }
-
-    /**
-     * rtc-domain's {@code PackageAccount.id} is {@code @GeneratedValue(IDENTITY)}: mem-ledger's persister leaves such a key to the database
-     * on every INSERT (the WAL consumer's and the start's replay alike) — an account made here with a minted id would be written with ANOTHER
-     * id (MySQL's auto-increment; on H2 the INSERT fails). Until mem-ledger writes a key the post-image carries (the round's report), the
-     * purchase road refuses in words.
-     */
-    static boolean databaseMakesTheAccountIds() {
-        try {
-            return PackageAccount.class.getDeclaredField("id").isAnnotationPresent(jakarta.persistence.GeneratedValue.class);
-        } catch (NoSuchFieldException e) {
-            return true;
-        }
-    }
+    Purchases(Books books) { this.books = books; }
 
     /** ONE unit: the purchase, its accounts, its reference row; the same reference again → the first answer, nothing written. */
     synchronized Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) {
         refuseWithoutPurchases(buyer);
-        refuseWhileTheDatabaseMakesTheAccountIds(buyer);
         String db = buyer.getDbName(), key = "purchase:" + reference;
         Purchased first = firstAnswer(db, key, reference);
         if (first != null) return new Purchased(first.purchaseId(), first.accounts(), true);
@@ -164,12 +143,6 @@ final class Purchases {
         copy.setLastAmount(live.getLastAmount());
         copy.setExpireDate(purchase == null ? null : purchase.getExpireDate());
         return copy;
-    }
-
-    private void refuseWhileTheDatabaseMakesTheAccountIds(LevelAdmission buyer) {
-        if (accountIdsWritten) return;
-        throw new LedgerFault("the ledger of " + buyer.getDbName() + " cannot make accounts yet: PackageAccount.id is @GeneratedValue, and mem-ledger leaves such a"
-            + " key to the database on INSERT — the row would get another id than the ledger's (a mem-ledger need, named in the L2b report); nothing written");
     }
 
     private void refuseWithoutPurchases(LevelAdmission buyer) {

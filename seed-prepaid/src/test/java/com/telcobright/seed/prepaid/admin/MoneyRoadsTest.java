@@ -34,7 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * L2b item 5 · the money roads as plain Java on {@link PrepaidAdmin} (the application mounts its REST on them; the seed has no server, R0):
  * purchase · credit (+ reparent) · accounts · balance, over the REAL switch ledger as a ledger DB — each works through the ledger, and each
  * refuses in words (a tier not in the root's tree, an account the tier's ledger does not hold, a credit of nothing, a purchase without its
- * id source, its buckets, or while the database makes the account ids).
+ * id source, its buckets, or its reference). (L2c: the refusal "while the database makes the account ids" is gone — the ledger DB names the
+ * account's key as minted by the caller, and a purchase makes its accounts: {@code PurchaseThroughTheLedgerTest}.)
  */
 class MoneyRoadsTest {
 
@@ -80,7 +81,7 @@ class MoneyRoadsTest {
         assertThatThrownBy(() -> withIds.purchase("btcl", "res_9", CLIENT, offer, "p")).hasMessageContaining("the tier 'res_9' is not in the tree of the root 'btcl'");
         assertThatThrownBy(() -> withIds.purchase("btcl", "res_2", CLIENT, new LedgerPort.Offer(7, "none", BigDecimal.ONE, now(), now().plusDays(1), List.of()), "p"))
             .hasMessageContaining("at least one bucket");
-        assertThatThrownBy(() -> withIds.purchase("btcl", "res_2", CLIENT, offer, "p")).hasMessageContaining("cannot make accounts yet");
+        assertThatThrownBy(() -> withIds.purchase("btcl", "res_2", CLIENT, offer, " ")).hasMessageContaining("a purchase carries its reference");
         assertThatThrownBy(() -> admin.credit("btcl", "res_2", 12, BigDecimal.ZERO, "z")).hasMessageContaining("a credit is positive");
         assertThatThrownBy(() -> admin.credit("btcl", "res_2", 999, BigDecimal.ONE, "z")).hasMessageContaining("account 999 is not held in schema res_2");
         assertThatThrownBy(() -> admin.reparent("btcl", "res_2", 999, 1)).hasMessageContaining("account 999 is not held in schema res_2");

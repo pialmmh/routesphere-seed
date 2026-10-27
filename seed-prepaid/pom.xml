@@ -82,6 +82,13 @@
             <version>2.0.13</version>
             <scope>test</scope>
         </dependency>
+        <!-- L2c: the purchase road on the lab PostgreSQL 16 (127.0.0.1:7544) — the driver for the tests only (mem-ledger's is test-scoped) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.7</version>
+            <scope>test</scope>
+        </dependency>
         <!-- the parity suite's MySQL: H2 in MySQL mode, in memory, under the switch ledger's LedgerLab (its test-jar) -->
         <dependency>
             <groupId>com.h2database</groupId>
