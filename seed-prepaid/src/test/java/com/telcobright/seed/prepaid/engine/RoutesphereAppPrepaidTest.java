@@ -42,7 +42,7 @@ class RoutesphereAppPrepaidTest {
 
         assertThat(flow.money()).isInstanceOf(PrepaidEngine.class);
         assertThat(((PrepaidEngine<Ctx>) flow.money()).rules()).as("the lane's own rules").isNotNull();
-        assertThat(((PrepaidEngine<Ctx>) flow.money()).rules().admission()).isEqualTo(Admission.HOLD);
+        assertThat(((PrepaidEngine<Ctx>) flow.money()).rules().admission()).isEqualTo(Admission.CHARGE_NOW);
     }
 
     @Test
@@ -75,8 +75,8 @@ class RoutesphereAppPrepaidTest {
     // ── the scene ───────────────────────────────────────────────────────────
 
     private static Prepaid<Ctx> adPrepaid(RoutesphereKit kit) {
-        return Prepaid.<Ctx>builder("ad").admission(Admission.HOLD).rate((view, tier, account) -> BigDecimal.ONE)
-            .finalize(view -> view.answered() ? Final.nothing() : Final.releaseAll()).build(kit);
+        return Prepaid.<Ctx>builder("ad").admission(Admission.CHARGE_NOW).rate((view, tier, account) -> BigDecimal.ONE)
+            .finalize(view -> view.answered() ? Final.nothing() : Final.refundAll()).build(kit);
     }
 
     private static RoutesphereApp.Builder<Ctx> lane(String name) {

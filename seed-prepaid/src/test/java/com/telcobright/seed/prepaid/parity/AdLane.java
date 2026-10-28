@@ -48,7 +48,7 @@ public final class AdLane {
     static Prepaid<CallContext> prepaid(RoutesphereKit kit) {
         return Prepaid.<CallContext>builder("ad")
             .admission(Admission.CHARGE_NOW)
-            .packageUnits(view -> isVideo(view) ? Set.of(AD_SEC) : Set.of(AD_VIEW))
+            .units(view -> isVideo(view) ? Set.of(AD_SEC) : Set.of(AD_VIEW))
             .rate((view, tier, account) -> switch (account.getUom()) {
                 case AD_VIEW -> BigDecimal.ONE;                                   // one view off the image package
                 case AD_SEC -> BigDecimal.valueOf(VIDEO_SECONDS);                 // the video's seconds off the video package

@@ -3,25 +3,19 @@ package com.telcobright.seed.prepaid.api;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.prepaid.dependencies.PrepaidSettings;
-import com.telcobright.seed.prepaid.internal.LaneHooks;
 import com.telcobright.seed.prepaid.internal.PrepaidEngine;
 import com.telcobright.seed.prepaid.internal.PrepaidRules;
-import com.telcobright.seed.prepaid.spi.PrepaidHooks;
 import com.telcobright.seed.sessionflow.api.LaneAnswers;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
-import com.telcobright.seed.sessionflow.api.TierSettlement;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.spi.MoneyEngine;
 import com.telcobright.seed.sessionflow.spi.MoneyRules;
-import com.telcobright.statewalk.session.Verdict;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -33,22 +27,25 @@ import java.util.function.Function;
  * <pre>
  *   Prepaid&lt;CallContext&gt; call = Prepaid.&lt;CallContext&gt;builder("call")
  *       .admission(Admission.HOLD_WINDOW).window(cfg.window()).firstRenewal(cfg.firstRenewal())     // 60 s, 58 s
- *       .packageUnits(c -&gt; Set.of("TF_min"))                              // the best matching minutes package first, then cash
+ *       .units(c -&gt; intlOut(c) ? Set.of() : Set.of("TF_min"))               // the best matching minutes package first, then cash (abroad: cash only)
  *       .rate((c, tier, account) -&gt; rates.unitRate(c, tier, account))       // a package: 1 minute; cash: the rate plan's price
- *       .chooseAccounts((c, tier, fundable) -&gt; intlOut(c) ? cashOnly(fundable) : fundable)
- *       .refusalCause((c, tier) -&gt; intlOut(c) ? NO_BALANCE_INT_OUT : INSUFFICIENT_BALANCE)
+ *       .noBalanceCause((c, tier) -&gt; intlOut(c) ? NO_BALANCE_INT_OUT : INSUFFICIENT_BALANCE)
  *       .actualCharge((c, tier) -&gt; rates.cost(c, tier))                    // finalizeBalance: holds back, the actual charge taken
- *       .onExhausted(c -&gt; c.killBothLegs())
  *       .build(kit);
  *
  *   Prepaid&lt;AdViewContext&gt; ad = Prepaid.&lt;AdViewContext&gt;builder("ad")
  *       .admission(Admission.CHARGE_NOW)                                      // charged at admission; finalizeBalance does nothing
- *       .packageUnits(v -&gt; v.isVideo() ? Set.of("AD_sec") : Set.of("AD_view"))
+ *       .units(v -&gt; v.isVideo() ? Set.of("AD_sec") : Set.of("AD_view"))
  *       .rate((v, tier, account) -&gt; switch (account.getUom()) { case "AD_view" -&gt; ONE; case "AD_sec" -&gt; v.seconds(); default -&gt; ratePlanPrice(v, tier); })
  *       .build(kit);
  * </pre>
  *
- * The lambdas are the lane's RULES, shared by every session: they keep nothing of a session. A lambda that throws at admission refuses
+ * C3 (design §14.1, the owner 2026-10-28: "the base prepaid lib for the routesphere like realtime applications"): the SPI is the units,
+ * the rate, the actual charge and the no-balance cause; the config is charge now or windowed, the window, the first renewal, the
+ * accounts — nothing more (the lane's own record, a low-balance notice, a gate before a hold, an exhausted renewal's word are the
+ * lane's business on its own flow: a refused renewal already ends the session through the base).
+ *
+ * <p>The lambdas are the lane's RULES, shared by every session: they keep nothing of a session. A lambda that throws at admission refuses
  * the session ({@code INTERNAL_ERROR}, every hold given back); at the end it leaves the tier's money held and the session OWED (one ERROR
  * names the reference). {@code finalize} is asked once per tier at the end (a rule of the context: the same answer each time).
  *
@@ -64,21 +61,9 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     @FunctionalInterface
     public interface ActualCharge<C> { BigDecimal cost(C ctx, LevelAdmission tier); }
 
-    /** (ctx, tier, fundable) → the accounts to try, in order, from the fundable ones (the call abroad: cash only). */
-    @FunctionalInterface
-    public interface AccountChoice<C> { List<PackageAccount> choose(C ctx, PayingTier tier, List<PackageAccount> fundable); }
-
     /** (ctx, tier) → the cause when no account of the tier can pay (the call abroad: {@code NO_BALANCE_INT_OUT}). */
     @FunctionalInterface
-    public interface RefusalCause<C> { String cause(C ctx, PayingTier tier); }
-
-    /** (ctx, tier, account) → ok = hold it; a reject = the session is refused with its cause. */
-    @FunctionalInterface
-    public interface HoldGate<C> { Verdict check(C ctx, PayingTier tier, PackageAccount account); }
-
-    /** (ctx, tier, balance after) → the lane says it its own way (a notifier). */
-    @FunctionalInterface
-    public interface LowBalance<C> { void warn(C ctx, LevelAdmission tier, BigDecimal balanceAfter); }
+    public interface NoBalanceCause<C> { String cause(C ctx, PayingTier tier); }
 
     private final RoutesphereKit kit;
     private final PrepaidRules<C> rules;
@@ -134,15 +119,8 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         private RateRule<C> rate;
         private Function<C, Final> finalize;
         private AccountRule accounts = AccountRule.UNITS_THEN_CASH;
-        private Function<C, Set<String>> packageUnits = ctx -> PackageMatch.CALL_AND_SMS_UNITS;
-        private AccountChoice<C> chooseAccounts;
-        private RefusalCause<C> refusalCause;
-        private PrepaidHooks<C> hooks;
-        private HoldGate<C> beforeHold;
-        private Consumer<C> onExhausted;
-        private BigDecimal lowBalanceAt;
-        private LowBalance<C> onLowBalance;
-        private BiConsumer<C, List<TierSettlement>> onFinished;
+        private Function<C, Set<String>> units = ctx -> PackageMatch.CALL_AND_SMS_UNITS;
+        private NoBalanceCause<C> noBalanceCause;
         private Function<C, String> reference;
         private boolean sealed;
 
@@ -151,20 +129,19 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             this.name = name;
         }
 
-        /** ■ How money is taken at admission: HOLD_WINDOW (the call), HOLD (the ad), CHARGE_NOW (the SMS). */
+        /** ■ How money is taken at admission: HOLD_WINDOW (the call, the WiFi), CHARGE_NOW (the ad view, the SMS). */
         public Builder<C> admission(Admission v) { open(); this.admission = v; return this; }
         /** HOLD_WINDOW ■ · one window (the call: 60 s) — the kit's renewal period must be the same. */
         public Builder<C> window(Duration v) { open(); this.window = v; return this; }
         /** HOLD_WINDOW ■ · the first renewal after the answer (the call: 58 s) — the kit's first renewal must be the same. */
         public Builder<C> firstRenewal(Duration v) { open(); this.firstRenewal = v; return this; }
-        /** The values at once, from the application's config (R0): admission, window, first renewal, accounts, the low-balance mark. */
+        /** The values at once, from the application's config (R0): admission, window, first renewal, accounts. */
         public Builder<C> settings(PrepaidSettings v) {
             open();
             admission = v.admission();
             window = v.window();
             firstRenewal = v.firstRenewal();
             accounts = v.accounts();
-            if (v.lowBalanceAt() != null) lowBalanceAt = v.lowBalanceAt();
             return this;
         }
         /** ■ What ONE unit costs on an account at a tier (null = UNRATED). */
@@ -173,7 +150,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         public Builder<C> finalize(Function<C, Final> v) { open(); this.finalize = v; return this; }
 
         /**
-         * HOLD lanes · {@code finalizeBalance} the call's way (the owner, 2026-10-27: "for calls, we calculate call's actual charge, return
+         * Windowed lanes · {@code finalizeBalance} the call's way (the owner, 2026-10-27: "for calls, we calculate call's actual charge, return
          * balance and apply the final charge"): answered → every tier's holds go back and its {@code actualCharge} is taken; never answered
          * → every hold goes back. The same as {@code finalize(ctx -> ctx.answered() ? Final.charge(...) : Final.releaseAll())}.
          */
@@ -184,26 +161,14 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
 
         /**
          * The package units that may pay THIS request — the best matching active package of them pays first, then cash at the lane's rate
-         * ({@link PackageMatch}; the owner, 2026-10-27). The ad: an image view {@code AD_view}, a video {@code AD_sec}. Default: the call's
-         * minutes and the SMS's messages ({@code TF_min}, {@code OTH_ea}).
+         * ({@link PackageMatch}; the owner, 2026-10-27); none = cash only (the call abroad). The ad: an image view {@code AD_view}, a video
+         * {@code AD_sec}. Default: the call's minutes and the SMS's messages ({@code TF_min}, {@code OTH_ea}).
          */
-        public Builder<C> packageUnits(Function<C, Set<String>> v) { open(); this.packageUnits = Objects.requireNonNull(v, "packageUnits"); return this; }
+        public Builder<C> units(Function<C, Set<String>> v) { open(); this.units = Objects.requireNonNull(v, "units"); return this; }
         /** Which accounts may pay (default UNITS_THEN_CASH: package units before cash, unexpired only). */
         public Builder<C> accounts(AccountRule v) { open(); this.accounts = Objects.requireNonNull(v, "accounts"); return this; }
-        /** The accounts to try, in order, from the rule's fundable ones (the call abroad: cash only). */
-        public Builder<C> chooseAccounts(AccountChoice<C> v) { open(); this.chooseAccounts = v; return this; }
         /** The cause when no account of a tier can pay (default {@code INSUFFICIENT_BALANCE}). */
-        public Builder<C> refusalCause(RefusalCause<C> v) { open(); this.refusalCause = v; return this; }
-        /** A gate before each account is held: ok = hold it; a reject = the session is refused with its cause. */
-        public Builder<C> beforeHold(HoldGate<C> v) { open(); this.beforeHold = v; return this; }
-        /** Windowed lanes · a renewal found the money ending (the base cuts the session; the lane says it its own way). */
-        public Builder<C> onExhausted(Consumer<C> v) { open(); this.onExhausted = v; return this; }
-        /** Under {@code threshold} after a hold or a charge, the lane is told. */
-        public Builder<C> onLowBalance(BigDecimal threshold, LowBalance<C> v) { open(); this.lowBalanceAt = threshold; this.onLowBalance = v; return this; }
-        /** The final state, after every tier was settled: the money per tier (the leaf first) for the lane's own record. */
-        public Builder<C> onFinished(BiConsumer<C, List<TierSettlement>> v) { open(); this.onFinished = v; return this; }
-        /** Every optional callback as one class (a lambda given on this builder wins over its method). */
-        public Builder<C> hooks(PrepaidHooks<C> v) { open(); this.hooks = v; return this; }
+        public Builder<C> noBalanceCause(NoBalanceCause<C> v) { open(); this.noBalanceCause = v; return this; }
         /** Each tier's money is held under {@code <reference>#L<tier>} (default: the session's id). */
         public Builder<C> reference(Function<C, String> v) { open(); this.reference = v; return this; }
 
@@ -213,15 +178,13 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             refuseAMissingPart();
             refuseADisagreeingCadence(kit);
             sealed = true;
-            PrepaidHooks<C> merged = LaneHooks.of(hooks, beforeHold, onExhausted, onLowBalance, onFinished);
             Function<C, Final> end = finalize != null ? finalize : ctx -> Final.nothing();     // a charge-now lane: the charge stands
-            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, chooseAccounts, refusalCause,
-                merged, lowBalanceAt, reference, packageUnits));
+            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units));
         }
 
         private void refuseAMissingPart() {
             List<String> missing = new java.util.ArrayList<>();
-            if (admission == null) missing.add("admission(HOLD_WINDOW | HOLD | CHARGE_NOW) — how is money taken at admission?");
+            if (admission == null) missing.add("admission(HOLD_WINDOW | CHARGE_NOW) — how is money taken at admission?");
             if (rate == null) missing.add("rate((ctx, tier, account) -> amount) — what does one unit cost?");
             if (finalize == null && admission != Admission.CHARGE_NOW) missing.add("finalize(ctx -> Final) or actualCharge((ctx, tier) -> cost) — what does the end do with the money?");
             if (admission == Admission.HOLD_WINDOW && window == null) missing.add("window(duration) — how long is one window (the call: 60 s)?");

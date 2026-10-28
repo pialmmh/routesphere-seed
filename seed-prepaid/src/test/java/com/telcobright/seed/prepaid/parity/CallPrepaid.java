@@ -1,17 +1,16 @@
 package com.telcobright.seed.prepaid.parity;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
-import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.prepaid.api.Admission;
 import com.telcobright.seed.prepaid.api.Final;
+import com.telcobright.seed.prepaid.api.PackageMatch;
 import com.telcobright.seed.prepaid.api.Prepaid;
 import com.telcobright.seed.sessionflow.api.SessionCause;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
-import com.telcobright.seed.switchledger.api.AccountOrder;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.List;
+import java.util.Set;
 
 /**
  * The call's Prepaid — design §10.1's call-service builder, as an application writes it: windowed (the kit's cadence: the live call's
@@ -30,8 +29,8 @@ public final class CallPrepaid {
             .window(Duration.ofSeconds(kit.settings().reservePeriodSec()))
             .firstRenewal(Duration.ofSeconds(kit.settings().firstRenewalSec()))
             .rate((call, tier, account) -> rates.ratePerMinute(call, tier.tier(), tier.partner(), account))
-            .chooseAccounts((call, tier, fundable) -> CallRates.isIntlOut(call) ? cashOnly(fundable) : fundable)
-            .refusalCause((call, tier) -> CallRates.isIntlOut(call) ? CallLane.NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
+            .units(call -> CallRates.isIntlOut(call) ? Set.of() : PackageMatch.CALL_AND_SMS_UNITS)   // C3: abroad, no package pays — cash only
+            .noBalanceCause((call, tier) -> CallRates.isIntlOut(call) ? CallLane.NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
             .actualCharge((call, tier) -> costAtTheEnd(rates, call, tier))          // answered: holds back, the actual charge taken; else every hold back
             .build(kit);
     }
@@ -40,10 +39,5 @@ public final class CallPrepaid {
     static BigDecimal costAtTheEnd(CallRates rates, CallContext call, LevelAdmission tier) {
         BigDecimal rate = rates.rateAtTheEnd(call, tier.getDbName(), tier.getPartnerId(), tier.getUom());
         return rates.cost(call, tier.getUom(), rate);
-    }
-
-    /** {@code ReserveBalanceStep.bdtAccounts} 209–219: abroad, only cash may pay. */
-    static List<PackageAccount> cashOnly(List<PackageAccount> fundable) {
-        return fundable.stream().filter(a -> AccountOrder.BDT.equals(a.getUom())).toList();
     }
 }

@@ -16,21 +16,15 @@ import java.math.BigDecimal;
 final class WindowedRenewal<C extends RoutesphereContext> {
 
     private final LaneAnswers<C> flow;
-    private final PrepaidRules<C> rules;
 
-    WindowedRenewal(LaneAnswers<C> flow, PrepaidRules<C> rules) {
-        this.flow = flow;
-        this.rules = rules;
-    }
+    WindowedRenewal(LaneAnswers<C> flow) { this.flow = flow; }
 
     double renew(C ctx, LevelAdmission tier) {
         double period = flow.kit().settings().reservePeriodSec();
         if (tier.getDebitReference() == null) return period;                     // nothing held at admission (a zero rate): nothing to renew
         BigDecimal unit = tier.getRate() == null ? BigDecimal.ZERO : tier.getRate();
         String reference = tier.getDebitReference() + "#W" + (tier.getReservationCount() + 1);
-        double seconds = renewal(ctx).renewSeconds(tier, unit, reference, unit, period);
-        LowBalanceMark.check(flow, rules, ctx, tier);
-        return seconds;
+        return renewal(ctx).renewSeconds(tier, unit, reference, unit, period);
     }
 
     private WindowRenewal renewal(C ctx) {
