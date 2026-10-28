@@ -26,7 +26,7 @@ import java.util.function.Supplier;
 public final class LedgerCrud implements CachedLedger {
 
     /** The entities a unit may write. */
-    static final Set<String> WRITABLE = Set.of(Books.ACCOUNT, Books.PURCHASE);
+    static final Set<String> WRITABLE = Set.of(Books.ACCOUNT, Books.PURCHASE, Books.PACKAGE, Books.PACKAGE_ITEM);   // C4: the catalog too
 
     private static final Comparator<Object> BY_KEY = (a, b) -> compareKeys(RowFields.keyOf(a), RowFields.keyOf(b));
 

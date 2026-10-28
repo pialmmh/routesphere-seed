@@ -45,7 +45,7 @@ class TelcoRestWritesAsUnitsTest {
     @BeforeEach
     void start() {
         lab.start();
-        port = SwitchLedgers.over(lab.ledger(), SwitchLedgerSettings.standard(), Clock.systemUTC(), Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)).port();
+        port = SwitchLedgers.over(lab.ledger(), SwitchLedgerSettings.standard(), Clock.systemUTC(), LedgerLab.EVERY_ENTITY).port();
         crud = port.cachedLedgerOf("btcl").orElseThrow().withIds((table, highest) -> highest + 1);
     }
 

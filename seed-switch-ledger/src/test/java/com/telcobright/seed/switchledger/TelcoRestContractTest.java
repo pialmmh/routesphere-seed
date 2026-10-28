@@ -61,7 +61,7 @@ class TelcoRestContractTest {
         lab.execute("UPDATE btcl.packageaccount SET name = 'TopUp' WHERE id_packageaccount = 30");
         lab.execute("UPDATE btcl.packageaccount SET name = 'Postpaid_Credit', creditLimit = 1000 WHERE id_packageaccount = 31");
         lab.start();
-        port = SwitchLedgers.over(lab.ledger(), SwitchLedgerSettings.standard(), Clock.systemUTC(), Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)).port();
+        port = SwitchLedgers.over(lab.ledger(), SwitchLedgerSettings.standard(), Clock.systemUTC(), LedgerLab.EVERY_ENTITY).port();
         roads = new RoadsInTheSameJvm(CachedLedgerRoads.over(port)
             .guard(LedgerGuard.ofTokenHash(SALT, LedgerGuard.sha256(SALT, TOKEN)))
             .ids((table, highestInUse) -> highestInUse + 1)
