@@ -100,6 +100,12 @@ public final class LedgerLab implements AutoCloseable {
         return this;
     }
 
+    /** A statement of the scene before the ledger starts or loads a tier: a tier made before a changelog (a column dropped), brought up to it. */
+    public LedgerLab ddl(String statement) {
+        sql(statement);
+        return this;
+    }
+
     /** A THIRD entity registered in the MemLedger (what the switch ledger refuses), with its table in every schema. */
     public LedgerLab alsoRegister(String entityName, Class<? extends CacheableEntity> entityClass, String tableDdlPerSchema) {
         more.put(entityName, entityClass);
