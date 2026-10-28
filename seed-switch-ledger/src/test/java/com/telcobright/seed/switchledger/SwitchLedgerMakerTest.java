@@ -98,6 +98,39 @@ class SwitchLedgerMakerTest {
             .hasMessageContaining("is not env:<NAME>").hasMessageNotContaining(written);
     }
 
+    /**
+     * C2b · a tier that lacks what the ledger writes — a column, a table — refuses the root's ledger at its start, in words naming the tier,
+     * the table, the column and what brings them; nothing opened. mem-ledger's loader would pass over a missing column in silence, and the
+     * write-behind stop at the row's first write (the database refuses it, the consumer stops after 10 tries).
+     */
+    @Test
+    void aTierWithoutWhatTheLedgerWrites_refusesTheRootsLedgerAtItsStart_inWords_nothingOpened() {
+        lab.ddl("ALTER TABLE btcl_res_5.packageaccount DROP COLUMN creditLimit").ddl("DROP TABLE btcl_res_5.packageaccountreserve");
+        long before = walConsumers();
+        assertThatThrownBy(() -> new SwitchLedgerMaker().make(btcl(new RootResources.SwitchDb(lab.url(), "btcl", "sa", null)), context(trees)))
+            .hasMessageContaining("the root 'btcl': its ledger does not start")
+            .hasMessageContaining("btcl_res_5 lacks packageaccount.creditlimit")
+            .hasMessageContaining("btcl_res_5 has no table packageaccountreserve")
+            .hasMessageNotContaining("btcl lacks")
+            .hasMessageContaining("migrate-all");
+        assertThat(walConsumers()).as("no MemLedger opened").isEqualTo(before);
+        assertThat(Files.exists(dir.resolve("ledger"))).as("no WAL, no queue").isFalse();
+    }
+
+    /** C2b · a tier created live without a column the ledger writes is not loaded (said; the root's other tiers go on) — brought up to it, it loads. */
+    @Test
+    void aTierCreatedLive_withoutAColumnTheLedgerWrites_isNotLoaded_untilItHoldsIt() throws Exception {
+        LedgerPort port = new SwitchLedgerMaker().make(btcl(new RootResources.SwitchDb(lab.url(), "btcl", "sa", null)), context(trees));
+        try (AutoCloseable owned = (AutoCloseable) port) {
+            lab.schema("btcl_res_9").ddl("ALTER TABLE btcl_res_9.packageaccount DROP COLUMN isSelected");
+            port.tierAdded("btcl_res_9");
+            assertThat(port.tierLoaded("btcl_res_9")).as("refused: isSelected is missing").isFalse();
+            lab.ddl("ALTER TABLE btcl_res_9.packageaccount ADD COLUMN isSelected BOOLEAN DEFAULT FALSE NOT NULL");
+            port.tierAdded("btcl_res_9");
+            assertThat(port.tierLoaded("btcl_res_9")).as("loaded once it holds every column").isTrue();
+        }
+    }
+
     @Test
     void theClasspathCarriesTheSwitchKind() {
         assertThat(KitMakers.onTheClasspath().ledger("switch")).isInstanceOf(SwitchLedgerMaker.class);

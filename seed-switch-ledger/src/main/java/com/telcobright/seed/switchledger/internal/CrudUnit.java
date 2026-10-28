@@ -22,8 +22,9 @@ import java.util.Map;
 /**
  * C1 · ONE unit of the cached ledger (design §14.4). The moves are named first and run at the commit, in this order: the gate (shared) →
  * every row's lock and the reference's, ONCE, in the one global order — the locks the sessions take → the reference: committed before →
- * its first answer, nothing written → each move staged on the rows as the moves before it left them → the reference row (where the ledger
- * keeps {@code packageaccountcharge}) → ONE record → the locks freed. A refusal writes nothing. A row inserted with no key gets its key
+ * its first answer, nothing written → each move staged on the rows as the moves before it left them → (C2) every row checked against its
+ * table ({@link RowRules}: a row the database would refuse stops the WAL consumer) → the reference row (where the ledger keeps
+ * {@code packageaccountcharge}) → ONE record → the locks freed. A refusal writes nothing. A row inserted with no key gets its key
  * at once (the caller writes it into the rows that point at it), from the application's ids above the highest the ledger holds.
  *
  * <p>Its log lines are DEBUG (the house rule: nothing per event unless debug is on): the caller says its business event — the credit's
@@ -57,7 +58,7 @@ final class CrudUnit implements Unit {
         if (row == null) throw new IllegalArgumentException("an insert names its row");
         Known known = crud.writable(row.getClass());
         crud.requireTier(tier);
-        Object copy = RowFields.copyOf(row);
+        Object copy = RowFields.copyAs(known.type(), row);                               // C2b: the class the ledger caches (all its columns)
         if (RowFields.keyOf(copy) == null) RowFields.set(copy, RowFields.keyField(copy.getClass()), mint(known));
         Object key = RowFields.keyOf(copy);
         name(new CrudMoves.Insert(tier, known.name(), key, copy));
@@ -72,11 +73,12 @@ final class CrudUnit implements Unit {
         Map<String, Object> fields = typedFields(type, set);
         if (fields.isEmpty()) throw new IllegalArgumentException("an update of " + known.name() + " " + id + " names a field to set");
         if (fields.containsKey(RowFields.keyField(type))) throw new IllegalArgumentException("a row's key is not updated: delete the row and insert another");
-        if (setsABalance(known, fields) && !checksTheBalance(tier, known, id)) {
-            throw new IllegalArgumentException("a balance moves by add; to set " + known.name() + " " + id + "'s " + CrudMoves.BALANCE
+        Object key = RowFields.keyAs(type, id);
+        if (setsABalance(known, fields) && !checksTheBalance(tier, known, key)) {
+            throw new IllegalArgumentException("a balance moves by add; to set " + known.name() + " " + key + "'s " + CrudMoves.BALANCE
                 + ", first require it equal to the value it replaces (a session may have moved it since it was read)");
         }
-        return name(new CrudMoves.Update(tier, known.name(), id, fields));
+        return name(new CrudMoves.Update(tier, known.name(), key, fields));
     }
 
     @Override
@@ -86,21 +88,21 @@ final class CrudUnit implements Unit {
         if (!RowFields.isNumber(type, field)) throw new IllegalArgumentException(known.name() + "." + field + " is not a number: only a number is added to");
         if (delta == null) throw new IllegalArgumentException("an add names its amount (either sign)");
         RowFields.as(RowFields.field(type, field).getType(), delta, known.name() + "." + field);
-        return name(new CrudMoves.Add(tier, known.name(), id, field, delta));
+        return name(new CrudMoves.Add(tier, known.name(), RowFields.keyAs(type, id), field, delta));
     }
 
     @Override
     public Unit delete(String tier, Class<?> type, Object id) {
         Known known = crud.writable(type);
         crud.requireTier(tier);
-        return name(new CrudMoves.Delete(tier, known.name(), id));
+        return name(new CrudMoves.Delete(tier, known.name(), RowFields.keyAs(type, id)));
     }
 
     @Override
     public Unit require(String tier, Class<?> type, Object id, Check check) {
         Known known = crud.readable(type);
         crud.requireTier(tier);
-        return name(new CrudMoves.Require(tier, known.name(), id, typedCheck(type, check)));
+        return name(new CrudMoves.Require(tier, known.name(), RowFields.keyAs(type, id), typedCheck(type, check)));
     }
 
     @Override
@@ -122,16 +124,33 @@ final class CrudUnit implements Unit {
     }
 
     private Outcome underTheLocks() {
-        try (AccountLocks.Held held = crud.locks().holdAll(lockKeys())) {
+        List<AccountLocks.Key> keys = lockKeys();
+        refuseInsideAnotherUnit(keys);
+        try (AccountLocks.Held held = crud.locks().holdAll(keys)) {
             Committed first = firstAnswer();
             if (first != null) return repeated(first);
             UnitOfWork work = crud.books().unit();
             String refusal = CrudMoves.stageAll(moves, work);
+            if (refusal == null) refusal = RowRules.refusalOf(work, crud.books());
             if (refusal != null) return refused(refusal);
+            RowRules.scaleToColumns(work);
             List<Object> written = work.images().stream().map(RowFields::copyOf).toList();
             stageTheReferenceRow(work);
             work.commit("write the unit " + said() + " (" + moves.size() + " move(s))");
             return remembered(new Committed(inserted, written, false));
+        }
+    }
+
+    /**
+     * C2 · A unit committed by a thread that already holds one of its rows' locks — inside a session's unit, or another unit — would not
+     * wait (the locks are re-entrant) and its write would be undone by the outer unit's: refused in words.
+     */
+    private void refuseInsideAnotherUnit(List<AccountLocks.Key> keys) {
+        for (AccountLocks.Key key : keys) {
+            if (crud.locks().heldByThisThread(key)) {
+                throw new IllegalStateException("a cached-ledger unit is committed inside another unit that holds " + key.entity() + " " + key.id() + " of " + key.tier()
+                    + ": its write would be undone by the outer one — commit it after the outer unit");
+            }
         }
     }
 

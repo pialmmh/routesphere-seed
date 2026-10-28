@@ -25,14 +25,60 @@ final class RowFields {
     /** A copy of the row: a new object of its class, every field the same (the values are immutable: numbers, text, dates). */
     @SuppressWarnings("unchecked")
     static <T> T copyOf(T row) {
+        T copy = (T) newInstance(row.getClass());
         try {
-            var constructor = row.getClass().getDeclaredConstructor();
-            constructor.setAccessible(true);
-            T copy = (T) constructor.newInstance();
             for (Field f : fieldsOf(row.getClass()).values()) f.set(copy, f.get(row));
-            return copy;
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+        return copy;
+    }
+
+    /** C2b · The row as an instance of {@code type} — a class that extends the row's (a {@code PackageAccount} as the cached {@code LedgerAccount}). */
+    static <T> T copyAs(Class<T> type, Object row) {
+        if (type.isInstance(row)) return type.cast(copyOf(row));
+        if (!row.getClass().isAssignableFrom(type)) throw new IllegalArgumentException("a " + row.getClass().getSimpleName() + " is no " + type.getSimpleName());
+        T copy = newInstance(type);
+        try {
+            for (Field f : fieldsOf(row.getClass()).values()) f.set(copy, f.get(row));
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+        return copy;
+    }
+
+    /** C2 · A new row of {@code type}, the named fields set (each value as its field's type); the rest as the type's constructor leaves them. */
+    static <T> T newRow(Class<T> type, Map<String, ?> fields) {
+        T row = newInstance(type);
+        fields.forEach((name, value) -> set(row, name, value));
+        return row;
+    }
+
+    /** C2 · Every field of the row by name, in the class's order. */
+    static Map<String, Object> valuesOf(Object row) {
+        Map<String, Object> values = new java.util.LinkedHashMap<>();
+        try {
+            for (Field f : fieldsOf(row.getClass()).values()) values.put(f.getName(), f.get(row));
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+        return values;
+    }
+
+    /** C2 · An id as the type's key (a number by its value: 30, 30.0 and "30" are one key — one row, one lock). */
+    static Object keyAs(Class<?> type, Object id) {
+        if (id == null) throw new IllegalArgumentException("a " + type.getSimpleName() + " is named by its key");
+        String key = keyField(type);
+        return as(field(type, key).getType(), id instanceof BigDecimal d ? d.stripTrailingZeros() : id, type.getSimpleName() + "." + key);
+    }
+
+    private static <T> T newInstance(Class<T> type) {
+        try {
+            var constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
         } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("a " + row.getClass().getSimpleName() + " cannot be copied (it needs a constructor with no arguments): " + e, e);
+            throw new IllegalArgumentException("a " + type.getSimpleName() + " cannot be made (it needs a constructor with no arguments): " + e, e);
         }
     }
 

@@ -1,8 +1,8 @@
 package com.telcobright.seed.switchledger.dependencies;
 
+import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.memledger.config.ReplicationConfig;
-import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.RootResources;
@@ -10,18 +10,24 @@ import com.telcobright.seed.sessionflow.api.RootTree;
 import com.telcobright.seed.sessionflow.spi.LedgerMaker;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import com.telcobright.seed.switchledger.api.ChargeReference;
+import com.telcobright.seed.switchledger.api.LedgerAccount;
 import com.telcobright.seed.switchledger.api.LedgerDb;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.AddTierLive;
 import com.telcobright.seed.switchledger.internal.DriverDataSource;
+import com.telcobright.seed.switchledger.internal.LedgerEntities;
 import com.telcobright.seed.switchledger.internal.MemLedgerPort;
 import com.telcobright.seed.switchledger.internal.OwnedMemLedgerPort;
+import com.telcobright.seed.switchledger.internal.TierColumns;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * The {@code switch} ledger of a root — the default (R12: "our prepaid part is strictly based on package-account and mem-ledger cache"):
@@ -37,6 +43,9 @@ import java.util.Set;
  *
  * <p>The pool of the database's connections is the host's choice: the default opens one per use ({@code DriverManager}); a host passes its
  * own pooled {@code DataSource} maker.
+ *
+ * <p>C2b: every tier must hold every column the cached rows write ({@link TierColumns}) — checked before the MemLedger is built and before
+ * a tier is loaded live; a tier that lacks one is refused in words (mem-ledger's loader would pass over it, and the write-behind stop).
  */
 public final class SwitchLedgerMaker implements LedgerMaker {
 
@@ -57,22 +66,47 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         RootResources.SwitchDb db = requireTheDatabase(root);
         Set<String> tiers = tierSchemasOf(root, context);
         LedgerDbSettings ledgerDb = ledgerDbOf(root);
+        javax.sql.DataSource dataSource = dataSources.of(db, passwordOf(db, context));
+        TierColumns columns = TierColumns.of(root.root(), dataSource, entityTypesOf(root, ledgerDb));
+        columns.requireIn(tiers);
         var builder = MemLedger.builder()
-            .dataSource(dataSources.of(db, passwordOf(db, context)))
+            .dataSource(dataSource)
             .databases(tiers.toArray(String[]::new))
             .replicationMode(ReplicationConfig.Mode.STANDALONE);    // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
         Set<String> configured = ledgerDb == null ? null : LedgerDb.register(builder, ledgerDb);
         if (ledgerDb == null) registerTheTwo(builder, root);
         MemLedger memLedger = builder.build();
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), context.clock(), configured).port();
-        return new OwnedMemLedgerPort(port, memLedger, tiers, AddTierLive.of(memLedger)::load, mergeSpacingMsOf(root), ledgerDb == null ? null : LedgerDb.of(ledgerDb));
+        return new OwnedMemLedgerPort(port, memLedger, tiers, checkedFirst(columns, AddTierLive.of(memLedger)), mergeSpacingMsOf(root), ledgerDb == null ? null : LedgerDb.of(ledgerDb));
+    }
+
+    /** A tier created live is loaded only when it holds every column the ledger writes (refused in words, as at the start). */
+    private static Predicate<String> checkedFirst(TierColumns columns, AddTierLive live) {
+        return tierDb -> {
+            columns.requireIn(List.of(tierDb));
+            return live.load(tierDb);
+        };
+    }
+
+    /** The entity types the root's ledger caches: its ledger DB's, or the two (+ the charges' references when said). */
+    private static List<Class<?>> entityTypesOf(RootResources root, LedgerDbSettings ledgerDb) {
+        if (ledgerDb != null) return LedgerEntities.named(ledgerDb).values().stream().<Class<?>>map(LedgerEntities.Known::type).toList();
+        return List.copyOf(theTwoOf(root).values());
     }
 
     /** Before L2b's ledger DB: the two tables (+ the charges' references when said), under the root's {@code <dir>/ledger}. */
     private static void registerTheTwo(com.telcobright.memledger.api.MemLedgerBuilder builder, RootResources root) {
-        builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
-            .walPath(root.dir().resolve("ledger").resolve("wal").toString()).queuePath(root.dir().resolve("ledger").resolve("queue").toString());
-        if (keepsChargeReferences(root)) builder.registerEntity(Books.CHARGE, ChargeReference.class);
+        theTwoOf(root).forEach(builder::registerEntity);
+        builder.walPath(root.dir().resolve("ledger").resolve("wal").toString()).queuePath(root.dir().resolve("ledger").resolve("queue").toString());
+    }
+
+    /** The two entities by the names the ledger knows them (+ the charges' references when said). */
+    private static Map<String, Class<? extends CacheableEntity<?, ?>>> theTwoOf(RootResources root) {
+        Map<String, Class<? extends CacheableEntity<?, ?>>> two = new LinkedHashMap<>();
+        two.put(Books.ACCOUNT, LedgerAccount.class);
+        two.put(Books.RESERVE, PackageAccountReserve.class);
+        if (keepsChargeReferences(root)) two.put(Books.CHARGE, ChargeReference.class);
+        return two;
     }
 
     /**

@@ -34,6 +34,8 @@ public class LedgerPurchase implements CacheableEntity<Long, LedgerPurchase> {
     @Column(name = "priority", nullable = false) private Integer priority;
     @Column(name = "onSelectPriority") private Integer onSelectPriority;
     @Column(name = "discount", nullable = false) private Integer discount;
+    /** C2b · The payment a purchase was made for (TelcoREST's top-up), unique in its tier: one payment, one purchase. */
+    @Column(name = "paymentRef", length = 64) private String paymentRef;
 
     public LedgerPurchase() {}
 
@@ -85,6 +87,8 @@ public class LedgerPurchase implements CacheableEntity<Long, LedgerPurchase> {
     public void setVat(BigDecimal v) { vat = v; }
     public BigDecimal getAit() { return ait; }
     public void setAit(BigDecimal v) { ait = v; }
+    public String getPaymentRef() { return paymentRef; }
+    public void setPaymentRef(String v) { paymentRef = v; }
     public Integer getPriority() { return priority; }
     public void setPriority(Integer v) { priority = v; }
     public Integer getOnSelectPriority() { return onSelectPriority; }

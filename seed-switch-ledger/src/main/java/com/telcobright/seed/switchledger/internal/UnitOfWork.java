@@ -79,6 +79,12 @@ public final class UnitOfWork {
         return new ArrayList<>(rows.values());
     }
 
+    /** C2 · One row this unit writes: its tier, its entity, the op, the image (null for a delete), its key. */
+    public record Row(String tier, String entity, Op op, Object id, Object image) {}
+
+    /** C2 · Every row this unit writes, in the order first staged. */
+    public List<Row> rows() { return staged.values().stream().map(row -> new Row(row.tier, row.entity, row.op, row.id, row.image)).toList(); }
+
     /** C1 · The rows this unit writes (its inserts and updates, not its deletes), as it writes them, in the order first staged. */
     public List<Object> images() { return staged.values().stream().filter(row -> row.op != Op.DELETE).map(row -> row.image).toList(); }
 

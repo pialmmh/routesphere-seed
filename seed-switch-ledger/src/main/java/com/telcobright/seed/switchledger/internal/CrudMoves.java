@@ -101,9 +101,9 @@ final class CrudMoves {
             Object value = check.field() == null ? null : RowFields.get(live, check.field());
             return switch (check.kind()) {
                 case AT_LEAST -> decimalOf(value).compareTo((BigDecimal) check.value()) >= 0 ? null
-                    : row + ": " + check.field() + " is " + value + ", below " + check.value() + " (require at least)";
+                    : row + ": " + check.field() + " is " + said(value) + ", below " + said(check.value()) + " (require at least)";
                 case EQUAL_TO -> RowFields.holds(live, check.field(), check.value()) ? null
-                    : row + ": " + check.field() + " is " + value + ", not " + check.value() + " (require equal to)";
+                    : row + ": " + check.field() + " is " + said(value) + ", not " + said(check.value()) + " (require equal to)";
                 default -> null;
             };
         }
@@ -122,6 +122,9 @@ final class CrudMoves {
     }
 
     private static String notHeld(String tier, String entity, Object id) { return entity + " " + id + " is not held in " + tier; }
+
+    /** A value in words: a number plain (50.000000, never 5E+1). */
+    static String said(Object value) { return value instanceof BigDecimal d ? d.toPlainString() : String.valueOf(value); }
 
     static BigDecimal decimalOf(Object value) {
         if (value == null) return BigDecimal.ZERO;

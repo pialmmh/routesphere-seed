@@ -78,7 +78,8 @@ public final class LedgerLab implements AutoCloseable {
         schemas.add(name);
         sql("CREATE SCHEMA IF NOT EXISTS " + name);
         sql("CREATE TABLE " + name + ".packageaccount (id_packageaccount BIGINT NOT NULL PRIMARY KEY, id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255),"
-            + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL)");
+            + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL,"
+            + " creditLimit DECIMAL(20,6), isSelected BOOLEAN DEFAULT FALSE NOT NULL)");
         sql("CREATE TABLE " + name + ".packageaccountreserve (channel_call_uuid VARCHAR(255) NOT NULL PRIMARY KEY, id_packageaccount BIGINT NOT NULL,"
             + " id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255) NOT NULL, reserveUnit DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL, time VARCHAR(64))");
         for (String ddl : moreTables) sql(String.format(ddl, name));
@@ -96,6 +97,12 @@ public final class LedgerLab implements AutoCloseable {
     public LedgerLab reserveRow(String schema, String key, long accountId, long purchase, String uom, String amount, String time) {
         sql("INSERT INTO " + schema + ".packageaccountreserve (channel_call_uuid, id_packageaccount, id_PackagePurchase, name, reserveUnit, uom, time) VALUES ('"
             + key + "', " + accountId + ", " + purchase + ", 'SESSION-Reserve-" + key + "', " + amount + ", '" + uom + "', '" + time + "')");
+        return this;
+    }
+
+    /** A statement of the scene before the ledger starts or loads a tier: a tier made before a changelog (a column dropped), brought up to it. */
+    public LedgerLab ddl(String statement) {
+        sql(statement);
         return this;
     }
 
@@ -118,7 +125,8 @@ public final class LedgerLab implements AutoCloseable {
     public LedgerLab purchaseTables() {
         String ddl = "CREATE TABLE %s.packagepurchase (id BIGINT NOT NULL PRIMARY KEY, id_package BIGINT NOT NULL, id_Partner BIGINT NOT NULL,"
             + " purchaseDate TIMESTAMP NOT NULL, expireDate TIMESTAMP NOT NULL, status VARCHAR(50) NOT NULL, paid BIGINT NOT NULL, autoRenewalStatus BOOLEAN NOT NULL,"
-            + " price DECIMAL(10,2) NOT NULL, vat DECIMAL(10,2) NOT NULL, AIT DECIMAL(10,2) NOT NULL, priority INT NOT NULL, onSelectPriority INT, discount INT NOT NULL)";
+            + " price DECIMAL(10,2) NOT NULL, vat DECIMAL(10,2) NOT NULL, AIT DECIMAL(10,2) NOT NULL, priority INT NOT NULL, onSelectPriority INT, discount INT NOT NULL,"
+            + " paymentRef VARCHAR(64) UNIQUE)";
         moreTables.add(ddl);
         for (String schema : schemas) sql(String.format(ddl, schema));
         return this;
@@ -138,6 +146,12 @@ public final class LedgerLab implements AutoCloseable {
             + (onSelectPriority == null ? "NULL" : onSelectPriority) + ", 0)");
         return this;
     }
+
+    /** C2 · A statement as an outside writer runs it (TelcoREST's own column). */
+    public void execute(String statement) { sql(statement); }
+
+    /** C2 · One number the database holds now (null = no row). */
+    public BigDecimal dbDecimal(String query) { return queryDecimal(query); }
 
     /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
     public MemLedger restart() {
@@ -163,7 +177,7 @@ public final class LedgerLab implements AutoCloseable {
         if (ledgerDb != null) {
             com.telcobright.seed.switchledger.api.LedgerDb.register(builder, ledgerDb);
         } else {
-            builder.registerEntity(Books.ACCOUNT, PackageAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
+            builder.registerEntity(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class).registerEntity(Books.RESERVE, PackageAccountReserve.class)
                 .walPath(dir.resolve("wal").toString()).queuePath(dir.resolve("queue").toString());
             more.forEach(builder::registerEntity);
         }

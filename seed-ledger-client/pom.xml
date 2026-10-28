@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-ledger-client</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-ledger-client</name>
+    <description>
+        C2 (design prepaid-engine-design.md §14): the client of a cached ledger an application exposes (seed-switch-ledger's
+        CachedLedgerRoads) — reads of rows and ONE unit of writes per request, idempotent by its reference. For writers outside the
+        switch (TelcoREST): rows as maps of fields, so the caller keeps its own entities. JDK HttpClient + Jackson only: no seed module,
+        no mem-ledger.
+    </description>
+
+    <properties>
+        <jackson.version>2.19.2</jackson.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
