@@ -90,3 +90,5 @@ Every mutant: one rule broken, the named tests run, RED by a failing test (no co
 | C4-b | the purchase answer: the ad service answers `{tenant, what, id, rang}`; the BFF's history line then says `package <id> · total ?` | the BFF reads the purchase back (portal polish) |
 | C4-c | `PrepaidAdmin.purchase` (L2b) is no longer called by ad-sphere; it still writes the offer's package id unchecked | C3 drops it or guards it |
 | C4-d | the cancel stays off by the owner's policy (R17-c) | as it is |
+| C4-e | two FIRST top-ups of one advertiser at the very same moment could each open a wallet: a unit locks the rows it writes, not the partner (later top-ups find the one wallet and lock it) | the screens send one at a time; a partner-level lock on the top-up road if it ever matters |
+| C4-f | the FULLSTACK lab's journey (step a) still credits through prime-context's old road, and the lab runs no bucket-next — the C4 money writes need one | move the journey onto the officer host's top-up with a lab bucket-next, rerun before the bed rehearsal |
