@@ -17,9 +17,13 @@ import java.util.Objects;
  *   <li>a required field empty, a text longer than its column, a number with more digits than its column (more decimals too: the database
  *       would round it, the cache would not);</li>
  *   <li>an account put on a purchase its tier does not hold (where the ledger caches purchases) — the account → purchase foreign key;</li>
- *   <li>a purchase deleted while an account is on it; an account deleted while a session holds a reserve on it.</li>
+ *   <li>C4: a purchase or a package item put on a package its tier's catalog does not hold (where the ledger caches the catalog) — the
+ *       purchase → package and item → package foreign keys;</li>
+ *   <li>a purchase deleted while an account is on it; an account deleted while a session holds a reserve on it; C4: a package deleted
+ *       while an item or a purchase names it.</li>
  * </ul>
- * What it cannot see stays the caller's to get right: a purchase's package (the package table is not cached).
+ * What it cannot see stays the caller's to get right: a purchase's package where the catalog is not cached; on MySQL a purchase's partner
+ * and an item's unit and category (tables the ledger does not cache).
  */
 final class RowRules {
 
@@ -43,7 +47,9 @@ final class RowRules {
         if (outOfShape != null) return outOfShape;
         String taken = refusalOfATakenValue(work, known, row, what);
         if (taken != null) return taken;
-        return Books.ACCOUNT.equals(row.entity()) && books.keepsPurchases() ? refusalOfItsPurchase(work, books, row, what) : null;
+        if (Books.ACCOUNT.equals(row.entity()) && books.keepsPurchases()) return refusalOfItsPurchase(work, books, row, what);
+        if ((Books.PURCHASE.equals(row.entity()) || Books.PACKAGE_ITEM.equals(row.entity())) && books.keepsCatalog()) return refusalOfItsPackage(work, books, row, what);
+        return null;
     }
 
     /**
@@ -116,7 +122,25 @@ final class RowRules {
         return what + ": its purchase " + purchase + " is not held in " + row.tier();
     }
 
+    /** C4 · A purchase or an item made or moved onto a package must find it in its tier's catalog (one already on its package is not asked again). */
+    private static String refusalOfItsPackage(UnitOfWork work, Books books, UnitOfWork.Row row, String what) {
+        Object pkg = RowFields.get(row.image(), "idPackage");
+        Object cached = row.op() == UnitOfWork.Op.INSERT ? null : books.ledger().getEntity(row.tier(), row.entity(), row.id());
+        boolean moved = cached == null || !Objects.equals(String.valueOf(RowFields.get(cached, "idPackage")), String.valueOf(pkg));
+        if (!moved || (pkg != null && work.read(row.tier(), Books.PACKAGE, pkg) != null)) return null;
+        return what + ": its package " + pkg + " is not in the catalog of " + row.tier();
+    }
+
     private static String refusalOfDelete(UnitOfWork work, UnitOfWork.Row row) {
+        if (Books.PACKAGE.equals(row.entity())) {
+            for (String named : new String[] {Books.PACKAGE_ITEM, Books.PURCHASE}) {
+                for (Object other : work.rowsAsLeft(row.tier(), named)) {
+                    if (String.valueOf(RowFields.get(other, "idPackage")).equals(String.valueOf(row.id()))) {
+                        return "Package " + row.id() + " of " + row.tier() + ": " + named + " " + RowFields.keyOf(other) + " names it — deactivate the package instead";
+                    }
+                }
+            }
+        }
         if (Books.PURCHASE.equals(row.entity())) {
             for (Object account : work.rowsAsLeft(row.tier(), Books.ACCOUNT)) {
                 if (String.valueOf(RowFields.get(account, "idpackagePurchase")).equals(String.valueOf(row.id()))) {

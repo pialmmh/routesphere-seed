@@ -18,7 +18,7 @@ import java.util.Set;
  *
  * <pre>
  *   payable(accounts, units, rule, now)
- *     packages = the ACTIVE accounts (unexpired at now) whose unit is one the lane names for THIS request (its packageUnits),
+ *     packages = the ACTIVE accounts (unexpired at now) whose unit is one the lane names for THIS request (its units),
  *                best match first = the CATALOG's order, which is prime-context's (AllCacheLoader.comparePurchases): the operator's
  *                own priority (onSelectPriority), then the soonest expiry, then the older purchase, then the lower id — the ledger's
  *                catalog keeps the same order (seed-switch-ledger Purchases, S6)

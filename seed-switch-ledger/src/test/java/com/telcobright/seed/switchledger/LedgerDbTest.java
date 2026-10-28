@@ -44,7 +44,7 @@ class LedgerDbTest {
 
     private OwnedMemLedgerPort start() {
         MemLedger memLedger = lab.start();
-        Set<String> configured = Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase");
+        Set<String> configured = LedgerLab.EVERY_ENTITY;   // the word "package": every table, the catalog too (C4)
         MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), Clock.systemUTC(), configured).port();
         owned = new OwnedMemLedgerPort(port, memLedger, Set.of("btcl", "res_9"), AddTierLive.of(memLedger)::load, SPACING_MS, LedgerDb.of(lab.ledgerDbSettings()));
         return owned;
@@ -113,7 +113,7 @@ class LedgerDbTest {
     @Test
     void theLedgerHoldsExactlyTheConfiguredEntities_aWordThatNamesNothingIsRefused() {
         MemLedger memLedger = lab.start();
-        assertThat(TwoEntities.check(memLedger, Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase"))).hasSize(4);
+        assertThat(TwoEntities.check(memLedger, LedgerLab.EVERY_ENTITY)).as("the word package: every table, the catalog too (C4)").hasSize(6);
         assertThatThrownBy(() -> TwoEntities.check(memLedger, Set.of("PackageAccount", "PackageAccountReserve")))
             .hasMessageContaining("caches exactly its configured entities");
         assertThatThrownBy(() -> LedgerDb.of(new com.telcobright.seed.switchledger.dependencies.LedgerDbSettings(List.of("package", "partner"), List.of(),

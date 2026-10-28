@@ -56,7 +56,7 @@ class PurchaseThroughTheLedgerTest {
 
     private void start() {
         MemLedger memLedger = lab.start();
-        Set<String> configured = Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase");
+        Set<String> configured = com.telcobright.seed.switchledger.LedgerLab.EVERY_ENTITY;   // the word "package": every table, the catalog too (C4)
         LedgerPort port = SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), clock, configured).port();
         kit = RoutesphereKit.builder().tenants(TenantLookup.of(tree())).ledger(port).cdr(new com.telcobright.seed.sessionflow.testkit.RecordingCdrSink()).zone(DHAKA).clock(clock).build();
         admin = Prepaid.<com.telcobright.seed.sessionflow.api.RoutesphereContext>ofTheLanesAnswers(kit).admin().withIds(ids);

@@ -5,6 +5,7 @@ import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.prepaid.api.AccountRule;
 import com.telcobright.seed.prepaid.api.Admission;
 import com.telcobright.seed.prepaid.api.Final;
+import com.telcobright.seed.prepaid.api.PackageMatch;
 import com.telcobright.seed.prepaid.api.Prepaid;
 import com.telcobright.seed.sessionflow.api.SessionCause;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
@@ -15,7 +16,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.List;
-import java.util.function.Predicate;
+import java.util.Set;
 
 /**
  * L2a · The call-shaped and the SMS-shaped Prepaid of design §10.1, as an application writes them (samples: the money is the seed's; the
@@ -44,8 +45,8 @@ public final class PrepaidBuilders {
             .window(Duration.ofSeconds(kit.settings().reservePeriodSec()))
             .firstRenewal(Duration.ofSeconds(kit.settings().firstRenewalSec()))
             .rate((call, tier, account) -> unitRate(account, CASH_PER_MINUTE))
-            .chooseAccounts((call, tier, fundable) -> intlOut(call) ? only(fundable, a -> "BDT".equals(a.getUom())) : fundable)
-            .refusalCause((call, tier) -> intlOut(call) ? NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
+            .units(call -> intlOut(call) ? Set.of() : PackageMatch.CALL_AND_SMS_UNITS)        // abroad: no package pays — cash only
+            .noBalanceCause((call, tier) -> intlOut(call) ? NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
             .finalize(call -> call.answered() ? Final.charge(tier -> talkTimeCost(call, tier)) : Final.releaseAll())
             .build(kit);
     }
@@ -56,7 +57,7 @@ public final class PrepaidBuilders {
             .admission(Admission.CHARGE_NOW)
             .rate((sms, tier, account) -> unitRate(account, CASH_PER_MESSAGE).multiply(BigDecimal.valueOf(Math.max(1, sms.segments))))
             .accounts(AccountRule.UNITS_THEN_CASH)
-            .chooseAccounts((sms, tier, fundable) -> only(fundable, a -> !"TF_min".equals(a.getUom())))
+            .units(sms -> Set.of("OTH_ea"))                                                       // a message's package, never the call's minutes
             .finalize(sms -> "DELIVERED".equals(sms.endCause) ? Final.nothing() : refundOnFailure ? Final.refundAll() : Final.nothing())
             .build(kit);
     }
@@ -74,9 +75,5 @@ public final class PrepaidBuilders {
     static boolean intlOut(VoiceContext call) {
         String n = call.billingCalledNumber();
         return n != null && (n.startsWith("00") || n.startsWith("+"));
-    }
-
-    static List<PackageAccount> only(List<PackageAccount> accounts, Predicate<PackageAccount> keep) {
-        return accounts.stream().filter(keep).toList();
     }
 }

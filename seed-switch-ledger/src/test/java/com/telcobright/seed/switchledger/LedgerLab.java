@@ -73,6 +73,9 @@ public final class LedgerLab implements AutoCloseable {
 
     // ── the scene, before the ledger starts ─────────────────────────────────
 
+    /** C4 · What the word {@code package} caches: every entity of the prepaid model, the catalog too. */
+    public static final java.util.Set<String> EVERY_ENTITY = java.util.Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE, Books.PACKAGE, Books.PACKAGE_ITEM);
+
     /** One tier's schema with the two tables of the switch ledger. */
     public LedgerLab schema(String name) {
         schemas.add(name);
@@ -129,6 +132,26 @@ public final class LedgerLab implements AutoCloseable {
             + " paymentRef VARCHAR(64) UNIQUE)";
         moreTables.add(ddl);
         for (String schema : schemas) sql(String.format(ddl, schema));
+        return catalogTables();
+    }
+
+    /**
+     * C4 · The catalog goes with the purchases (the word {@code package} caches it too): {@code package} and {@code packageitem} in every
+     * schema, made so far and later, holding packages 1–10 and 9999 (TelcoREST's postpaid) — a tier always has its catalog, and a purchase's
+     * package is checked in it.
+     */
+    private LedgerLab catalogTables() {
+        List<String> catalog = List.of(
+            "CREATE TABLE %s.package (id BIGINT NOT NULL PRIMARY KEY, name VARCHAR(255) NOT NULL UNIQUE, description VARCHAR(4000), basePrice DECIMAL(10,2),"
+                + " vatPercent DECIMAL(5,2) NOT NULL, createDate TIMESTAMP NOT NULL, validity BIGINT NOT NULL, aitPercent DECIMAL(5,2) NOT NULL, activeStatus BOOLEAN NOT NULL)",
+            "CREATE TABLE %s.packageitem (id BIGINT NOT NULL PRIMARY KEY, id_package BIGINT NOT NULL, quantity DECIMAL(10,2) NOT NULL, id_UOM VARCHAR(20) NOT NULL,"
+                + " category INT NOT NULL, prefix VARCHAR(200) NOT NULL, description VARCHAR(255) NOT NULL)",
+            "INSERT INTO %s.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) SELECT X, CONCAT('Package ', X), 100, 0,"
+                + " TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE FROM SYSTEM_RANGE(1, 10)",
+            "INSERT INTO %s.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (9999, 'Postpaid', 0, 0,"
+                + " TIMESTAMP '2026-01-01 00:00:00', 31536000, 0, TRUE)");
+        moreTables.addAll(catalog);
+        for (String schema : schemas) for (String statement : catalog) sql(String.format(statement, schema));
         return this;
     }
 

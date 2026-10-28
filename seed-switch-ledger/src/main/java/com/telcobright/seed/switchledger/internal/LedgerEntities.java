@@ -3,6 +3,8 @@ package com.telcobright.seed.switchledger.internal;
 import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.switchledger.api.ChargeReference;
+import com.telcobright.seed.switchledger.api.LedgerPackage;
+import com.telcobright.seed.switchledger.api.LedgerPackageItem;
 import com.telcobright.seed.switchledger.api.LedgerPurchase;
 import com.telcobright.seed.switchledger.dependencies.LedgerDbSettings;
 
@@ -15,8 +17,9 @@ import java.util.Set;
 
 /**
  * L2b item 3 · The entities a ledger DB can cache, by name and table, and the ones a root's settings name (an entity name, or a prefix of
- * its table: {@code package} = all of them). A word that names nothing, or a set without the account and the reserve (the switch ledger's
- * two), is refused in words.
+ * its table: {@code package} = all of them — since C4 the catalog too, {@code package} and {@code packageitem}; {@code catalog} = those two).
+ * A word that names nothing,
+ * or a set without the account and the reserve (the switch ledger's two), is refused in words.
  */
 public final class LedgerEntities {
 
@@ -36,7 +39,12 @@ public final class LedgerEntities {
     /** A number column's digits: {@code precision} in all, {@code scale} after the point. */
     public record Digits(int precision, int scale) {}
 
-    private static final Digits BALANCE = new Digits(20, 6), PRICE = new Digits(10, 2);
+    private static final Digits BALANCE = new Digits(20, 6), PRICE = new Digits(10, 2), PERCENT = new Digits(5, 2);
+
+    /** The word that names every table of the prepaid model — the money tables and, since C4, the catalog. */
+    static final String EVERY_TABLE = "package";
+    /** C4 · The word that names the catalog: {@code package} and {@code packageitem} (beside a list of money tables). */
+    static final String CATALOG = "catalog";
 
     private static final List<Known> KNOWN = List.of(
         new Known(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class, "packageaccount", new Shape(
@@ -50,7 +58,18 @@ public final class LedgerEntities {
             Set.of("idPackage", "idPartner", "purchaseDate", "expireDate", "status", "paid", "autoRenewalStatus", "price", "vat", "ait", "priority", "discount"),
             Map.of("status", 50, "paymentRef", 64),
             Map.of("price", PRICE, "vat", PRICE, "ait", PRICE),
-            Set.of("paymentRef"))));
+            Set.of("paymentRef"))),
+        // C4 · the catalog (the owner 2026-10-28: through the cached ledger too); the narrower of PostgreSQL's DDL and RTC-Manager's MySQL template
+        new Known(Books.PACKAGE, LedgerPackage.class, "package", new Shape(
+            Set.of("name", "vatPercent", "createDate", "validity", "aitPercent", "activeStatus"),
+            Map.of("name", 255),
+            Map.of("basePrice", PRICE, "vatPercent", PERCENT, "aitPercent", PERCENT),
+            Set.of("name"))),                                                                       // MySQL: UNIQUE KEY unique_name
+        new Known(Books.PACKAGE_ITEM, LedgerPackageItem.class, "packageitem", new Shape(
+            Set.of("idPackage", "quantity", "idUom", "category", "prefix", "description"),           // id_package: NOT NULL on MySQL; quantity, description: on PostgreSQL
+            Map.of("idUom", 20, "prefix", 200, "description", 255),
+            Map.of("quantity", PRICE),
+            Set.of())));
 
     private LedgerEntities() {}
 
@@ -123,9 +142,14 @@ public final class LedgerEntities {
         return tables;
     }
 
-    /** A word that IS an entity's name or table names that one; otherwise every table it is a prefix of ({@code package}). */
+    /**
+     * {@value #EVERY_TABLE} names every known table (it is also the catalog's table: the word keeps its meaning); {@value #CATALOG} names the
+     * catalog's two; a word that IS another entity's name or table names that one; otherwise every table it is a prefix of.
+     */
     private static List<Known> matching(String word) {
         String w = word.trim().toLowerCase(Locale.ROOT);
+        if (w.equals(EVERY_TABLE)) return KNOWN;
+        if (w.equals(CATALOG)) return KNOWN.stream().filter(k -> k.name().equals(Books.PACKAGE) || k.name().equals(Books.PACKAGE_ITEM)).toList();
         List<Known> out = new ArrayList<>();
         for (Known k : KNOWN) if (k.name().equalsIgnoreCase(w) || k.table().equals(w)) out.add(k);
         if (!out.isEmpty()) return out;

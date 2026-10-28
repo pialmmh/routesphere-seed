@@ -11,11 +11,16 @@ balance. A repeated reference answers the first purchase while the process runs 
 ledger DB that caches the purchases; name its tables one by one:
 
 ```
-ledger.entities:   packageaccount, packageaccountreserve, packagepurchase
+ledger.entities:   packageaccount, packageaccountreserve, packagepurchase, catalog
 ledger.cache-only: packageaccountreserve
 ```
 
-Never the prefix `package`: it also names `packageaccountcharge`, the durable reference table of L2b, which the ad lane does NOT
+`catalog` (C4, the owner 2026-10-28) names the catalog's two tables, `package` and `packageitem`: the catalog goes through the cached
+ledger too, and a purchase's or an item's package is checked in it before the WAL (the database's foreign keys would refuse a row naming
+a package the tier lacks, and a refused batch stops the write-behind). Every tier needs both tables and prime-context's changelog 006:
+the ledger refuses to start otherwise, in words.
+
+Never the word `package`: it names every table — `packageaccountcharge` too, the durable reference table of L2b, which the ad lane does NOT
 adopt (the owner, 2026-10-27: an ad view is ONE call, its money held once at admission and returned in `finalize` on failure; there
 is no retry, so there is nothing to repeat). The table and its switch `ledger.charge-references` stay off; they are a question for the
 SMS port only.

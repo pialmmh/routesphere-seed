@@ -52,7 +52,7 @@ class MoneyRoadsTest {
     void start() {
         MemLedger memLedger = lab.start();
         LedgerPort port = SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), clock,
-            Set.of("PackageAccount", "PackageAccountReserve", "PackageAccountCharge", "PackagePurchase")).port();
+            com.telcobright.seed.switchledger.LedgerLab.EVERY_ENTITY).port();   // the word "package": every table, the catalog too (C4)
         RoutesphereKit kit = RoutesphereKit.builder().tenants(TenantLookup.of(tree())).ledger(port).cdr(new RecordingCdrSink()).zone(DHAKA).clock(clock).build();
         admin = Prepaid.<RoutesphereContext>ofTheLanesAnswers(kit).admin();
     }

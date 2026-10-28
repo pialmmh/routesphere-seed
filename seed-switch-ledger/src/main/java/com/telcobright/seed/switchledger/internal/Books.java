@@ -35,6 +35,9 @@ public final class Books {
     public static final String CHARGE = "PackageAccountCharge";
     /** L2b item 4 · The purchase ({@link LedgerPurchase}), cached where the root's ledger DB names it. */
     public static final String PURCHASE = "PackagePurchase";
+    /** C4 · The catalog: a package ({@link com.telcobright.seed.switchledger.api.LedgerPackage}) and its items, cached where the ledger DB names them. */
+    public static final String PACKAGE = "Package";
+    public static final String PACKAGE_ITEM = "PackageItem";
 
     private final MemLedger ledger;
     private final Clock clock;
@@ -58,6 +61,9 @@ public final class Books {
 
     /** L2b item 4 · Does this ledger cache the purchases ({@value #PURCHASE} registered)? */
     public boolean keepsPurchases() { return held.contains(PURCHASE); }
+
+    /** C4 · Does this ledger cache the catalog ({@value #PACKAGE} registered)? Then a purchase's and an item's package is checked in it. */
+    public boolean keepsCatalog() { return held.contains(PACKAGE); }
 
     /** C1 · Does this ledger cache the entity (registered by its ledger DB, or one of the two)? */
     public boolean holds(String entity) { return held.contains(entity); }

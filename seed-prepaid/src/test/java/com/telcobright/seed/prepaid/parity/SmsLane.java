@@ -44,7 +44,7 @@ public final class SmsLane {
         return Prepaid.<CallContext>builder("sms")
             .admission(Admission.CHARGE_NOW)
             .rate((sms, tier, account) -> AccountOrder.OTH_EA.equals(account.getUom()) ? BigDecimal.ONE : new BigDecimal(PER_MESSAGE))
-            .packageUnits(sms -> Set.of(AccountOrder.OTH_EA))                       // a message pays an SMS package, never talk minutes
+            .units(sms -> Set.of(AccountOrder.OTH_EA))                       // a message pays an SMS package, never talk minutes
             .finalize(sms -> DELIVERED.equals(sms.endCause) ? Final.nothing() : refundOnFailure ? Final.refundAll() : Final.nothing())
             .build(kit);
     }

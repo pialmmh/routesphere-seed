@@ -26,11 +26,19 @@ import java.util.TreeSet;
  * the table lacks in silence: the cache loads, and the first write of the row is refused by the database — the WAL consumer rolls back,
  * tries again and stops after 10 tries, the root's money then in RAM only. So the ledger refuses to start there instead, in words that
  * name the tier, the table and the column, and what brings them.
+ *
+ * <p>C4 · On PostgreSQL the same holds for the RIGHTS: the ledger's login must hold SELECT, INSERT, UPDATE and DELETE on every table it
+ * caches (the cached ledger may write each of them); a right it lacks would refuse a row in the same silent way. Read as the login holds
+ * them ({@code has_table_privilege}); another engine's grants are not read here.
  */
 public final class TierColumns {
 
     /** What brings the ledger's columns into a tier. */
-    public static final String WHAT_BRINGS_THEM = "run prime-context's migrate-all on this database first (its changelog brings the ledger's columns; 006: creditLimit, isSelected, paymentRef)";
+    public static final String WHAT_BRINGS_THEM = "run prime-context's migrate-all on this database first (its changelog brings the ledger's columns — 006: creditLimit,"
+        + " isSelected, paymentRef — and its provisioning gives the ledger's login its rights: primecontext.provision.ledger-*, C4)";
+
+    /** What the ledger's writes need on every table it caches. */
+    private static final List<String> RIGHTS = List.of("SELECT", "INSERT", "UPDATE", "DELETE");
 
     private static final int NAMED_AT_MOST = 12;
 
@@ -76,12 +84,32 @@ public final class TierColumns {
 
     private List<String> lackingIn(Connection c, String tier) throws SQLException {
         Map<String, Set<String>> held = heldIn(c, tier);
+        boolean postgres = c.getMetaData().getDatabaseProductName().toLowerCase(Locale.ROOT).contains("postgres");
         List<String> lacking = new ArrayList<>();
-        columnsByTable.forEach((table, columns) -> {
-            Set<String> there = held.get(table);
-            if (there == null) lacking.add(tier + " has no table " + table);
-            else for (String column : columns) if (!there.contains(column)) lacking.add(tier + " lacks " + table + "." + column);
-        });
+        for (Map.Entry<String, Set<String>> table : columnsByTable.entrySet()) {
+            Set<String> there = held.get(table.getKey());
+            if (there == null) {
+                lacking.add(tier + " has no table " + table.getKey());
+                continue;
+            }
+            for (String column : table.getValue()) if (!there.contains(column)) lacking.add(tier + " lacks " + table.getKey() + "." + column);
+            if (postgres) lacking.addAll(rightsLackingOn(c, tier, table.getKey()));
+        }
+        return lacking;
+    }
+
+    /** C4 · PostgreSQL: the rights the ledger's writes need on a table it caches, as its login holds them. */
+    private static List<String> rightsLackingOn(Connection c, String tier, String table) throws SQLException {
+        List<String> lacking = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement("SELECT has_table_privilege(?, ?)")) {
+            for (String right : RIGHTS) {
+                ps.setString(1, tier + "." + table);
+                ps.setString(2, right);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && !rs.getBoolean(1)) lacking.add(tier + " grants the ledger's login no " + right + " on " + table);
+                }
+            }
+        }
         return lacking;
     }
 

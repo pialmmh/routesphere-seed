@@ -50,7 +50,7 @@ class CachedLedgerRoadsTest {
     @BeforeEach
     void start() {
         lab.start();
-        port = SwitchLedgers.over(lab.ledger(), new SwitchLedgerSettings(60, 500, 300), Clock.systemUTC(), Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)).port();
+        port = SwitchLedgers.over(lab.ledger(), new SwitchLedgerSettings(60, 500, 300), Clock.systemUTC(), LedgerLab.EVERY_ENTITY).port();
         PerRootLedger ledgers = new PerRootLedger(PerRootLedger::rootByTheChain);
         ledgers.add("btcl", port);
         roads = CachedLedgerRoads.over(ledgers).guard(LedgerGuard.ofTokenHash(SALT, LedgerGuard.sha256(SALT, "t")))
@@ -120,7 +120,7 @@ class CachedLedgerRoadsTest {
         lab.execute("UPDATE btcl.packageaccount SET name = NULL WHERE id_packageaccount = 40");     // as an old PostgreSQL row may be
         lab.restart();                                                                              // the cache loads it so
         CachedLedger ledger = SwitchLedgers.over(lab.ledger(), new SwitchLedgerSettings(60, 500, 300), Clock.systemUTC(),
-            Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)).port().cachedLedgerOf("btcl").orElseThrow().withIds((table, highest) -> highest + 1);
+            LedgerLab.EVERY_ENTITY).port().cachedLedgerOf("btcl").orElseThrow().withIds((table, highest) -> highest + 1);
         PackageAccount nameless = CachedLedgerTest.accountOf(9, "BDT", "1");
         nameless.setName(null);
         CachedLedger.Unit insert = ledger.unit();

@@ -98,13 +98,10 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
         }
     }
 
-    /** L2b item 2 · Every tier renews in ONE unit (the narrowest tier decides, as the live call); then the lane hears of an end. */
+    /** L2b item 2 · Every tier renews in ONE unit (the narrowest tier decides, as the live call); a short window ends the session (the base). */
     @Override
     public double reserveNextWindow(C ctx) {
-        double period = flow.kit().settings().reservePeriodSec();
-        double narrowest = narrowestInOneUnit(ctx, period);
-        if (rules != null && narrowest < period) flow.safely(ctx, "onExhausted", () -> { rules.hooks().onExhausted(ctx); return null; }, null);
-        return narrowest;
+        return narrowestInOneUnit(ctx, flow.kit().settings().reservePeriodSec());
     }
 
     /** A unit the ledger refuses moved nothing: a fault never cuts a session (the settlement reconciles) — the period. */
@@ -131,7 +128,7 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
 
     @Override
     public double renewTier(C ctx, LevelAdmission tier) {
-        if (rules != null && rules.windowed()) return new WindowedRenewal<>(flow, rules).renew(ctx, tier);
+        if (rules != null && rules.windowed()) return new WindowedRenewal<>(flow).renew(ctx, tier);
         return TierReserve.of(flow).renewThroughLedger(ctx, tier);
     }
 
@@ -142,16 +139,14 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
 
     /**
      * The final state. The lane's answers: answered → settle, else release (moved). A Prepaid of its own: its {@code finalize} decides every
-     * tier, answered or not (through the lane's {@code finalizeBalance}, whose default is {@link #settleTier}); then {@code onFinished}, once.
+     * tier, answered or not (through the lane's {@code finalizeBalance}, whose default is {@link #settleTier}).
      */
     @Override
     public void finalizeBalance(C ctx, Outcome outcome, boolean answered) {
-        boolean open = !ctx.reservesClosed;
         settleInOneUnit(ctx, () -> {
             if (rules != null || answered) SessionSettlement.of(flow).settle(ctx, outcome);
             else SessionSettlement.of(flow).release(ctx);
         });
-        if (rules != null && open) flow.safely(ctx, "onFinished", () -> { rules.hooks().onFinished(ctx, ctx.settlements); return null; }, null);
     }
 
     /** L2b item 2 · Every tier settled in ONE unit; a unit the ledger refuses leaves every tier OWED (held, said with its reference). */

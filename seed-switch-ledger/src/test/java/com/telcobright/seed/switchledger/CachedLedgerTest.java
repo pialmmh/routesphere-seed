@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class CachedLedgerTest {
 
-    private static final Set<String> ALL = Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE);
+    private static final Set<String> ALL = LedgerLab.EVERY_ENTITY;
 
     private final LedgerLab lab = LedgerLab.open().schema("btcl").schema("res_2")
         .account("btcl", 30, 9, "BDT", "50").account("res_2", 11, 7, "BDT", "100")

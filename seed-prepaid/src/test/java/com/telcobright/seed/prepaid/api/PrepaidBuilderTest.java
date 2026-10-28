@@ -40,7 +40,7 @@ class PrepaidBuilderTest {
     void everyRequiredPartMissing_isRefusedInWords_namingEach() {
         assertThatThrownBy(() -> Prepaid.<Ctx>builder("call").build(kit(CALL_CADENCE)))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("[call] the Prepaid has no admission(HOLD_WINDOW | HOLD | CHARGE_NOW)")
+            .hasMessageContaining("[call] the Prepaid has no admission(HOLD_WINDOW | CHARGE_NOW)")
             .hasMessageContaining("no rate((ctx, tier, account) -> amount)")
             .hasMessageContaining("no finalize(ctx -> Final)");
     }
@@ -61,16 +61,16 @@ class PrepaidBuilderTest {
 
     @Test
     void aPerEventPrepaid_holdsNoWindow() {
-        assertThatThrownBy(() -> rated(Admission.HOLD).build(kit(CALL_CADENCE)))
-            .hasMessageContaining("a HOLD lane holds no window, but the kit renews every 60 s — set the kit's reserve period to 0");
+        assertThatThrownBy(() -> rated(Admission.CHARGE_NOW).build(kit(CALL_CADENCE)))
+            .hasMessageContaining("a CHARGE_NOW lane holds no window, but the kit renews every 60 s — set the kit's reserve period to 0");
         assertThatThrownBy(() -> rated(Admission.CHARGE_NOW).window(Duration.ofSeconds(60)).build(kit(NO_RENEWAL)))
             .hasMessageContaining("a CHARGE_NOW lane holds no window, but the builder gives one");
-        assertThat(rated(Admission.HOLD).build(kit(NO_RENEWAL)).ownsItsRules()).isTrue();
+        assertThat(rated(Admission.CHARGE_NOW).build(kit(NO_RENEWAL)).ownsItsRules()).isTrue();
     }
 
     @Test
     void theRulesAreSealed_onceBuilt() {
-        Prepaid.Builder<Ctx> builder = rated(Admission.HOLD);
+        Prepaid.Builder<Ctx> builder = rated(Admission.CHARGE_NOW);
         builder.build(kit(NO_RENEWAL));
 
         assertThatThrownBy(() -> builder.accounts(AccountRule.CASH_ONLY)).hasMessageContaining("[ad] the Prepaid is built: its rules are sealed");
@@ -78,7 +78,7 @@ class PrepaidBuilderTest {
 
     @Test
     void aPrepaidServesTheKitItWasBuiltOn() {
-        Prepaid<Ctx> onOne = rated(Admission.HOLD).build(kit(NO_RENEWAL));
+        Prepaid<Ctx> onOne = rated(Admission.CHARGE_NOW).build(kit(NO_RENEWAL));
         RoutesphereFlow<Ctx> onAnother = flow(kit(NO_RENEWAL));
 
         assertThatThrownBy(() -> onOne.engineFor(onAnother.answers())).hasMessageContaining("the Prepaid 'ad' was built on another kit");
