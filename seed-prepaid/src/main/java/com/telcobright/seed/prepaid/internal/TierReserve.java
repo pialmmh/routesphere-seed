@@ -255,10 +255,20 @@ final class TierReserve<C extends RoutesphereContext> {
                 level.getPackageAccountId(), level.getUom(), amount, level.getDebitReference());
             journal.reserved(ctx.sessionId(), flow.kit().clock().millis(), flow.lostRecordsOf(ctx), held);
         } catch (RuntimeException e) {
-            flow.kit().counters().journalRefused.incrementAndGet();
+            long refused = flow.kit().counters().journalRefused.incrementAndGet();
             ctx.history.note(flow.name(), "the reserve " + level.getDebitReference() + " could not be written to the journal of the sessions in the air ("
                 + journal.where() + "): " + e.getMessage());
+            if (worthSaying(refused)) log.warn("[{}] {} | the reserve {} was NOT written to the journal of the sessions in the air ({}): a restart "
+                    + "would not know it — {} journal refusals so far (said at 1, 10, 100, …): {}", flow.name(), LogText.clean(ctx.sessionId()),
+                LogText.clean(level.getDebitReference()), journal.where(), refused, LogText.failureText(e));
         }
+    }
+
+    /** Flood-safe: a journal that refuses every reserve is said at the 1st, 10th, 100th … refusal, never once per session. */
+    static boolean worthSaying(long count) {
+        if (count < 1) return false;
+        while (count % 10 == 0) count /= 10;
+        return count == 1;
     }
 
     void journalRelease(C ctx, LevelAdmission level) {
