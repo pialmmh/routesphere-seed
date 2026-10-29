@@ -38,8 +38,10 @@ public final class Books {
     /** C4 · The catalog: a package ({@link com.telcobright.seed.switchledger.api.LedgerPackage}) and its items, cached where the ledger DB names them. */
     public static final String PACKAGE = "Package";
     public static final String PACKAGE_ITEM = "PackageItem";
-    /** §15 · The products ({@link com.telcobright.seed.switchledger.api.LedgerProduct}, the flat {@code product_catalog}), read-only, cached where the ledger DB names them. */
+    /** §15 · The products ({@link com.telcobright.seed.switchledger.api.LedgerProduct}, the table {@code product_catalog}), written through the cache, cached where the ledger DB names them. */
     public static final String PRODUCT = "Product";
+    /** §15.3 · The service groups ({@link com.telcobright.seed.switchledger.api.LedgerServiceGroup}, {@code enumservicegroup}), read-only, cached where the ledger DB names them. */
+    public static final String SERVICE_GROUP = "ServiceGroup";
 
     private final MemLedger ledger;
     private final Clock clock;
@@ -69,6 +71,9 @@ public final class Books {
 
     /** §15 · Does this ledger cache the products ({@value #PRODUCT} registered)? The catalog's items match without them (the call). */
     public boolean keepsProducts() { return held.contains(PRODUCT); }
+
+    /** §15.3 · Does this ledger cache the service groups ({@value #SERVICE_GROUP} registered)? A product's group is checked against them where it does. */
+    public boolean keepsServiceGroups() { return held.contains(SERVICE_GROUP); }
 
     /** C1 · Does this ledger cache the entity (registered by its ledger DB, or one of the two)? */
     public boolean holds(String entity) { return held.contains(entity); }

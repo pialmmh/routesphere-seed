@@ -3,33 +3,34 @@ package com.telcobright.seed.prepaid.api;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.Product;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * §15 · The product a request consumes, by the attributes Odoo gives it ("a box of biscuits, a grocery item of 10 KG"): for a kind
- * (video, image), the product whose {@code seconds} is the SMALLEST not below the asked seconds — a 25-second video consumes the 30-second
- * product; a kind with one product and no seconds (an image) answers it for any length; nothing fits → empty, and the lane names no key
- * (cash, where its rule allows). Built once from the catalog's products (a handful per kind), kept by the lane and rebuilt when the
- * catalog's map changes ({@link #over}); each ask is one map get and one ceiling on a few entries — never a scan of the catalog.
+ * §15 · The product a request consumes, by the attributes Odoo gives it ("a box of biscuits, a grocery item of 10 KG"): for a kind and a
+ * media (ad + video), the product whose {@code seconds} is the SMALLEST not below the asked seconds — a 25-second video consumes the
+ * 30-second product; a kind + media with one untimed product (ad + image) answers it for any length; nothing fits → empty, and the lane
+ * names no key (cash, where its rule allows). Built once from the catalog's products (a handful per kind), kept by the lane and rebuilt
+ * when the catalog's map changes ({@link #over}); each ask is one map get and one ceiling on a few entries — never a scan of the catalog.
  */
 public final class ProductIndex {
 
     private static final Map<String, Product> NONE = Map.of();
 
     private final Map<String, Product> products;
-    private final Map<String, TreeMap<Integer, Product>> timedByKind = new HashMap<>();
-    private final Map<String, Product> untimedByKind = new HashMap<>();
+    private final Map<String, TreeMap<Integer, Product>> timed = new HashMap<>();
+    private final Map<String, Product> untimed = new HashMap<>();
 
     private ProductIndex(Map<String, Product> products) {
         this.products = products;
         for (Product p : products.values()) {
             if (p == null || !p.active() || p.kind() == null) continue;
-            String kind = kindOf(p.kind());
-            if (p.seconds() == null) untimedByKind.putIfAbsent(kind, p);
-            else timedByKind.computeIfAbsent(kind, k -> new TreeMap<>()).putIfAbsent(p.seconds(), p);
+            String slot = slotOf(p.kind(), p.media());
+            if (p.seconds() == null) untimed.putIfAbsent(slot, p);
+            else timed.computeIfAbsent(slot, k -> new TreeMap<>()).putIfAbsent(p.seconds(), p);
         }
     }
 
@@ -42,26 +43,28 @@ public final class ProductIndex {
         return current != null && current.products == now ? current : new ProductIndex(now);
     }
 
-    /** The product of this kind for this many seconds (see the class); empty = none fits. */
-    public Optional<Product> productFor(String kind, int seconds) {
-        String k = kindOf(kind);
-        TreeMap<Integer, Product> timed = timedByKind.get(k);
-        Map.Entry<Integer, Product> fit = timed == null ? null : timed.ceilingEntry(Math.max(seconds, 0));
+    /** The product of this kind and media for this many seconds (see the class); media null = the kind's products without media (voice, sms); empty = none fits. */
+    public Optional<Product> productFor(String kind, String media, int seconds) {
+        String slot = slotOf(kind, media);
+        TreeMap<Integer, Product> byLength = timed.get(slot);
+        Map.Entry<Integer, Product> fit = byLength == null ? null : byLength.ceilingEntry(Math.max(seconds, 0));
         if (fit != null) return Optional.of(fit.getValue());
-        return Optional.ofNullable(untimedByKind.get(k));
+        return Optional.ofNullable(untimed.get(slot));
     }
 
-    /** The product's key for this kind and length, as {@code productKeys} answers it; empty = no product, so no key. */
-    public java.util.List<String> keysFor(String kind, int seconds) {
-        return productFor(kind, seconds).map(p -> ProductKeys.exact(p.key())).orElse(java.util.List.of());
+    /** The product's key for this kind, media and length, as {@code productKeys} answers it; empty = no product, so no key. */
+    public List<String> keysFor(String kind, String media, int seconds) {
+        return productFor(kind, media, seconds).map(p -> ProductKeys.exact(p.key())).orElse(List.of());
     }
 
     /** How many products the index holds (active, with a kind). */
     public int size() {
-        int n = untimedByKind.size();
-        for (TreeMap<Integer, Product> timed : timedByKind.values()) n += timed.size();
+        int n = untimed.size();
+        for (TreeMap<Integer, Product> t : timed.values()) n += t.size();
         return n;
     }
 
-    private static String kindOf(String kind) { return kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT); }
+    private static String slotOf(String kind, String media) {
+        return (kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT)) + "|" + (media == null ? "" : media.trim().toLowerCase(Locale.ROOT));
+    }
 }

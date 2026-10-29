@@ -7,15 +7,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * §15 (the owner, 2026-10-29: "I want to use existing product entity and attributes management for odoo … an ad product shall have the
- * attributes like 10 sec, 30 sec") · A PRODUCT as the ledger caches it — ONE flat row of {@code product_catalog}: on a tier whose schema
- * lives in the Odoo database it is a VIEW over Odoo's product tables ({@code product_product} × {@code product_template} × the variant's
- * attribute values; prime-context's changelog makes it), elsewhere a plain table. Read-only: loaded at the start and with a tier added,
- * never written by the ledger, never re-read by a reload of new rows (a product is config, not money).
- *
- * <p>{@code productKey} is the key the package items carry in {@code packageitem.prefix}: the Odoo product's id as text for the ad, the
- * dialing prefix for the call (a call needs no product row: its key is the prefix itself). {@code kind} and {@code seconds} are the
- * attributes the lanes read (video 30 s, image); {@code uom} the unit the item's quantity counts (views, minutes).
+ * §15.3 (the owner, 2026-10-30) · A PRODUCT as the ledger caches it — ONE flat row of the TABLE {@code product_catalog}, written ONLY
+ * through the cached ledger (the portal's product roads; the Odoo import through the same roads, {@code source = odoo}). {@code productKey}
+ * is the key the package items carry in {@code packageitem.prefix}: the Odoo variant's id as text for the ad, the dialing prefix for the
+ * call (a call needs no product row). {@code kind} is the service (voice, sms, ad, wifi-internet, …), {@code media} + {@code seconds} the
+ * ad's attributes, {@code serviceGroupId} the revenue stream ({@code enumservicegroup}). Rules in {@code ProductRules}.
  */
 @Entity
 @Table(name = "product_catalog")
@@ -25,10 +21,13 @@ public class LedgerProduct implements CacheableEntity<String, LedgerProduct> {
     @Column(name = "id") private Long id;
     @Column(name = "code", length = 64) private String code;
     @Column(name = "name", length = 255) private String name;
-    @Column(name = "kind", length = 20) private String kind;
+    @Column(name = "kind", length = 32) private String kind;
+    @Column(name = "media", length = 16) private String media;
     @Column(name = "seconds") private Integer seconds;
     @Column(name = "uom", length = 20) private String uom;
     @Column(name = "active") private Boolean active;
+    @Column(name = "source", length = 16) private String source;
+    @Column(name = "service_group_id") private Integer serviceGroupId;
 
     public LedgerProduct() {}
 
@@ -54,6 +53,12 @@ public class LedgerProduct implements CacheableEntity<String, LedgerProduct> {
     public void setUom(String v) { uom = v; }
     public Boolean getActive() { return active; }
     public void setActive(Boolean v) { active = v; }
+    public String getMedia() { return media; }
+    public void setMedia(String v) { media = v; }
+    public String getSource() { return source; }
+    public void setSource(String v) { source = v; }
+    public Integer getServiceGroupId() { return serviceGroupId; }
+    public void setServiceGroupId(Integer v) { serviceGroupId = v; }
 
-    @Override public String toString() { return "LedgerProduct[" + productKey + " " + kind + (seconds == null ? "" : " " + seconds + "s") + " " + name + "]"; }
+    @Override public String toString() { return "LedgerProduct[" + productKey + " " + kind + (media == null ? "" : " " + media) + (seconds == null ? "" : " " + seconds + "s") + " group " + serviceGroupId + " " + name + "]"; }
 }

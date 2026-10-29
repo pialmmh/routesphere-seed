@@ -49,6 +49,8 @@ public final class LedgerEntities {
     static final String CATALOG = "catalog";
     /** §15 · The word that names the products ({@code product_catalog}), read-only — never named by {@value #EVERY_TABLE}: a tier may have none. */
     static final String PRODUCT_WORD = "product";
+    /** §15.3 · The word that names the service groups ({@code enumservicegroup}), read-only — never named by {@value #EVERY_TABLE}. */
+    static final String SERVICE_GROUP_WORD = "servicegroup";
 
     private static final List<Known> KNOWN = List.of(
         new Known(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class, "packageaccount", new Shape(
@@ -74,8 +76,14 @@ public final class LedgerEntities {
             Map.of("idUom", 20, "prefix", 200, "description", 255),
             Map.of("quantity", PRICE),
             Set.of())),
-        // §15 · the products: Odoo's product with its attributes, flat, READ-ONLY (a view where the schema lives in the Odoo database)
-        new Known(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, "product_catalog", Shape.NONE, true));
+        // §15.3 · the products: a TABLE written through the cache (prime-context's 009 / 007); its rules beyond the shape are ProductRules'
+        new Known(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, "product_catalog", new Shape(
+            Set.of("name", "kind", "active", "source", "serviceGroupId"),
+            Map.of("productKey", 200, "code", 64, "name", 255, "kind", 32, "media", 16, "uom", 20, "source", 16),
+            Map.of(),
+            Set.of())),
+        // §15.3 · the service groups (the revenue streams), READ-ONLY
+        new Known(Books.SERVICE_GROUP, com.telcobright.seed.switchledger.api.LedgerServiceGroup.class, "enumservicegroup", Shape.NONE, true));
 
     private LedgerEntities() {}
 
@@ -155,8 +163,9 @@ public final class LedgerEntities {
      */
     private static List<Known> matching(String word) {
         String w = word.trim().toLowerCase(Locale.ROOT);
-        if (w.equals(EVERY_TABLE)) return KNOWN.stream().filter(k -> !k.readOnly()).toList();
+        if (w.equals(EVERY_TABLE)) return KNOWN.stream().filter(k -> !k.readOnly() && !k.name().equals(Books.PRODUCT)).toList();   // a tier may have no product table
         if (w.equals(PRODUCT_WORD)) return KNOWN.stream().filter(k -> k.name().equals(Books.PRODUCT)).toList();
+        if (w.equals(SERVICE_GROUP_WORD)) return KNOWN.stream().filter(k -> k.name().equals(Books.SERVICE_GROUP)).toList();
         if (w.equals(CATALOG)) return KNOWN.stream().filter(k -> k.name().equals(Books.PACKAGE) || k.name().equals(Books.PACKAGE_ITEM)).toList();
         List<Known> out = new ArrayList<>();
         for (Known k : KNOWN) if (k.name().equalsIgnoreCase(w) || k.table().equals(w)) out.add(k);

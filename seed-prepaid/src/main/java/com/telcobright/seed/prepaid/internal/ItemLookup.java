@@ -25,7 +25,9 @@ import java.util.Optional;
  *       that hits — and the item must count the account's unit (a package of minutes and messages: the minutes' account pays the call);</li>
  * </ul>
  *
- * a CASH account ({@code BDT}) is kept as it is (pay as you go, priced by the lane's rate plan). Pure: map gets on the catalog's snapshot.
+ * a CASH account ({@code BDT}) is kept as it is (pay as you go, priced by the lane's rate plan). §15.3, step 1b: with the request's
+ * service group given, an item whose product belongs to ANOTHER group pays nothing for this request (a domestic call never pays from the
+ * video views); an item of no product is not held to it. Pure: map gets on the catalog's snapshot.
  */
 final class ItemLookup {
 
@@ -36,14 +38,17 @@ final class ItemLookup {
 
     private ItemLookup() {}
 
-    static Payable match(List<PackageAccount> payable, List<String> keys, ItemCatalog catalog) {
+    static Payable match(List<PackageAccount> payable, List<String> keys, ItemCatalog catalog) { return match(payable, keys, catalog, null); }
+
+    /** The same, narrowed to the request's service group ({@code null} = no narrowing). */
+    static Payable match(List<PackageAccount> payable, List<String> keys, ItemCatalog catalog, Integer serviceGroup) {
         List<PackageAccount> accounts = new ArrayList<>(payable.size());
         Map<Long, PackageItemMatch> matches = new java.util.HashMap<>();
         boolean any = false;
         for (PackageAccount account : payable) {
             if (PackageMatch.CASH.equals(account.getUom())) { accounts.add(account); continue; }
             PackageItemMatch match = matchOf(account, keys, catalog);
-            if (match == null) continue;
+            if (match == null || !ofTheGroup(match, serviceGroup)) continue;
             accounts.add(account);
             if (account.getId() != null) matches.put(account.getId(), match);
             any = true;
@@ -77,6 +82,12 @@ final class ItemLookup {
             if (item != null && item.uom() != null && item.uom().equals(account.getUom())) return matched(account, item, key, catalog);
         }
         return null;
+    }
+
+    /** §15.3 · The matched item's product belongs to the request's group, or names no product (the call's prefix), or no group was asked. */
+    static boolean ofTheGroup(PackageItemMatch match, Integer serviceGroup) {
+        Integer own = match.serviceGroupId();
+        return serviceGroup == null || own == null || own.equals(serviceGroup);
     }
 
     private static PackageItemMatch matched(PackageAccount account, Item item, String key, ItemCatalog catalog) {

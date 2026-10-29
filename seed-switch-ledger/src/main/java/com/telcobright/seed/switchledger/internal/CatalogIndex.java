@@ -8,6 +8,7 @@ import com.telcobright.seed.switchledger.api.LedgerPackage;
 import com.telcobright.seed.switchledger.api.LedgerPackageItem;
 import com.telcobright.seed.switchledger.api.LedgerProduct;
 import com.telcobright.seed.switchledger.api.LedgerPurchase;
+import com.telcobright.seed.switchledger.api.LedgerServiceGroup;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -40,10 +41,18 @@ final class CatalogIndex {
     private Snapshot snapshot(String db) {
         Map<Long, CatalogPackage> packages = new HashMap<>();
         for (LedgerPackage p : books.ledger().<Long, LedgerPackage>getAllEntities(db, Books.PACKAGE).values()) packages.put(p.getId(), packageOf(p));
+        Map<String, Product> products = new HashMap<>();
+        if (books.keepsProducts()) {
+            for (LedgerProduct p : books.ledger().<String, LedgerProduct>getAllEntities(db, Books.PRODUCT).values()) products.put(keyOf(p.getProductKey()), productOf(p));
+        }
+        Map<Integer, String> groups = new HashMap<>();
+        if (books.keepsServiceGroups()) {
+            for (LedgerServiceGroup g : books.ledger().<Integer, LedgerServiceGroup>getAllEntities(db, Books.SERVICE_GROUP).values()) groups.put(g.getId(), g.getName());
+        }
         Map<Long, Map<String, Item>> itemsByPackage = new HashMap<>();
         Map<Long, Item> itemsById = new HashMap<>();
         for (LedgerPackageItem row : books.ledger().<Long, LedgerPackageItem>getAllEntities(db, Books.PACKAGE_ITEM).values()) {
-            Item item = itemOf(row);
+            Item item = itemOf(row, products.get(keyOf(row.getPrefix())));
             itemsById.put(item.id(), item);
             itemsByPackage.computeIfAbsent(item.packageId(), k -> new HashMap<>()).merge(item.key(), item, CatalogIndex::lowerId);   // a repeated key: the lower id keeps it
         }
@@ -52,11 +61,7 @@ final class CatalogIndex {
         if (books.keepsPurchases()) {
             for (LedgerPurchase p : books.ledger().<Long, LedgerPurchase>getAllEntities(db, Books.PURCHASE).values()) packageOfPurchase.put(p.getId(), p.getIdPackage());
         }
-        Map<String, Product> products = new HashMap<>();
-        if (books.keepsProducts()) {
-            for (LedgerProduct p : books.ledger().<String, LedgerProduct>getAllEntities(db, Books.PRODUCT).values()) products.put(p.getProductKey(), productOf(p));
-        }
-        return new Snapshot(Map.copyOf(packages), Map.copyOf(itemsByPackage), Map.copyOf(itemsById), Map.copyOf(packageOfPurchase), Map.copyOf(products));
+        return new Snapshot(Map.copyOf(packages), Map.copyOf(itemsByPackage), Map.copyOf(itemsById), Map.copyOf(packageOfPurchase), Map.copyOf(products), Map.copyOf(groups));
     }
 
     static CatalogPackage packageOf(LedgerPackage p) {
@@ -64,16 +69,22 @@ final class CatalogIndex {
             p.getValidity() == null ? 0 : p.getValidity(), Boolean.TRUE.equals(p.getActiveStatus()));
     }
 
-    /** The item's key is its prefix, trimmed: the hashtable's key is what the lane asks with ({@code ProductKeys} trims the same way). */
-    static Item itemOf(LedgerPackageItem row) {
+    /**
+     * The item's key is its prefix, trimmed: the hashtable's key is what the lane asks with ({@code ProductKeys} trims the same way). §15.3:
+     * the item carries its product's service group and kind, resolved here once (null where its key names no product row: the call).
+     */
+    static Item itemOf(LedgerPackageItem row, Product product) {
         return new Item(row.getId(), row.getIdPackage() == null ? 0 : row.getIdPackage(), keyOf(row.getPrefix()), row.getIdUom(),
-            row.getQuantity() == null ? BigDecimal.ZERO : row.getQuantity(), row.getCategory() == null ? 0 : row.getCategory(), row.getDescription());
+            row.getQuantity() == null ? BigDecimal.ZERO : row.getQuantity(), row.getCategory() == null ? 0 : row.getCategory(), row.getDescription(),
+            product == null ? null : product.serviceGroupId(), product == null ? null : product.kind());
     }
 
     static Product productOf(LedgerProduct p) {
-        return new Product(keyOf(p.getProductKey()), p.getCode(), p.getName(), p.getKind() == null ? null : p.getKind().trim().toLowerCase(java.util.Locale.ROOT),
-            p.getSeconds(), p.getUom(), !Boolean.FALSE.equals(p.getActive()));
+        return new Product(keyOf(p.getProductKey()), p.getId(), p.getCode(), p.getName(), lower(p.getKind()), lower(p.getMedia()), p.getSeconds(), p.getUom(),
+            !Boolean.FALSE.equals(p.getActive()), lower(p.getSource()), p.getServiceGroupId());
     }
+
+    private static String lower(String s) { return s == null ? null : s.trim().toLowerCase(java.util.Locale.ROOT); }
 
     static String keyOf(String prefix) { return prefix == null ? "" : prefix.trim(); }
 
@@ -82,7 +93,7 @@ final class CatalogIndex {
 
     /** One tier's immutable catalog. */
     private record Snapshot(Map<Long, CatalogPackage> packages, Map<Long, Map<String, Item>> itemsByPackage, Map<Long, Item> itemsById,
-                            Map<Long, Long> packageOfPurchase, Map<String, Product> products) implements LedgerPort.ItemCatalog {
+                            Map<Long, Long> packageOfPurchase, Map<String, Product> products, Map<Integer, String> serviceGroups) implements LedgerPort.ItemCatalog {
         @Override public Optional<CatalogPackage> packageOf(long packageId) { return Optional.ofNullable(packages.get(packageId)); }
         @Override public Map<String, Item> itemsOf(long packageId) { return itemsByPackage.getOrDefault(packageId, Map.of()); }
         @Override public Optional<Item> itemOf(long itemId) { return Optional.ofNullable(itemsById.get(itemId)); }

@@ -28,16 +28,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class CatalogByKeyTest {
 
-    private static final Set<String> HELD = Set.of(Books.ACCOUNT, Books.RESERVE, Books.PURCHASE, Books.PACKAGE, Books.PACKAGE_ITEM, Books.PRODUCT);
+    private static final Set<String> HELD = Set.of(Books.ACCOUNT, Books.RESERVE, Books.PURCHASE, Books.PACKAGE, Books.PACKAGE_ITEM, Books.PRODUCT, Books.SERVICE_GROUP);
 
-    private final LedgerLab lab = LedgerLab.open().schema("res_2").purchaseTables().productTable()
+    private final LedgerLab lab = LedgerLab.open().schema("res_2").purchaseTables().productTable().serviceGroupTable()
         .ddl("INSERT INTO res_2.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (11, 'Video and image combo', 250, 0, TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE)")
         .item("res_2", 111, 11, "1001", "AD_view", "100").item("res_2", 112, 11, "1003", "AD_view", "500").item("res_2", 113, 11, " 1001 ", "AD_view", "7")   // a repeated key: the lower id keeps it
         .item("res_2", 21, 2, "880", "TF_min", "300").item("res_2", 22, 2, "8801", "TF_min", "100")
-        .product("res_2", "1001", 1001, "Video ad 30 s", "Video", 30, "view").product("res_2", "1003", 1003, "Image ad", "image", null, "view")
+        .product("res_2", "1001", 1001, "Video ad 30 s", "Ad", "Video", 30, "view", 30).product("res_2", "1003", 1003, "Image ad", "ad", "image", null, "view", 30)
         .purchase("res_2", 5, 705, "2030-01-01 00:00:00").ddl("UPDATE res_2.packagepurchase SET id_package = 11 WHERE id = 5")
         .accountOfItem("res_2", 51, 5, 111, "AD_view", "100")
-        .asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product"), List.of("packageaccountreserve"), 5_000);
+        .asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product", "servicegroup"), List.of("packageaccountreserve"), 5_000);
 
     @AfterEach
     void close() { lab.close(); }
@@ -63,9 +63,13 @@ class CatalogByKeyTest {
         assertThat(catalog.itemOf(112)).get().extracting(LedgerPort.Item::key).isEqualTo("1003");
         assertThat(catalog.packageOfPurchase(5)).contains(11L);
         assertThat(catalog.packageOfPurchase(6)).isEmpty();
-        assertThat(catalog.products().get("1001")).extracting(LedgerPort.Product::kind, LedgerPort.Product::seconds, LedgerPort.Product::uom, LedgerPort.Product::active)
-            .as("the product's kind is case-blind; its seconds attribute kept").containsExactly("video", 30, "view", true);
+        assertThat(catalog.products().get("1001")).extracting(LedgerPort.Product::kind, LedgerPort.Product::media, LedgerPort.Product::seconds, LedgerPort.Product::uom, LedgerPort.Product::active, LedgerPort.Product::source, LedgerPort.Product::serviceGroupId, LedgerPort.Product::id)
+            .as("kind, media and source are case-blind; the seconds, the group and the Odoo id kept").containsExactly("ad", "video", 30, "view", true, "odoo", 30, 1001L);
         assertThat(catalog.products().get("1003").seconds()).isNull();
+        assertThat(catalog.productOf(" 1001 ")).isPresent();
+        assertThat(catalog.itemsOf(11).get("1001")).extracting(LedgerPort.Item::serviceGroupId, LedgerPort.Item::kind).as("§15.3: the item carries its product's group and kind, resolved at load — mutation: items made before products → null → red").containsExactly(30, "ad");
+        assertThat(catalog.itemsOf(2).get("880")).extracting(LedgerPort.Item::serviceGroupId, LedgerPort.Item::kind).as("an item whose key names no product: no group, no kind").containsExactly(null, null);
+        assertThat(catalog.serviceGroups()).containsEntry(30, "AdView").containsEntry(101, "WiFi").containsEntry(1, "DomesticICX");
         assertThat(ledger.port().catalogOf(tier("res_2")).orElseThrow()).as("the same snapshot until new rows are merged").isSameAs(catalog);
     }
 
@@ -96,9 +100,10 @@ class CatalogByKeyTest {
     void theWordPackageNeverNamesTheProducts_theWordProductDoes() {
         var every = com.telcobright.seed.switchledger.internal.LedgerEntities.named(new com.telcobright.seed.switchledger.dependencies.LedgerDbSettings(
             List.of("package"), List.of(), lab.ledgerDbSettings().walDir(), lab.ledgerDbSettings().queueDir(), 5_000));
-        assertThat(every).as("a tier may have no product view: 'package' = the money tables and the catalog, never the products").doesNotContainKey(Books.PRODUCT).containsKey(Books.PACKAGE_ITEM);
+        assertThat(every).as("a tier may have no product table: 'package' = the money tables and the catalog, never the products nor the groups").doesNotContainKey(Books.PRODUCT).doesNotContainKey(Books.SERVICE_GROUP).containsKey(Books.PACKAGE_ITEM);
         var named = com.telcobright.seed.switchledger.internal.LedgerEntities.named(lab.ledgerDbSettings());
-        assertThat(named).containsKey(Books.PRODUCT);
-        assertThat(named.get(Books.PRODUCT).readOnly()).as("the products are read-only: loaded at the start, never written, never re-read").isTrue();
+        assertThat(named).containsKey(Books.PRODUCT).containsKey(Books.SERVICE_GROUP);
+        assertThat(named.get(Books.PRODUCT).readOnly()).as("§15.3: the products are WRITTEN through the cache (the portal's CRUD)").isFalse();
+        assertThat(named.get(Books.SERVICE_GROUP).readOnly()).as("the service groups are read-only: loaded at the start, never written").isTrue();
     }
 }

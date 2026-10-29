@@ -233,7 +233,8 @@ final class CrudUnit implements Unit {
             boolean moneyRow = Books.PURCHASE.equals(move.entity()) || Books.ACCOUNT.equals(move.entity());
             boolean madeOrDeleted = move instanceof CrudMoves.Insert || move instanceof CrudMoves.Delete;
             boolean moved = move instanceof CrudMoves.Update u && (Books.PURCHASE.equals(u.entity()) || u.set().containsKey("idpackagePurchase"));
-            if ((moneyRow && madeOrDeleted) || moved) return true;
+            boolean catalogRow = Books.PACKAGE.equals(move.entity()) || Books.PACKAGE_ITEM.equals(move.entity()) || Books.PRODUCT.equals(move.entity());   // §15: the catalog snapshot is made again
+            if ((moneyRow && madeOrDeleted) || moved || catalogRow) return true;
         }
         return false;
     }

@@ -196,6 +196,10 @@ public interface LedgerPort {
         Optional<Long> packageOfPurchase(long purchaseId);
         /** The products by their key; empty when this ledger caches no products (the call needs none: its key is the prefix itself). */
         java.util.Map<String, Product> products();
+        /** One product by its key; empty = none cached under it. */
+        default Optional<Product> productOf(String key) { return Optional.ofNullable(key == null ? null : products().get(key.trim())); }
+        /** §15.3 · The service groups (the revenue streams) by id → name; empty when this ledger caches none. */
+        default java.util.Map<Integer, String> serviceGroups() { return java.util.Map.of(); }
     }
 
     /** §15 · A package of the catalog: its id, its name, its price, its validity in seconds, whether it is for sale. */
@@ -205,14 +209,24 @@ public interface LedgerPort {
      * §15 · One item of a package: {@code key} = {@code packageitem.prefix}, the PRODUCT KEY the walk matches (the call: the dialing
      * prefix "880"; the ad: the Odoo product's id as text); {@code quantity} of {@code uom} is what a purchase opens as the item's account.
      */
-    record Item(long id, long packageId, String key, String uom, BigDecimal quantity, int category, String description) {}
+    record Item(long id, long packageId, String key, String uom, BigDecimal quantity, int category, String description, Integer serviceGroupId, String kind) {
+        /** An item whose key names no product row (the call's prefix): no group, no kind of its own. */
+        public Item(long id, long packageId, String key, String uom, BigDecimal quantity, int category, String description) { this(id, packageId, key, uom, quantity, category, description, null, null); }
+    }
 
     /**
-     * §15 · A product as the catalog's flat view names it (Odoo's product with the attributes the lanes read): {@code key} = the product
-     * key the items carry; {@code kind} = what it is (the ad: {@code video}, {@code image}; the call: {@code call}); {@code seconds} = the
-     * duration attribute (a 30-second video), null where the kind has none; {@code uom} = the unit its quantity is counted in.
+     * §15.3 (the owner, 2026-10-30) · A product as the switch caches it ({@code product_catalog}): {@code key} = the product key the items
+     * carry; {@code id} = the Odoo variant it came from (null for a product made in the portal); {@code kind} = the SERVICE it belongs to,
+     * one of {@link #KINDS} (voice, sms, ad, wifi-internet, …); {@code media} = the ad's attribute (video, image, audio; null for other
+     * kinds); {@code seconds} = the duration (a 30-second video), null where there is none; {@code source} = portal | odoo;
+     * {@code serviceGroupId} = the revenue stream ({@code enumservicegroup.id}: 30 the ad view, 101 the WiFi, 1..9 the voice groups).
      */
-    record Product(String key, String code, String name, String kind, Integer seconds, String uom, boolean active) {}
+    record Product(String key, Long id, String code, String name, String kind, String media, Integer seconds, String uom, boolean active, String source, Integer serviceGroupId) {
+        /** The kinds a product may be: the services of the platform. */
+        public static final java.util.List<String> KINDS = java.util.List.of("voice", "sms", "ad", "wifi-internet", "isp-internet", "voice-broadcast", "ivr", "extension");
+        public static final java.util.List<String> MEDIA = java.util.List.of("video", "image", "audio");
+        public static final java.util.List<String> SOURCES = java.util.List.of("portal", "odoo");
+    }
 
     /** L2b item 4 · Ids from the application's source (seed-idgen's LONG counters): (table, the highest id in use) → a new id above it. */
     @FunctionalInterface

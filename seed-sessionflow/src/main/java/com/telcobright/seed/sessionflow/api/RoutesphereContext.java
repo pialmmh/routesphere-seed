@@ -115,6 +115,8 @@ public class RoutesphereContext extends SessionContext {
     @JsonIgnore transient volatile List<LevelAdmission> walking = new ArrayList<>();
     /** L2b · The money engine's plan of the candidate under admission (seed-prepaid's: every tier rated, held at once); the base never reads it. */
     @JsonIgnore public transient volatile Object moneyPlan;
+    /** §15.3 · The service group of the item that paid each tier (tier index → group), where the walk matched a product; the CDR of that tier carries it instead of the lane's. */
+    @JsonIgnore public transient volatile java.util.Map<Integer, Integer> tierServiceGroups = new java.util.concurrent.ConcurrentHashMap<>();
     /** The candidate being admitted (live, admission only) — read it through {@link #candidateBeingAdmitted()}. */
     @JsonIgnore transient volatile Candidate trying;
     /** The persisted picture of {@link #levels}: ids and amounts, in the same order. */

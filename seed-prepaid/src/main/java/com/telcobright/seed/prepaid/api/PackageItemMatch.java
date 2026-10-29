@@ -16,6 +16,12 @@ public record PackageItemMatch(PackageAccount account, LedgerPort.Item item, Led
     /** The product's seconds attribute, or null (an image, a call). */
     public Integer seconds() { return product == null ? null : product.seconds(); }
 
-    /** The product's kind (video, image, call), or null where no product is cached. */
+    /** The product's kind (ad, voice, …), or null where no product is cached. */
     public String kind() { return product == null ? null : product.kind(); }
+
+    /** The product's media (video, image, audio), or null. */
+    public String media() { return product == null ? null : product.media(); }
+
+    /** §15.3 · The service group (the revenue stream) of the item that pays: its product's; null where the item names no product. */
+    public Integer serviceGroupId() { return item.serviceGroupId() != null ? item.serviceGroupId() : product == null ? null : product.serviceGroupId(); }
 }

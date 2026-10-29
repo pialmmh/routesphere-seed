@@ -73,8 +73,18 @@ final class AccountWalk<C extends RoutesphereContext> {
     }
 
     private TierReserve.Held holdOnTheFirstThatPays(C ctx, Tier tier, Partner partner, PayingTier paying, Candidates candidates, String reference) {
-        return TierReserve.of(flow).holdOnTheFirstThatPays(ctx, tier, partner, candidates.accounts(), account -> rated(ctx, paying, account, candidates.matchOf(account)),
+        TierReserve.Held held = TierReserve.of(flow).holdOnTheFirstThatPays(ctx, tier, partner, candidates.accounts(), account -> rated(ctx, paying, account, candidates.matchOf(account)),
             reference, () -> candidates.causeWhenNone() != null ? candidates.causeWhenNone() : noBalanceCauseOf(ctx, paying), rules.chargesNow());
+        rememberTheGroupThatPaid(ctx, tier, candidates, held);
+        return held;
+    }
+
+    /** §15.3 · The group of the product that paid this tier goes on the session: the charge record of the tier carries it instead of the lane's. */
+    private static void rememberTheGroupThatPaid(RoutesphereContext ctx, Tier tier, Candidates candidates, TierReserve.Held held) {
+        if (held == null || held.level() == null) return;
+        PackageItemMatch match = candidates.matchOf(held.level().getAccount());
+        Integer group = match == null ? null : match.serviceGroupId();
+        if (group != null && group > 0) ctx.tierServiceGroups.put(tier.levelIndex(), group);
     }
 
     private static String causeOf(TierReserve.Held held) { return held.verdict().accepted() ? null : held.verdict().cause(); }
@@ -93,7 +103,8 @@ final class AccountWalk<C extends RoutesphereContext> {
         Optional<LedgerPort.ItemCatalog> catalog = flow.kit().ledger().catalogOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
         if (catalog.isEmpty()) return walkedByUnit(tier, payable);
         List<String> keys = flow.step(ctx, "PRODUCT_KEYS", () -> rules.productKeys().apply(ctx));
-        ItemLookup.Payable matched = ItemLookup.match(payable, keys == null ? List.of() : keys, catalog.get());
+        Integer group = rules.serviceGroup() == null ? null : flow.step(ctx, "SERVICE_GROUP", () -> rules.serviceGroup().apply(ctx));
+        ItemLookup.Payable matched = ItemLookup.match(payable, keys == null ? List.of() : keys, catalog.get(), group);
         String cause = !matched.anyPackageMatched() && matched.accounts().isEmpty() ? SessionCause.PACKAGE_ITEM_NOT_FOUND : null;
         return new Candidates(matched.accounts(), matched.matches(), cause);
     }

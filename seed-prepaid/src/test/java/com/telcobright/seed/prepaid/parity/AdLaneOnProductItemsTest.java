@@ -14,6 +14,7 @@ import static com.telcobright.seed.prepaid.parity.AdLaneOnItems.AN_IMAGE;
 import static com.telcobright.seed.prepaid.parity.AdLaneOnItems.A_VIDEO_30;
 import static com.telcobright.seed.prepaid.parity.AdLaneOnItems.A_VIDEO_60;
 import static com.telcobright.seed.prepaid.parity.AdLaneOnItems.A_VIDEO_90;
+import static com.telcobright.seed.prepaid.parity.AdLaneOnItems.A_VIDEO_OF_101;
 import static com.telcobright.seed.prepaid.parity.ParityScene.ADCO;
 import static com.telcobright.seed.prepaid.parity.ParityScene.RESELLER;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,18 +37,22 @@ class AdLaneOnProductItemsTest {
 
     /** The catalog: packages 11–13 at res_2 and 21 at btcl with their items and the products; the purchases moved onto them; the accounts naming their items. */
     static void catalogOf(LedgerLab lab) {
-        for (long p : new long[] {11, 12, 13}) {
+        for (long p : new long[] {11, 12, 13, 14}) {
             lab.ddl("INSERT INTO res_2.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (" + p + ", 'Package " + p + " of items', 100, 0, TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE)");
             lab.ddl("UPDATE res_2.packagepurchase SET id_package = " + p + " WHERE id = " + p);
         }
         lab.item("res_2", 111, 11, AdLaneOnItems.VIDEO_30, "AD_view", "100").item("res_2", 121, 12, AdLaneOnItems.IMAGE, "AD_view", "5")
-            .item("res_2", 131, 13, AdLaneOnItems.VIDEO_60, "AD_sec", "300");
+            .item("res_2", 131, 13, AdLaneOnItems.VIDEO_60, "AD_sec", "300").item("res_2", 141, 14, AdLaneOnItems.VIDEO_OF_101, "AD_view", "50");
         for (String schema : new String[] {"res_2", "btcl"}) {
-            lab.product(schema, AdLaneOnItems.VIDEO_30, 1001, "Video ad 30 s", "video", 30, "view").product(schema, AdLaneOnItems.VIDEO_60, 1002, "Video ad 60 s", "video", 60, "view")
-                .product(schema, AdLaneOnItems.IMAGE, 1003, "Image ad", "image", null, "view").product(schema, AdLaneOnItems.VIDEO_90, 1004, "Video ad 90 s", "video", 90, "view");
+            lab.product(schema, AdLaneOnItems.VIDEO_30, 1001, "Video ad 30 s", "ad", "video", 30, "view", AdLaneOnItems.AD_GROUP).product(schema, AdLaneOnItems.VIDEO_60, 1002, "Video ad 60 s", "ad", "video", 60, "view", AdLaneOnItems.AD_GROUP)
+                .product(schema, AdLaneOnItems.IMAGE, 1003, "Image ad", "ad", "image", null, "view", AdLaneOnItems.AD_GROUP).product(schema, AdLaneOnItems.VIDEO_90, 1004, "Video ad 90 s", "ad", "video", 90, "view", AdLaneOnItems.AD_GROUP)
+                .product(schema, AdLaneOnItems.VIDEO_OF_101, 2001, "Video ad 30 s of the WiFi lane", "ad", "video", 30, "view", AdLaneOnItems.OTHER_GROUP);
         }
         lab.ddl("UPDATE res_2.packageaccount SET id_packageitem = 111 WHERE id_packageaccount = 51");
         lab.ddl("UPDATE res_2.packageaccount SET id_packageitem = 121 WHERE id_packageaccount = 52");
+        // §15.3 · a package of Adco whose item's product belongs to group 101: account 56 on purchase 14 (package 14)
+        lab.purchase("res_2", 14, ADCO, "2030-01-01 00:00:00").ddl("UPDATE res_2.packagepurchase SET id_package = 14 WHERE id = 14");
+        lab.accountOfItem("res_2", 56, 14, 141, "AD_view", "50");
         lab.ddl("INSERT INTO btcl.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (21, 'Reseller image views', 100, 0, TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE)");
         lab.item("btcl", 211, 21, AdLaneOnItems.IMAGE, "AD_view", "50");
         lab.purchase("btcl", 8, RESELLER, "2030-01-01 00:00:00").ddl("UPDATE btcl.packagepurchase SET id_package = 21 WHERE id = 8");
@@ -139,6 +144,32 @@ class AdLaneOnProductItemsTest {
         assertThat(refused.accepted()).isFalse();
         assertThat(refused.cause()).isEqualTo(SessionCause.INSUFFICIENT_BALANCE);
         assertThat(scene.balance("res_2", 51)).isEqualByComparingTo("100");
+    }
+
+    /** P7 · §15.3 step 1b · The video product of group 101 is in Adco's package 14, keyed as the view asks — the ad lane (group 30) never pays from it: cash pays. */
+    @Test
+    void P7_anItemOfAnotherServiceGroup_neverPaysTheRequest_cashDoes() {
+        scene = open(AdLaneOnItems::onPrepaid);
+
+        scene.admitted("g1", ADCO, A_VIDEO_OF_101);
+
+        assertThat(scene.balance("res_2", 56)).as("mutation: the group not checked → the group-101 package pays the ad lane's view → red").isEqualByComparingTo("50");
+        assertThat(scene.balance("res_2", 54)).as("no item of the request's group: cash at the price").isEqualByComparingTo("19.60");
+    }
+
+    /** P8 · §15.3 · A lane of group 101 asking the same key: the item pays, and the charge record of that tier carries the PRODUCT's group (101), the cash tier the lane's (30). */
+    @Test
+    void P8_theChargeRecordCarriesTheMatchedProductsGroup_theCashTierTheLanes() {
+        scene = open(AdLaneOnItems::ofGroup101);
+
+        CallContext view = scene.admitted("g2", ADCO, A_VIDEO_OF_101);
+        scene.answer(view);
+        scene.flow.settle(view, com.telcobright.statewalk.session.Outcome.SUCCEEDED);
+
+        assertThat(scene.balance("res_2", 56)).isEqualByComparingTo("49");
+        java.util.List<com.telcobright.seed.sessionflow.api.CdrEvent> tiers = scene.cdrs.of("g2").get(0).tiers();
+        assertThat(tiers).extracting(t -> t.serviceGroup).as("the leaf's record: the product's group 101; the root's (cash): the lane's 30 — mutation: the matched group not remembered → 30, 30 → red")
+            .containsExactly(AdLaneOnItems.OTHER_GROUP, AdLaneOnItems.AD_GROUP);
     }
 
     private static ParityScene open(Function<com.telcobright.seed.sessionflow.dependencies.RoutesphereKit, com.telcobright.seed.sessionflow.api.RoutesphereFlow<CallContext>> lane) {

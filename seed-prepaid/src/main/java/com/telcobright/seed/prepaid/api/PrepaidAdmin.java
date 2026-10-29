@@ -6,8 +6,10 @@ import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
 import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.idgen.api.IdKind;
 import com.telcobright.seed.idgen.spi.IdSource;
+import com.telcobright.seed.sessionflow.api.CachedLedger;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
+import com.telcobright.seed.switchledger.api.LedgerProduct;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -103,6 +105,85 @@ public final class PrepaidAdmin {
         for (LedgerPort.Item item : items) buckets.add(new LedgerPort.Bucket(item.uom(), item.quantity(), item.id()));
         if (buckets.isEmpty()) throw new IllegalArgumentException("package " + packageId + " (" + pkg.name() + ") has no items: a purchase would open no account");
         return new LedgerPort.Offer(packageId, pkg.name(), pkg.price(), at, at.plusSeconds(pkg.validitySeconds()), buckets);
+    }
+
+    // ── §15.3 · products through the cached ledger (the portal's CRUD; the Odoo import takes the same road) ─────────────────
+
+    /** The tier's products as the cache holds them (active and not), by key. */
+    public List<LedgerPort.Product> products(String root, String tierDb) {
+        List<LedgerPort.Product> products = new ArrayList<>(catalogOf(root, tierDb).products().values());
+        products.sort(Comparator.comparing(LedgerPort.Product::key));
+        return List.copyOf(products);
+    }
+
+    /** The tier's service groups (id → name) as the cache holds them; empty where the ledger caches none. */
+    public java.util.Map<Integer, String> serviceGroups(String root, String tierDb) { return catalogOf(root, tierDb).serviceGroups(); }
+
+    /**
+     * A product made at {@code tierDb} of {@code root}: ONE cached-ledger unit, refused in words by the ledger's rules (a key taken, a kind
+     * outside the enum, a source outside portal | odoo, an ad product without its media, seconds on an image, a group the tier does not
+     * know) — the cache holds it at once, the database follows. {@code product.active()} false makes it dormant from the start.
+     */
+    public LedgerPort.Product createProduct(String root, String tierDb, LedgerPort.Product product, String reference) {
+        Objects.requireNonNull(product, "product");
+        List<String> keys = ProductKeys.exact(product.key());
+        if (keys.isEmpty()) throw new IllegalArgumentException("a product carries its key (the Odoo variant's id as text, or the portal's own)");
+        String key = keys.get(0);
+        if (catalogOf(root, tierDb).productOf(key).isPresent()) throw new IllegalArgumentException("product " + key + " is in the catalog of " + tierDb + " already");
+        commit(root, tierDb, reference, unit -> unit.insert(tierDb, rowOf(product, key)));
+        return catalogOf(root, tierDb).productOf(key).orElseThrow();
+    }
+
+    /** The fields given of a product (name, kind, media, seconds, uom, code, serviceGroupId, active — the entity's field names), in ONE unit; refused in words. */
+    public LedgerPort.Product updateProduct(String root, String tierDb, String key, java.util.Map<String, ?> fields, String reference) {
+        String k = requireProduct(root, tierDb, key);
+        if (fields == null || fields.isEmpty()) throw new IllegalArgumentException("nothing to change on product " + k);
+        if (fields.containsKey("productKey") || fields.containsKey("id") || fields.containsKey("source")) throw new IllegalArgumentException("a product's key, its Odoo id and its source never change: make another product");
+        commit(root, tierDb, reference, unit -> unit.update(tierDb, LedgerProduct.class, k, fields));
+        return catalogOf(root, tierDb).productOf(k).orElseThrow();
+    }
+
+    /** A product taken off sale (never deleted: an item may name it); an item that names it keeps paying from the accounts already opened. */
+    public LedgerPort.Product deactivateProduct(String root, String tierDb, String key, String reference) {
+        return updateProduct(root, tierDb, key, java.util.Map.of("active", Boolean.FALSE), reference);
+    }
+
+    private String requireProduct(String root, String tierDb, String key) {
+        List<String> keys = ProductKeys.exact(key);
+        if (keys.isEmpty()) throw new IllegalArgumentException("a product is named by its key");
+        if (catalogOf(root, tierDb).productOf(keys.get(0)).isEmpty()) throw new IllegalArgumentException("product " + keys.get(0) + " is not in the catalog of " + tierDb);
+        return keys.get(0);
+    }
+
+    private void commit(String root, String tierDb, String reference, java.util.function.Consumer<CachedLedger.Unit> stage) {
+        if (reference == null || reference.isBlank()) throw new IllegalArgumentException("a product write carries its reference (the officer's action)");
+        tierOf(root, tierDb);
+        CachedLedger crud = kit.ledger().cachedLedgerOf(root).orElseThrow(() -> new IllegalStateException("the root '" + root + "' has no cached ledger: products are written through it only"));
+        CachedLedger.Unit unit = crud.unit(reference);
+        stage.accept(unit);
+        CachedLedger.Outcome outcome = unit.commit();
+        if (outcome instanceof CachedLedger.Refused refused) throw new IllegalArgumentException(refused.reason());
+    }
+
+    private LedgerPort.ItemCatalog catalogOf(String root, String tierDb) {
+        return kit.ledger().catalogOf(new LevelAdmission(0, tierOf(root, tierDb), null, null)).orElseThrow(() -> new IllegalStateException(
+            "the ledger of the tier '" + tierDb + "' of the root '" + root + "' caches no catalog: name package, packageitem and product among its ledger DB's entities"));
+    }
+
+    private static LedgerProduct rowOf(LedgerPort.Product p, String key) {
+        LedgerProduct row = new LedgerProduct();
+        row.setProductKey(key);
+        row.setId(p.id());
+        row.setCode(p.code());
+        row.setName(p.name());
+        row.setKind(p.kind());
+        row.setMedia(p.media());
+        row.setSeconds(p.seconds());
+        row.setUom(p.uom());
+        row.setActive(p.active());
+        row.setSource(p.source() == null ? "portal" : p.source());
+        row.setServiceGroupId(p.serviceGroupId());
+        return row;
     }
 
     private long nextId(String table, long highestInUse) {

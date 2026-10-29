@@ -49,6 +49,7 @@ final class RowRules {
         if (taken != null) return taken;
         if (Books.ACCOUNT.equals(row.entity()) && books.keepsPurchases()) return refusalOfItsPurchase(work, books, row, what);
         if ((Books.PURCHASE.equals(row.entity()) || Books.PACKAGE_ITEM.equals(row.entity())) && books.keepsCatalog()) return refusalOfItsPackage(work, books, row, what);
+        if (Books.PRODUCT.equals(row.entity())) return ProductRules.refusalOf(work, books, row, what);   // §15.3
         return null;
     }
 
@@ -132,6 +133,7 @@ final class RowRules {
     }
 
     private static String refusalOfDelete(UnitOfWork work, UnitOfWork.Row row) {
+        if (Books.PRODUCT.equals(row.entity())) return ProductRules.refusalOfDelete(work, row);   // §15.3
         if (Books.PACKAGE.equals(row.entity())) {
             for (String named : new String[] {Books.PACKAGE_ITEM, Books.PURCHASE}) {
                 for (Object other : work.rowsAsLeft(row.tier(), named)) {

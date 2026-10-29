@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ItemLookupTest {
 
-    private static final Item VIDEO_30 = new Item(111, 11, "1001", "AD_view", new BigDecimal("100"), 1, "video 30 s views");
-    private static final Item IMAGE = new Item(112, 11, "1003", "AD_view", new BigDecimal("500"), 1, "image views");
+    private static final Item VIDEO_30 = new Item(111, 11, "1001", "AD_view", new BigDecimal("100"), 1, "video 30 s views", 30, "ad");
+    private static final Item IMAGE = new Item(112, 11, "1003", "AD_view", new BigDecimal("500"), 1, "image views", 30, "ad");
     private static final Item MINUTES_880 = new Item(21, 2, "880", "TF_min", new BigDecimal("300"), 1, "Bangladesh minutes");
     private static final Item MINUTES_8801 = new Item(22, 2, "8801", "TF_min", new BigDecimal("100"), 1, "Bangladesh mobile minutes");
     private static final Item MESSAGES_880 = new Item(23, 2, "880", "OTH_ea", new BigDecimal("50"), 1, "Bangladesh messages");
@@ -38,7 +38,7 @@ class ItemLookupTest {
         }
         @Override public Optional<Item> itemOf(long itemId) { return List.of(VIDEO_30, IMAGE, MINUTES_880, MINUTES_8801, MESSAGES_880).stream().filter(i -> i.id() == itemId).findFirst(); }
         @Override public Optional<Long> packageOfPurchase(long purchaseId) { return purchaseId == 5 ? Optional.of(11L) : purchaseId == 7 ? Optional.of(2L) : Optional.empty(); }
-        @Override public Map<String, Product> products() { return Map.of("1001", new Product("1001", "V30", "Video ad 30 s", "video", 30, "view", true)); }
+        @Override public Map<String, Product> products() { return Map.of("1001", new Product("1001", 1001L, "V30", "Video ad 30 s", "ad", "video", 30, "view", true, "odoo", 30)); }
     };
 
     private static PackageAccount named(long id, long purchase, String uom, Long itemId) {
@@ -61,7 +61,9 @@ class ItemLookupTest {
         assertThat(match.item()).isSameAs(VIDEO_30);
         assertThat(match.key()).isEqualTo("1001");
         assertThat(match.seconds()).isEqualTo(30);
-        assertThat(match.kind()).isEqualTo("video");
+        assertThat(match.kind()).isEqualTo("ad");
+        assertThat(match.media()).isEqualTo("video");
+        assertThat(match.serviceGroupId()).isEqualTo(30);
         assertThat(aVideo.matchOf(cash)).isNull();
 
         ItemLookup.Payable anImage = ItemLookup.match(List.of(images, videos, cash), List.of("1003"), CATALOG);
@@ -72,6 +74,20 @@ class ItemLookupTest {
         assertThat(aLongVideo.accounts()).as("no package has the item: cash alone").containsExactly(cash);
         assertThat(aLongVideo.anyPackageMatched()).isFalse();
         assertThat(ItemLookup.match(List.of(images, videos), List.of("1002"), CATALOG).accounts()).as("no package, no cash: nothing — the walk says PACKAGE_ITEM_NOT_FOUND").isEmpty();
+    }
+
+    /** §15.3 step 1b · The request's service group narrows the items: a product of another group pays nothing; an item of no product is not held to it. */
+    @Test
+    void theRequestsServiceGroup_dropsAnItemOfAnotherGroup_keepsAnItemOfNoProduct() {
+        PackageAccount videos = named(51, 5, "AD_view", 111L), cash = named(54, 6, "BDT", null), minutes = named(41, 7, "TF_min", null);
+
+        ItemLookup.Payable ofTheAd = ItemLookup.match(List.of(videos, cash), List.of("1001"), CATALOG, 30);
+        assertThat(ofTheAd.accounts()).containsExactly(videos, cash);
+        ItemLookup.Payable ofTheWifi = ItemLookup.match(List.of(videos, cash), List.of("1001"), CATALOG, 101);
+        assertThat(ofTheWifi.accounts()).as("mutation: the group not checked → the video views pay a WiFi request → red").containsExactly(cash);
+        assertThat(ofTheWifi.anyPackageMatched()).isFalse();
+        ItemLookup.Payable aCall = ItemLookup.match(List.of(minutes), List.of("8801", "880"), CATALOG, 1);
+        assertThat(aCall.accounts()).as("the minutes' item names no product: not held to the group").containsExactly(minutes);
     }
 
     @Test

@@ -108,13 +108,13 @@ public final class ParityScene implements AutoCloseable {
         fundTheLab(balances);
         if (purchaseExpiries != null) buyEveryAccountsPurchase(purchaseExpiries);
         if (catalog != null) {
-            lab.productTable();
+            lab.productTable().serviceGroupTable();
             catalog.accept(lab);
-            lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product"), List.of("packageaccountreserve"), 5_000);
+            lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product", "servicegroup"), List.of("packageaccountreserve"), 5_000);
         }
         lab.start();
         this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null : catalog != null
-            ? java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase", "Package", "PackageItem", "Product")
+            ? java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase", "Package", "PackageItem", "Product", "ServiceGroup")
             : java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase"));
         this.recorder = new RecordingPort(ledger.port(), this::ctxOrNull);
         this.kit = RoutesphereKit.builder().tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("esl", "10.0.0.1:8021", "btcl")))
