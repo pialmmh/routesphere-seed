@@ -23,8 +23,10 @@ import java.util.Set;
  */
 public final class LedgerEntities {
 
-    /** One entity the ledger knows: its name in the MemLedger, its class, its table, the shape its table holds. */
-    public record Known(String name, Class<? extends CacheableEntity<?, ?>> type, String table, Shape shape) {}
+    /** One entity the ledger knows: its name in the MemLedger, its class, its table, the shape its table holds; §15: read-only = loaded at the start only, never written. */
+    public record Known(String name, Class<? extends CacheableEntity<?, ?>> type, String table, Shape shape, boolean readOnly) {
+        public Known(String name, Class<? extends CacheableEntity<?, ?>> type, String table, Shape shape) { this(name, type, table, shape, false); }
+    }
 
     /**
      * C2 · What the table's columns hold (prime-context's DDL, its PostgreSQL and MySQL twins; the narrower where they differ): the fields
@@ -45,6 +47,8 @@ public final class LedgerEntities {
     static final String EVERY_TABLE = "package";
     /** C4 · The word that names the catalog: {@code package} and {@code packageitem} (beside a list of money tables). */
     static final String CATALOG = "catalog";
+    /** §15 · The word that names the products ({@code product_catalog}), read-only — never named by {@value #EVERY_TABLE}: a tier may have none. */
+    static final String PRODUCT_WORD = "product";
 
     private static final List<Known> KNOWN = List.of(
         new Known(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class, "packageaccount", new Shape(
@@ -69,7 +73,9 @@ public final class LedgerEntities {
             Set.of("idPackage", "quantity", "idUom", "category", "prefix", "description"),           // id_package: NOT NULL on MySQL; quantity, description: on PostgreSQL
             Map.of("idUom", 20, "prefix", 200, "description", 255),
             Map.of("quantity", PRICE),
-            Set.of())));
+            Set.of())),
+        // §15 · the products: Odoo's product with its attributes, flat, READ-ONLY (a view where the schema lives in the Odoo database)
+        new Known(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, "product_catalog", Shape.NONE, true));
 
     private LedgerEntities() {}
 
@@ -143,12 +149,14 @@ public final class LedgerEntities {
     }
 
     /**
-     * {@value #EVERY_TABLE} names every known table (it is also the catalog's table: the word keeps its meaning); {@value #CATALOG} names the
-     * catalog's two; a word that IS another entity's name or table names that one; otherwise every table it is a prefix of.
+     * {@value #EVERY_TABLE} names every known money table (it is also the catalog's table: the word keeps its meaning) — never the read-only
+     * products; {@value #CATALOG} names the catalog's two; {@value #PRODUCT_WORD} the products; a word that IS another entity's name or table
+     * names that one; otherwise every table it is a prefix of.
      */
     private static List<Known> matching(String word) {
         String w = word.trim().toLowerCase(Locale.ROOT);
-        if (w.equals(EVERY_TABLE)) return KNOWN;
+        if (w.equals(EVERY_TABLE)) return KNOWN.stream().filter(k -> !k.readOnly()).toList();
+        if (w.equals(PRODUCT_WORD)) return KNOWN.stream().filter(k -> k.name().equals(Books.PRODUCT)).toList();
         if (w.equals(CATALOG)) return KNOWN.stream().filter(k -> k.name().equals(Books.PACKAGE) || k.name().equals(Books.PACKAGE_ITEM)).toList();
         List<Known> out = new ArrayList<>();
         for (Known k : KNOWN) if (k.name().equalsIgnoreCase(w) || k.table().equals(w)) out.add(k);

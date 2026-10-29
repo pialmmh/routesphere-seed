@@ -82,7 +82,7 @@ public final class LedgerLab implements AutoCloseable {
         sql("CREATE SCHEMA IF NOT EXISTS " + name);
         sql("CREATE TABLE " + name + ".packageaccount (id_packageaccount BIGINT NOT NULL PRIMARY KEY, id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255),"
             + " lastAmount DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, balanceAfter DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL,"
-            + " creditLimit DECIMAL(20,6), isSelected BOOLEAN DEFAULT FALSE NOT NULL)");
+            + " creditLimit DECIMAL(20,6), isSelected BOOLEAN DEFAULT FALSE NOT NULL, id_packageitem BIGINT)");
         sql("CREATE TABLE " + name + ".packageaccountreserve (channel_call_uuid VARCHAR(255) NOT NULL PRIMARY KEY, id_packageaccount BIGINT NOT NULL,"
             + " id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255) NOT NULL, reserveUnit DECIMAL(20,6) NOT NULL, uom VARCHAR(45) NOT NULL, time VARCHAR(64))");
         for (String ddl : moreTables) sql(String.format(ddl, name));
@@ -152,6 +152,37 @@ public final class LedgerLab implements AutoCloseable {
                 + " TIMESTAMP '2026-01-01 00:00:00', 31536000, 0, TRUE)");
         moreTables.addAll(catalog);
         for (String schema : schemas) for (String statement : catalog) sql(String.format(statement, schema));
+        return this;
+    }
+
+    /**
+     * §15 · The products' flat table ({@code product_catalog}: a view over Odoo's product tables where the schema lives in the Odoo database)
+     * in every schema, made so far and later, its entity registered — read-only, loaded at the start only.
+     */
+    public LedgerLab productTable() {
+        String ddl = "CREATE TABLE %s.product_catalog (product_key VARCHAR(200) NOT NULL PRIMARY KEY, id BIGINT, code VARCHAR(64), name VARCHAR(255),"
+            + " kind VARCHAR(20), seconds INT, uom VARCHAR(20), active BOOLEAN)";
+        return alsoRegister(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, ddl);
+    }
+
+    /** §15 · A product row: the key the items carry, its kind (video, image, call), its seconds (null = none), its unit. */
+    public LedgerLab product(String schema, String key, long id, String name, String kind, Integer seconds, String uom) {
+        sql("INSERT INTO " + schema + ".product_catalog (product_key, id, code, name, kind, seconds, uom, active) VALUES ('" + key + "', " + id + ", 'P" + id + "', '" + name + "', '"
+            + kind + "', " + (seconds == null ? "NULL" : seconds) + ", '" + uom + "', TRUE)");
+        return this;
+    }
+
+    /** §15 · An item of a package: its product key ({@code prefix}), its quantity of its unit. */
+    public LedgerLab item(String schema, long id, long packageId, String key, String uom, String quantity) {
+        sql("INSERT INTO " + schema + ".packageitem (id, id_package, quantity, id_UOM, category, prefix, description) VALUES (" + id + ", " + packageId + ", " + quantity + ", '" + uom
+            + "', 1, '" + key + "', 'item " + id + " of package " + packageId + "')");
+        return this;
+    }
+
+    /** §15 · A package account row that names its item ({@code id_packageitem}). */
+    public LedgerLab accountOfItem(String schema, long id, long purchase, long itemId, String uom, String balance) {
+        account(schema, id, purchase, uom, balance);
+        sql("UPDATE " + schema + ".packageaccount SET id_packageitem = " + itemId + " WHERE id_packageaccount = " + id);
         return this;
     }
 

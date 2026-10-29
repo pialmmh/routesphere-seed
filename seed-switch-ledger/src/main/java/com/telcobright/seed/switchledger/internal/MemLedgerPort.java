@@ -48,14 +48,25 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private final AccountLocks locks;
     private final Answers answers = new Answers();
     private final Purchases purchases;
+    private final CatalogIndex catalog;
     private final LedgerCrud crud;
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
         this.locks = locks;
         this.purchases = new Purchases(books);
-        this.crud = new LedgerCrud(books, locks, purchases::forgetTheIndex);
+        this.catalog = new CatalogIndex(books);
+        this.crud = new LedgerCrud(books, locks, this::forgetTheIndexes);
     }
+
+    /** New rows were merged (a reload, a tier added, a write through the CRUD): the partner index and the catalog are made again on the next ask. */
+    private void forgetTheIndexes() {
+        purchases.forgetTheIndex();
+        catalog.forget();
+    }
+
+    /** §15 · The tier's catalog by key (packages, items by product key, purchases' packages, products) from the cache; empty = none cached. */
+    @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return catalog.of(tier == null ? null : tier.getDbName()); }
 
     /** C1 · The root's cached ledger: this port is ONE root's, so the root is not asked. */
     @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) { return Optional.of(crud); }
@@ -121,7 +132,7 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     public Optional<java.util.List<Purchase>> purchasesOf(LevelAdmission buyer) { return purchases.purchasesOf(buyer); }
 
     /** New rows were merged into the cache (a reload, a tier added): the partner → accounts index is made again on its next ask. */
-    public void newRowsMerged() { purchases.forgetTheIndex(); }
+    public void newRowsMerged() { forgetTheIndexes(); }
 
     private static Credited creditedOf(Credit.Credited done) { return new Credited(done.accountId(), done.before(), done.after(), done.purchaseId()); }
 

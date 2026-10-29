@@ -95,6 +95,8 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return shared(() -> port.accountsOf(buyer)); }
 
     @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return shared(() -> port.purchasesOf(buyer)); }
+    /** §15 · The tier's catalog by key, under the gate like every read (a reload replaces the snapshot behind it). */
+    @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return shared(() -> port.catalogOf(tier)); }
 
     /** C1 · The root's cached ledger behind the gate: every read and every commit holds it shared — a new tier never loads under a unit. */
     @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) { return Optional.of(port.crud().within(gate.readLock())); }

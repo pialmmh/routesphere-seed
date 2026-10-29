@@ -56,7 +56,7 @@ public final class LedgerDb {
     public static Set<String> register(MemLedgerBuilder builder, LedgerDbSettings settings) {
         Map<String, LedgerEntities.Known> named = LedgerEntities.named(settings);
         for (LedgerEntities.Known k : named.values()) {
-            boolean startOnly = settings.cacheOnly().stream().anyMatch(t -> t.equalsIgnoreCase(k.table()));
+            boolean startOnly = k.readOnly() || settings.cacheOnly().stream().anyMatch(t -> t.equalsIgnoreCase(k.table()));   // §15: a read-only entity (the products) is never re-read
             if (startOnly) builder.registerEntityLoadedAtStartOnly(k.name(), k.type());
             else builder.registerEntity(k.name(), k.type());
         }

@@ -38,6 +38,8 @@ public final class Books {
     /** C4 · The catalog: a package ({@link com.telcobright.seed.switchledger.api.LedgerPackage}) and its items, cached where the ledger DB names them. */
     public static final String PACKAGE = "Package";
     public static final String PACKAGE_ITEM = "PackageItem";
+    /** §15 · The products ({@link com.telcobright.seed.switchledger.api.LedgerProduct}, the flat {@code product_catalog}), read-only, cached where the ledger DB names them. */
+    public static final String PRODUCT = "Product";
 
     private final MemLedger ledger;
     private final Clock clock;
@@ -64,6 +66,9 @@ public final class Books {
 
     /** C4 · Does this ledger cache the catalog ({@value #PACKAGE} registered)? Then a purchase's and an item's package is checked in it. */
     public boolean keepsCatalog() { return held.contains(PACKAGE); }
+
+    /** §15 · Does this ledger cache the products ({@value #PRODUCT} registered)? The catalog's items match without them (the call). */
+    public boolean keepsProducts() { return held.contains(PRODUCT); }
 
     /** C1 · Does this ledger cache the entity (registered by its ledger DB, or one of the two)? */
     public boolean holds(String entity) { return held.contains(entity); }
@@ -189,8 +194,14 @@ public final class Books {
 
     /** A new account of a purchase with its opening balance (balanceBefore 0, lastAmount = the opening), staged as an INSERT. */
     public PackageAccount openAccount(UnitOfWork unit, String dbName, long id, long purchaseId, String name, String uom, BigDecimal opening) {
-        PackageAccount account = new com.telcobright.seed.switchledger.api.LedgerAccount();
+        return openAccount(unit, dbName, id, purchaseId, name, uom, opening, null);
+    }
+
+    /** §15 · The same, the account naming the catalog item it is opened for ({@code id_packageitem}; null = an account of no item). */
+    public PackageAccount openAccount(UnitOfWork unit, String dbName, long id, long purchaseId, String name, String uom, BigDecimal opening, Long itemId) {
+        com.telcobright.seed.switchledger.api.LedgerAccount account = new com.telcobright.seed.switchledger.api.LedgerAccount();
         account.setId(id);
+        account.setIdPackageItem(itemId);
         account.setIdpackagePurchase(purchaseId);
         account.setName(name);
         account.setUom(uom);

@@ -93,16 +93,28 @@ public final class ParityScene implements AutoCloseable {
     public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID, ON_PREPAID }
 
     private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
-        this(balances, null, settings, withEngine, lanes);
+        this(balances, null, settings, withEngine, lanes, null);
     }
 
     /** L2b item 4 · The ledger as a ledger DB with the purchases cached (each account's purchase as the tree names it; expiries overridden). */
     private ParityScene(Map<String, String> balances, Map<Long, String> purchaseExpiries, RoutesphereSettings settings, boolean withEngine,
                         Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
+        this(balances, purchaseExpiries, settings, withEngine, lanes, null);
+    }
+
+    /** §15 · The same, the catalog and the products cached too; {@code catalog} lays down packages, items, products and the accounts' items before the start. */
+    private ParityScene(Map<String, String> balances, Map<Long, String> purchaseExpiries, RoutesphereSettings settings, boolean withEngine,
+                        Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes, java.util.function.Consumer<LedgerLab> catalog) {
         fundTheLab(balances);
         if (purchaseExpiries != null) buyEveryAccountsPurchase(purchaseExpiries);
+        if (catalog != null) {
+            lab.productTable();
+            catalog.accept(lab);
+            lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product"), List.of("packageaccountreserve"), 5_000);
+        }
         lab.start();
-        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null
+        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null : catalog != null
+            ? java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase", "Package", "PackageItem", "Product")
             : java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase"));
         this.recorder = new RecordingPort(ledger.port(), this::ctxOrNull);
         this.kit = RoutesphereKit.builder().tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("esl", "10.0.0.1:8021", "btcl")))
@@ -117,6 +129,14 @@ public final class ParityScene implements AutoCloseable {
      */
     public static ParityScene openOnTheLedgersPurchases(Map<String, String> balances, Map<Long, String> expiries, Lane lane) {
         return new ParityScene(balances, expiries, handlerSettings(), false, kit -> laneOf(lane, kit));
+    }
+
+    /**
+     * §15 · The per-event scene (the ad) whose ledger caches the purchases AND the catalog with its products: {@code catalog} lays down the
+     * packages, items, products and the accounts' items on the lab before the start (every purchase is of package 1 until it moves one).
+     */
+    public static ParityScene openOnProductItems(Map<String, String> balances, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lane, java.util.function.Consumer<LedgerLab> catalog) {
+        return new ParityScene(balances, Map.of(), perEventSettings(), false, lane, catalog);
     }
 
     /** The handler-level scene: the live call's cadence (60 s, the first renewal at 58 s), a 3-hour ACTIVE, no machine. */
@@ -363,6 +383,8 @@ public final class ParityScene implements AutoCloseable {
         /** L2b item 4: the purchase road and the ledger's accounts. */
         @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { note("purchase", reference); return real.purchase(buyer, offer, reference, ids); }
         @Override public Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return real.accountsOf(buyer); }
+        /** §15 · the catalog read passes through like every read (a wrapper that inherited the SPI's default would walk by unit). */
+        @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return real.catalogOf(tier); }
 
         /** L2b: a unit's moves are recorded as the port's verbs are (the same words), then staged in the real port's unit. */
         @Override public LedgerUnit unit() { return new RecordingUnit(real.unit()); }

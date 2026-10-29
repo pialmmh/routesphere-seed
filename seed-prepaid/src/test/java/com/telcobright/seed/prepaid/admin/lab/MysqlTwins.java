@@ -12,7 +12,7 @@ final class MysqlTwins {
     private MysqlTwins() {}
 
     static final String PACKAGEACCOUNT =
-        "CREATE TABLE %s.packageaccount (id_packageaccount BIGINT NOT NULL AUTO_INCREMENT, balanceAfter DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, id_PackagePurchase BIGINT NOT NULL, lastAmount DECIMAL(20,6) NOT NULL, name VARCHAR(255), uom VARCHAR(255) NOT NULL, creditLimit DECIMAL(20,6), isSelected BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY (id_packageaccount))";
+        "CREATE TABLE %s.packageaccount (id_packageaccount BIGINT NOT NULL AUTO_INCREMENT, balanceAfter DECIMAL(20,6) NOT NULL, balanceBefore DECIMAL(20,6) NOT NULL, id_PackagePurchase BIGINT NOT NULL, lastAmount DECIMAL(20,6) NOT NULL, name VARCHAR(255), uom VARCHAR(255) NOT NULL, creditLimit DECIMAL(20,6), isSelected BOOLEAN NOT NULL DEFAULT FALSE, id_packageitem BIGINT, PRIMARY KEY (id_packageaccount))";
     static final String PACKAGEACCOUNTRESERVE =
         "CREATE TABLE %s.packageaccountreserve (channel_call_uuid VARCHAR(255) NOT NULL, id_packageaccount BIGINT NOT NULL, id_PackagePurchase BIGINT NOT NULL, name VARCHAR(255), reserveUnit DECIMAL(20,6), time VARCHAR(255), uom VARCHAR(255), PRIMARY KEY (channel_call_uuid))";
     static final String PACKAGEPURCHASE =

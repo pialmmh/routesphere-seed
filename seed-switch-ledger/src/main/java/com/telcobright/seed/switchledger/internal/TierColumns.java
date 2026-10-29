@@ -35,7 +35,7 @@ public final class TierColumns {
 
     /** What brings the ledger's columns into a tier. */
     public static final String WHAT_BRINGS_THEM = "run prime-context's migrate-all on this database first (its changelog brings the ledger's columns — 006: creditLimit,"
-        + " isSelected, paymentRef — and its provisioning gives the ledger's login its rights: primecontext.provision.ledger-*, C4)";
+        + " isSelected, paymentRef; 007 (pc-prod 009): id_packageitem, product_catalog — and its provisioning gives the ledger's login its rights: primecontext.provision.ledger-*, C4)";
 
     /** What the ledger's writes need on every table it caches. */
     private static final List<String> RIGHTS = List.of("SELECT", "INSERT", "UPDATE", "DELETE");

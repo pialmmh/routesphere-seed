@@ -30,6 +30,11 @@ public final class SessionCause {
     /** A tier has no rate for this call. */
     public static final String UNRATED = "UNRATED";
     public static final String INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE";
+    /**
+     * §15 (product items, 2026-10-29) · No active package of the payer has an ITEM for the product asked (the key: the ad's product, the
+     * call's prefix) and the lane lets no cash pay for it — "rate/package not found", refused before any money moves.
+     */
+    public static final String PACKAGE_ITEM_NOT_FOUND = "PACKAGE_ITEM_NOT_FOUND";
     /** The ledger itself failed. Never reported as a customer's money cause. */
     public static final String BILLING_SYSTEM_ERROR = "BILLING_SYSTEM_ERROR";
     public static final String NO_ROUTE = "NO_ROUTE";

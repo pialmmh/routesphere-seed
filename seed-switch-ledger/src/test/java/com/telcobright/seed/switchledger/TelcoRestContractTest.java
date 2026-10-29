@@ -45,7 +45,7 @@ class TelcoRestContractTest {
     private static final List<String> PURCHASE_FIELDS = List.of("idPackage", "idPartner", "purchaseDate", "expireDate", "status", "paid",
         "autoRenewalStatus", "price", "vat", "ait", "priority", "onSelectPriority", "discount", "paymentRef");
     /** C2b · every column of the account, TelcoREST's two included: nothing is written beside the ledger by SQL. */
-    private static final List<String> ACCOUNT_FIELDS = List.of("idpackagePurchase", "name", "uom", "lastAmount", "balanceBefore", "balanceAfter", "creditLimit", "isSelected");
+    private static final List<String> ACCOUNT_FIELDS = List.of("idpackagePurchase", "name", "uom", "lastAmount", "balanceBefore", "balanceAfter", "creditLimit", "isSelected", "idPackageItem");
 
     private final LedgerLab lab = LedgerLab.open().schema("btcl")
         .account("btcl", 30, 9, "BDT", "50").account("btcl", 31, 8, "BDT", "1000").account("btcl", 32, 9, "OTH_ea", "100").account("btcl", 33, 9, "LEN_A", "5")

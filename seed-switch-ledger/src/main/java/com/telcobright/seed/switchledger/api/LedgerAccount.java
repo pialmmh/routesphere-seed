@@ -27,6 +27,14 @@ public class LedgerAccount extends PackageAccount {
     @Column(name = "isSelected", nullable = false)
     private boolean isSelected;
 
+    /**
+     * §15 · The catalog ITEM this account was opened for ({@code packageitem.id}; prime-context's changelog 007 / pc-prod 009 brings the
+     * column): the walk relates the account to its item by key through it. Null = an account of no item (a top-up's cash, a row opened
+     * before §15): such a package account is related to its item by the purchase's package and the account's unit instead.
+     */
+    @Column(name = "id_packageitem")
+    private Long idPackageItem;
+
     public LedgerAccount() {}
 
     public BigDecimal getCreditLimit() { return creditLimit; }
@@ -36,4 +44,8 @@ public class LedgerAccount extends PackageAccount {
     public boolean isSelected() { return isSelected; }
 
     public void setSelected(boolean selected) { this.isSelected = selected; }
+
+    public Long getIdPackageItem() { return idPackageItem; }
+
+    public void setIdPackageItem(Long idPackageItem) { this.idPackageItem = idPackageItem; }
 }

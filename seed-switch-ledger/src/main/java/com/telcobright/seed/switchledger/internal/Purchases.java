@@ -76,7 +76,7 @@ final class Purchases {
         long highestAccount = books.highestId(Books.ACCOUNT);
         for (Bucket bucket : offer.buckets()) {
             long id = ids.next("packageaccount", Math.max(highestAccount, accounts.isEmpty() ? 0 : accounts.get(accounts.size() - 1)));
-            books.openAccount(unit, db, id, purchaseId, offer.name() + "-" + bucket.uom(), bucket.uom(), bucket.opening() == null ? BigDecimal.ZERO : bucket.opening());
+            books.openAccount(unit, db, id, purchaseId, offer.name() + "-" + bucket.uom(), bucket.uom(), bucket.opening() == null ? BigDecimal.ZERO : bucket.opening(), bucket.itemId());
             accounts.add(id);
         }
         if (books.keepsCharges()) {

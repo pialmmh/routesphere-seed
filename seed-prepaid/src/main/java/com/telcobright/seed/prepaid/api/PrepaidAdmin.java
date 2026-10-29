@@ -10,7 +10,9 @@ import com.telcobright.seed.sessionflow.dependencies.RoutesphereKit;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -80,6 +82,27 @@ public final class PrepaidAdmin {
     public LedgerPort.Purchased purchase(String root, String tierDb, int partnerId, LedgerPort.Offer offer, String reference) {
         refuseABadPurchase(offer, reference);
         return kit.ledger().purchase(buyerAt(tierOf(root, tierDb), partnerId), offer, reference, this::nextId);
+    }
+
+    /**
+     * §15 · The offer of a CATALOG package at {@code tierDb} of {@code root}, bought at {@code at}: the package's name and price, its validity
+     * from {@code at}, ONE bucket per item — the item's unit and quantity, the item NAMED ({@code id_packageitem}) so the walk relates the
+     * account to its product by key. Refused in words when the tier's ledger caches no catalog, or the package is unknown, not for sale,
+     * or has no items. The caller then buys it: {@code purchase(root, tierDb, partnerId, offerOf(...), reference)}.
+     */
+    public LedgerPort.Offer offerOf(String root, String tierDb, long packageId, LocalDateTime at) {
+        Objects.requireNonNull(at, "at");
+        Tenant tier = tierOf(root, tierDb);
+        LedgerPort.ItemCatalog catalog = kit.ledger().catalogOf(new LevelAdmission(0, tier, null, null)).orElseThrow(() -> new IllegalStateException(
+            "the ledger of the tier '" + tierDb + "' of the root '" + root + "' caches no catalog: name package and packageitem among its ledger DB's entities"));
+        LedgerPort.CatalogPackage pkg = catalog.packageOf(packageId).orElseThrow(() -> new IllegalArgumentException("package " + packageId + " is not in the catalog of the tier '" + tierDb + "'"));
+        if (!pkg.active()) throw new IllegalArgumentException("package " + packageId + " (" + pkg.name() + ") is not for sale");
+        List<LedgerPort.Item> items = new ArrayList<>(catalog.itemsOf(packageId).values());
+        items.sort(Comparator.comparingLong(LedgerPort.Item::id));                                   // the items' order = the accounts' order
+        List<LedgerPort.Bucket> buckets = new ArrayList<>(items.size());
+        for (LedgerPort.Item item : items) buckets.add(new LedgerPort.Bucket(item.uom(), item.quantity(), item.id()));
+        if (buckets.isEmpty()) throw new IllegalArgumentException("package " + packageId + " (" + pkg.name() + ") has no items: a purchase would open no account");
+        return new LedgerPort.Offer(packageId, pkg.name(), pkg.price(), at, at.plusSeconds(pkg.validitySeconds()), buckets);
     }
 
     private long nextId(String table, long highestInUse) {
