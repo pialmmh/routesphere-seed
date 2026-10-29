@@ -164,8 +164,69 @@ public interface LedgerPort {
         public Offer { buckets = buckets == null ? java.util.List.of() : java.util.List.copyOf(buckets); }
     }
 
-    /** One bucket of an offer: an account of this unit with this opening balance. */
-    record Bucket(String uom, BigDecimal opening) {}
+    /**
+     * One bucket of an offer: an account of this unit with this opening balance — and, since the product items (design §15), the catalog
+     * ITEM it is opened for ({@code packageitem.id}; null = an account of no item: a top-up, a row of before). The account carries it
+     * ({@code packageaccount.id_packageitem}) so the walk relates the account to its item by key, never by a guess from its unit.
+     */
+    record Bucket(String uom, BigDecimal opening, Long itemId) {
+        public Bucket(String uom, BigDecimal opening) { this(uom, opening, null); }
+    }
+
+    // ── §15 · the catalog as the walk reads it: packages, their items by PRODUCT KEY, the products ─────────────────────
+
+    /**
+     * §15 (the owner, 2026-10-29: "map prefix = product id … all required entities shall be in the cache, there can't be any db lookup in
+     * the hot path") · The tier's catalog as THIS ledger caches it, read by key: a package, its items by their product key
+     * ({@code packageitem.prefix} — the call's dialing prefix, the ad's Odoo product id), the package a purchase bought, and the products
+     * where the ledger caches them ({@code product_catalog}: a view over Odoo's product tables, or a table). Every answer is a map get on
+     * the cache; nothing here reads a database. Empty = this ledger caches no catalog (the walk then matches by unit, as before §15).
+     */
+    default Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return Optional.empty(); }
+
+    /** §15 · The catalog's reads, every one a hashtable lookup. The maps answered are immutable snapshots. */
+    interface ItemCatalog {
+        /** The package of this id; empty = not in the catalog. */
+        Optional<CatalogPackage> packageOf(long packageId);
+        /** The package's items by their product key (the hashtable of step 2); empty = no items or no such package. */
+        java.util.Map<String, Item> itemsOf(long packageId);
+        /** One item by its id (an account that names its item); empty = unknown. */
+        Optional<Item> itemOf(long itemId);
+        /** The package a purchase bought; empty = the purchase is not cached here. */
+        Optional<Long> packageOfPurchase(long purchaseId);
+        /** The products by their key; empty when this ledger caches no products (the call needs none: its key is the prefix itself). */
+        java.util.Map<String, Product> products();
+        /** One product by its key; empty = none cached under it. */
+        default Optional<Product> productOf(String key) { return Optional.ofNullable(key == null ? null : products().get(key.trim())); }
+        /** §15.3 · The service groups (the revenue streams) by id → name; empty when this ledger caches none. */
+        default java.util.Map<Integer, String> serviceGroups() { return java.util.Map.of(); }
+    }
+
+    /** §15 · A package of the catalog: its id, its name, its price, its validity in seconds, whether it is for sale. */
+    record CatalogPackage(long id, String name, BigDecimal price, long validitySeconds, boolean active) {}
+
+    /**
+     * §15 · One item of a package: {@code key} = {@code packageitem.prefix}, the PRODUCT KEY the walk matches (the call: the dialing
+     * prefix "880"; the ad: the Odoo product's id as text); {@code quantity} of {@code uom} is what a purchase opens as the item's account.
+     */
+    record Item(long id, long packageId, String key, String uom, BigDecimal quantity, int category, String description, Integer serviceGroupId, String kind) {
+        /** An item whose key names no product row (the call's prefix): no group, no kind of its own. */
+        public Item(long id, long packageId, String key, String uom, BigDecimal quantity, int category, String description) { this(id, packageId, key, uom, quantity, category, description, null, null); }
+    }
+
+    /**
+     * §15.3 (the owner, 2026-10-30) · A product as the switch caches it ({@code product_catalog}): {@code key} = the product key the items
+     * carry; {@code id} = the Odoo variant it came from (null for a product made in the portal); {@code kind} = the SERVICE it belongs to,
+     * one of {@link #KINDS} (voice, sms, ad, wifi-internet, …); {@code media} = the ad's attribute (video, image, audio; null for other
+     * kinds); {@code seconds} = the duration (a 30-second video), null where there is none; {@code source} = portal | odoo;
+     * {@code serviceGroupId} = the revenue stream ({@code enumservicegroup.id}: 30 the ad view, 101 the WiFi, 1..9 the voice groups).
+     */
+    record Product(String key, Long id, String code, String name, String kind, String media, Integer seconds, String uom, boolean active, String source, Integer serviceGroupId) {
+        /** The kinds a product may be: the services of the platform. */
+        public static final java.util.List<String> KINDS = java.util.List.of("voice", "sms", "ad", "wifi-internet", "isp-internet", "voice-broadcast", "ivr", "extension");
+        public static final java.util.List<String> MEDIA = java.util.List.of("video", "image", "audio");
+        public static final java.util.List<String> SOURCES = java.util.List.of("portal", "odoo");
+    }
 
     /** L2b item 4 · Ids from the application's source (seed-idgen's LONG counters): (table, the highest id in use) → a new id above it. */
     @FunctionalInterface

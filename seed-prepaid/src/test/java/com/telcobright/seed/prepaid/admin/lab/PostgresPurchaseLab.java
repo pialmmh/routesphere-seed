@@ -40,6 +40,8 @@ public final class PostgresPurchaseLab implements PurchaseLabEngine {
     static final String LEDGER_COLUMNS_SELECTED = "alter table packageaccount add column if not exists isSelected boolean not null default false;";
     static final String LEDGER_COLUMNS_PAYMENT = "alter table packagepurchase add column if not exists paymentRef varchar(64);";
     static final String LEDGER_COLUMNS_PAYMENT_UNIQUE = "create unique index if not exists uq_packagepurchase_paymentRef on packagepurchase (paymentRef);";
+    /** §15 · prime-context's 007 (pc-prod 009): the account's item. */
+    static final String LEDGER_COLUMNS_ITEM = "alter table packageaccount add column if not exists id_packageitem bigint;";
     static final String ACCOUNT_TO_PURCHASE =
         "alter table if exists packageaccount add constraint FKkepokitw7v0w60chyov2fibtu foreign key (id_PackagePurchase) references packagepurchase;";
     static final String PURCHASE_TO_PACKAGE =
@@ -86,7 +88,7 @@ public final class PostgresPurchaseLab implements PurchaseLabEngine {
         s.execute("CREATE SCHEMA " + tier);
         s.execute("SET search_path TO " + tier);
         for (String line : List.of(PACKAGE, PACKAGEACCOUNT, PACKAGEACCOUNTRESERVE, PACKAGEPURCHASE, ACCOUNT_TO_PURCHASE, PURCHASE_TO_PACKAGE,
-                LEDGER_COLUMNS_ACCOUNT, LEDGER_COLUMNS_SELECTED, LEDGER_COLUMNS_PAYMENT, LEDGER_COLUMNS_PAYMENT_UNIQUE)) {
+                LEDGER_COLUMNS_ACCOUNT, LEDGER_COLUMNS_SELECTED, LEDGER_COLUMNS_PAYMENT, LEDGER_COLUMNS_PAYMENT_UNIQUE, LEDGER_COLUMNS_ITEM)) {
             s.execute(line);
         }
         s.execute("RESET search_path");

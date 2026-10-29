@@ -65,6 +65,13 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     @FunctionalInterface
     public interface NoBalanceCause<C> { String cause(C ctx, PayingTier tier); }
 
+    /**
+     * §15 · (ctx, tier, match) → what THIS request costs in the MATCHED ITEM's unit: a video on the "video 30 s" item is ONE view, a call
+     * window on the "880" minutes item one minute. Null = {@code UNRATED}. Cash accounts are still priced by {@link RateRule}.
+     */
+    @FunctionalInterface
+    public interface ItemRate<C> { BigDecimal units(C ctx, PayingTier tier, PackageItemMatch match); }
+
     private final RoutesphereKit kit;
     private final PrepaidRules<C> rules;
 
@@ -122,6 +129,9 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         private Function<C, Set<String>> units = ctx -> PackageMatch.CALL_AND_SMS_UNITS;
         private NoBalanceCause<C> noBalanceCause;
         private Function<C, String> reference;
+        private Function<C, List<String>> productKeys;
+        private ItemRate<C> itemRate;
+        private Function<C, Integer> serviceGroup;
         private boolean sealed;
 
         private Builder(String name) {
@@ -172,6 +182,24 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         /** Each tier's money is held under {@code <reference>#L<tier>} (default: the session's id). */
         public Builder<C> reference(Function<C, String> v) { open(); this.reference = v; return this; }
 
+        /**
+         * §15 (the owner, 2026-10-29) · The PRODUCT KEYS this request may consume from a package, best first ({@link ProductKeys}): the ad's
+         * product — the Odoo product id the items carry in {@code packageitem.prefix} — or the call's prefixes, longest first. Given, the
+         * walk relates every package account to the ITEM of its package by key (one hashtable get per key, {@code ItemCatalog}) and only an
+         * account whose item matches pays; no package matches → cash where the rule allows it, else {@code PACKAGE_ITEM_NOT_FOUND}. Not
+         * given: packages match by unit alone, as before §15 (the live call's parity).
+         */
+        public Builder<C> productKeys(Function<C, List<String>> v) { open(); this.productKeys = v; return this; }
+        /** §15 · What the request costs on the MATCHED item (default: the {@code rate} rule on the item's account). Needs {@link #productKeys}. */
+        public Builder<C> itemRate(ItemRate<C> v) { open(); this.itemRate = v; return this; }
+        /**
+         * §15.3 (the owner, 2026-10-30) · The SERVICE GROUP of THIS request — the revenue stream it belongs to (the call at home 1, abroad 2,
+         * the ad view 30, the WiFi 101). Step 1b of the walk: a package account whose item's product belongs to another group pays nothing
+         * for it (a domestic call never pays from the video views), before any key is tried; an item of no product, or an account of no
+         * item, is not held to it. The matched product's group becomes the charge record's. Null = no such check. Needs {@link #productKeys}.
+         */
+        public Builder<C> serviceGroup(Function<C, Integer> v) { open(); this.serviceGroup = v; return this; }
+
         /** The lane's Prepaid on this kit — refused in words when a required part is missing or disagrees with the kit's cadence. */
         public Prepaid<C> build(RoutesphereKit kit) {
             Objects.requireNonNull(kit, "kit");
@@ -179,7 +207,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             refuseADisagreeingCadence(kit);
             sealed = true;
             Function<C, Final> end = finalize != null ? finalize : ctx -> Final.nothing();     // a charge-now lane: the charge stands
-            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units));
+            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup));
         }
 
         private void refuseAMissingPart() {
@@ -189,6 +217,8 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             if (finalize == null && admission != Admission.CHARGE_NOW) missing.add("finalize(ctx -> Final) or actualCharge((ctx, tier) -> cost) — what does the end do with the money?");
             if (admission == Admission.HOLD_WINDOW && window == null) missing.add("window(duration) — how long is one window (the call: 60 s)?");
             if (admission == Admission.HOLD_WINDOW && firstRenewal == null) missing.add("firstRenewal(duration) — when is the first renewal (the call: 58 s)?");
+            if (itemRate != null && productKeys == null) missing.add("productKeys(ctx -> keys) — an itemRate prices a matched item: which product keys may this request consume (ProductKeys)?");
+            if (serviceGroup != null && productKeys == null) missing.add("productKeys(ctx -> keys) — a serviceGroup narrows the items matched by key: which product keys may this request consume?");
             if (missing.isEmpty()) return;
             throw new IllegalStateException("[" + name + "] the Prepaid has no " + String.join("; no ", missing));
         }

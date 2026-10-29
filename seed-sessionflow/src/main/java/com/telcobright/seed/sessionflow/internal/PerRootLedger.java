@@ -67,6 +67,8 @@ public final class PerRootLedger implements LedgerPort, AutoCloseable {
     @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return ledgerOf(buyer).accountsOf(buyer); }
 
     @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return ledgerOf(buyer).purchasesOf(buyer); }
+    /** §15 · The tier's catalog from the root's ledger. */
+    @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return ledgerOf(tier).catalogOf(tier); }
 
     /** C1 · The root's own cached ledger; a root without a ledger here, or a ledger that caches nothing: empty. */
     @Override public Optional<com.telcobright.seed.sessionflow.api.CachedLedger> cachedLedgerOf(String root) {

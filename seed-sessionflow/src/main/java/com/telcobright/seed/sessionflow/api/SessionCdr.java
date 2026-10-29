@@ -57,8 +57,9 @@ final class SessionCdr<C extends RoutesphereContext> {
     }
 
     /** One record per tier — and, for a tier that rotated its account (O4), one record per span: the closed ones, then the live one. */
-    private List<CdrEvent> tier(C ctx, int index, int serviceGroup, String cause) {
+    private List<CdrEvent> tier(C ctx, int index, int laneGroup, String cause) {
         LevelAdmission level = ctx.levels.get(index);
+        int serviceGroup = groupOf(ctx, level, laneGroup);
         TierSettlement settlement = index < ctx.settlements.size() ? ctx.settlements.get(index) : null;
         boolean money = flow.paysInMoney(level.getUom());
         if (!rotated(ctx, level)) return List.of(sealed(ctx, level, assembler.tierRecord(ctx, level, settlement, serviceGroup, cause, money)));
@@ -66,6 +67,12 @@ final class SessionCdr<C extends RoutesphereContext> {
         for (ClosedSpan span : ctx.closedSpans) spans.add(sealed(ctx, span.level(), assembler.spanRecord(ctx, span, serviceGroup, cause, money)));
         spans.add(sealed(ctx, level, assembler.lastSpanRecord(ctx, level, settlement, serviceGroup, cause, money)));
         return spans;
+    }
+
+    /** §15.3 · The group of the product that paid this tier where the walk matched one, else the lane's (the revenue stream of the charge record). */
+    private static int groupOf(RoutesphereContext ctx, LevelAdmission level, int laneGroup) {
+        Integer matched = ctx.tierServiceGroups == null ? null : ctx.tierServiceGroups.get(level.getLevelIndex());
+        return matched != null && matched > 0 ? matched : laneGroup;
     }
 
     private static boolean rotated(RoutesphereContext ctx, LevelAdmission level) {
