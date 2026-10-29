@@ -1,8 +1,9 @@
 package com.telcobright.seed.configclient;
 
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * The reliable doorbell leg: a Kafka consumer on the notification topic. Message content is
@@ -33,15 +35,24 @@ final class KafkaDoorbellSource implements AutoCloseable {
     private final String groupId;
     private final boolean failFast;
     private final DebounceGate gate;
+    private final Supplier<Consumer<String, String>> consumers;
+    private final PollStopper stopper = new PollStopper();
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Thread thread;
 
     KafkaDoorbellSource(String bootstrap, String topic, String groupId, boolean failFast, DebounceGate gate) {
+        this(bootstrap, topic, groupId, failFast, gate, null);
+    }
+
+    /** The same, with the consumers made by {@code consumers} (a test hands a mock); null = a KafkaConsumer on {@code bootstrap}. */
+    KafkaDoorbellSource(String bootstrap, String topic, String groupId, boolean failFast, DebounceGate gate,
+                        Supplier<Consumer<String, String>> consumers) {
         this.bootstrap = bootstrap;
         this.topic = topic;
         this.groupId = groupId != null ? groupId : "config-doorbell-" + UUID.randomUUID();
         this.failFast = failFast;
         this.gate = gate;
+        this.consumers = consumers != null ? consumers : () -> new KafkaConsumer<>(props());
         this.thread = new Thread(this::run, "config-doorbell-kafka");
         this.thread.setDaemon(true);
     }
@@ -50,19 +61,32 @@ final class KafkaDoorbellSource implements AutoCloseable {
 
     private void run() {
         while (running.get()) {
-            try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props())) {
-                consumer.subscribe(List.of(topic));
-                log.info("doorbell listening on kafka {} topic={} group={}", bootstrap, topic, groupId);
-                while (running.get()) {
-                    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1_000));
-                    if (!records.isEmpty()) gate.ring("kafka");
-                }
+            try {
+                listenWithOneConsumer();
+            } catch (WakeupException e) {
+                // only close() wakes the consumer: the loop's condition ends the thread
             } catch (Exception e) {
                 if (!running.get()) return;
                 if (failFast) throw new IllegalStateException("kafka doorbell failed (failFast)", e);
                 log.warn("kafka doorbell lost ({}) — retrying in {}ms", e.getMessage(), RETRY_BACKOFF_MS);
                 sleep(RETRY_BACKOFF_MS);
             }
+        }
+    }
+
+    /** One consumer's life: subscribe, poll until stopped, and always close it here, on the poll thread, never interrupted. */
+    private void listenWithOneConsumer() {
+        Consumer<String, String> consumer = consumers.get();
+        stopper.polling(consumer);
+        try {
+            consumer.subscribe(List.of(topic));
+            log.info("doorbell listening on kafka {} topic={} group={}", bootstrap, topic, groupId);
+            while (running.get()) {
+                if (!consumer.poll(Duration.ofMillis(1_000)).isEmpty()) gate.ring("kafka");
+            }
+        } finally {
+            stopper.released();
+            PollStopper.closeQuietly(consumer, log);
         }
     }
 
@@ -81,9 +105,13 @@ final class KafkaDoorbellSource implements AutoCloseable {
         try { Thread.sleep(ms); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
     }
 
+    /** Stops the poll thread by waking its consumer (see {@link PollStopper}); returns when the consumer is closed. */
     @Override
     public void close() {
         running.set(false);
-        thread.interrupt();
+        stopper.stop(thread, log);
     }
+
+    /** For a test: whether the poll thread still runs. */
+    boolean polling() { return thread.isAlive(); }
 }
