@@ -138,7 +138,7 @@ public final class PrepaidAdmin {
     public LedgerPort.Product updateProduct(String root, String tierDb, String key, java.util.Map<String, ?> fields, String reference) {
         String k = requireProduct(root, tierDb, key);
         if (fields == null || fields.isEmpty()) throw new IllegalArgumentException("nothing to change on product " + k);
-        if (fields.containsKey("productKey") || fields.containsKey("id") || fields.containsKey("source")) throw new IllegalArgumentException("a product's key, its Odoo id and its source never change: make another product");
+        if (fields.containsKey("productKey") || fields.containsKey("odooProductId") || fields.containsKey("id") || fields.containsKey("source")) throw new IllegalArgumentException("a product's key, its Odoo id and its source never change: make another product");
         commit(root, tierDb, reference, unit -> unit.update(tierDb, LedgerProduct.class, k, fields));
         return catalogOf(root, tierDb).productOf(k).orElseThrow();
     }
@@ -173,7 +173,7 @@ public final class PrepaidAdmin {
     private static LedgerProduct rowOf(LedgerPort.Product p, String key) {
         LedgerProduct row = new LedgerProduct();
         row.setProductKey(key);
-        row.setId(p.id());
+        row.setOdooProductId(p.id());
         row.setCode(p.code());
         row.setName(p.name());
         row.setKind(p.kind());

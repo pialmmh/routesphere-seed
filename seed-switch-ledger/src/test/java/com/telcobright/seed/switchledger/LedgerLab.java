@@ -160,7 +160,7 @@ public final class LedgerLab implements AutoCloseable {
      * in every schema, made so far and later, its entity registered — read-only, loaded at the start only.
      */
     public LedgerLab productTable() {
-        String ddl = "CREATE TABLE %s.product_catalog (product_key VARCHAR(200) NOT NULL PRIMARY KEY, id BIGINT, code VARCHAR(64), name VARCHAR(255) NOT NULL,"
+        String ddl = "CREATE TABLE %s.product_catalog (product_key VARCHAR(200) NOT NULL PRIMARY KEY, odoo_product_id BIGINT, code VARCHAR(64), name VARCHAR(255) NOT NULL,"
             + " kind VARCHAR(32) NOT NULL, media VARCHAR(16), seconds INT, uom VARCHAR(20), active BOOLEAN NOT NULL DEFAULT TRUE, source VARCHAR(16) NOT NULL DEFAULT 'portal',"
             + " service_group_id INT NOT NULL)";
         return alsoRegister(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, ddl);
@@ -178,7 +178,7 @@ public final class LedgerLab implements AutoCloseable {
 
     /** §15.3 · A product row: the key the items carry, the Odoo id (0 = none: a portal product), its name, kind (ad, voice, …), media (null = none), seconds (null = none), unit, service group. */
     public LedgerLab product(String schema, String key, long id, String name, String kind, String media, Integer seconds, String uom, int serviceGroup) {
-        sql("INSERT INTO " + schema + ".product_catalog (product_key, id, code, name, kind, media, seconds, uom, active, source, service_group_id) VALUES ('" + key + "', "
+        sql("INSERT INTO " + schema + ".product_catalog (product_key, odoo_product_id, code, name, kind, media, seconds, uom, active, source, service_group_id) VALUES ('" + key + "', "
             + (id == 0 ? "NULL" : String.valueOf(id)) + ", 'P" + id + "', '" + name + "', '" + kind + "', " + (media == null ? "NULL" : "'" + media + "'") + ", "
             + (seconds == null ? "NULL" : seconds) + ", '" + uom + "', TRUE, " + (id == 0 ? "'portal'" : "'odoo'") + ", " + serviceGroup + ")");
         return this;

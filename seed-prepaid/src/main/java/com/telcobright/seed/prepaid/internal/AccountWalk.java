@@ -79,12 +79,16 @@ final class AccountWalk<C extends RoutesphereContext> {
         return held;
     }
 
-    /** §15.3 · The group of the product that paid this tier goes on the session: the charge record of the tier carries it instead of the lane's. */
+    /**
+     * §15.3 · The group of the product that paid this tier goes on the session: the charge record of the tier carries it instead of the lane's.
+     * A tier paid by cash or by an item of no product clears it — a later candidate's walk never keeps an earlier candidate's group.
+     */
     private static void rememberTheGroupThatPaid(RoutesphereContext ctx, Tier tier, Candidates candidates, TierReserve.Held held) {
         if (held == null || held.level() == null) return;
         PackageItemMatch match = candidates.matchOf(held.level().getAccount());
         Integer group = match == null ? null : match.serviceGroupId();
         if (group != null && group > 0) ctx.tierServiceGroups.put(tier.levelIndex(), group);
+        else ctx.tierServiceGroups.remove(tier.levelIndex());
     }
 
     private static String causeOf(TierReserve.Held held) { return held.verdict().accepted() ? null : held.verdict().cause(); }

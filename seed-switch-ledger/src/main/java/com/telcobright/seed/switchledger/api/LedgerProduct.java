@@ -12,13 +12,18 @@ import jakarta.persistence.Table;
  * is the key the package items carry in {@code packageitem.prefix}: the Odoo variant's id as text for the ad, the dialing prefix for the
  * call (a call needs no product row). {@code kind} is the service (voice, sms, ad, wifi-internet, …), {@code media} + {@code seconds} the
  * ad's attributes, {@code serviceGroupId} the revenue stream ({@code enumservicegroup}). Rules in {@code ProductRules}.
+ *
+ * <p>The Odoo variant is {@code odooProductId} → column {@code odoo_product_id}, NEVER a field named {@code id}: mem-ledger takes any
+ * field named {@code id} as the entity's key (its EntityMetadataExtractor, the last one wins), so a field {@code id} beside the real key
+ * would make the load read the Odoo id as the key (a portal product, null: the load fails) and an update write {@code WHERE id = …}
+ * (2026-10-30, found by ProductRulesTest; guarded by {@code KnownEntitiesHaveOneKeyTest}). The WIRE keeps the name {@code id}.
  */
 @Entity
 @Table(name = "product_catalog")
 public class LedgerProduct implements CacheableEntity<String, LedgerProduct> {
 
     @Id @Column(name = "product_key", nullable = false, length = 200) private String productKey;
-    @Column(name = "id") private Long id;
+    @Column(name = "odoo_product_id") private Long odooProductId;
     @Column(name = "code", length = 64) private String code;
     @Column(name = "name", length = 255) private String name;
     @Column(name = "kind", length = 32) private String kind;
@@ -39,8 +44,8 @@ public class LedgerProduct implements CacheableEntity<String, LedgerProduct> {
 
     public String getProductKey() { return productKey; }
     public void setProductKey(String v) { productKey = v; }
-    public Long getId() { return id; }
-    public void setId(Long v) { id = v; }
+    public Long getOdooProductId() { return odooProductId; }
+    public void setOdooProductId(Long v) { odooProductId = v; }
     public String getCode() { return code; }
     public void setCode(String v) { code = v; }
     public String getName() { return name; }

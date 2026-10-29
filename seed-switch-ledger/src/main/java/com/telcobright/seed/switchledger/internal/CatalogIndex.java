@@ -80,7 +80,7 @@ final class CatalogIndex {
     }
 
     static Product productOf(LedgerProduct p) {
-        return new Product(keyOf(p.getProductKey()), p.getId(), p.getCode(), p.getName(), lower(p.getKind()), lower(p.getMedia()), p.getSeconds(), p.getUom(),
+        return new Product(keyOf(p.getProductKey()), p.getOdooProductId(), p.getCode(), p.getName(), lower(p.getKind()), lower(p.getMedia()), p.getSeconds(), p.getUom(),
             !Boolean.FALSE.equals(p.getActive()), lower(p.getSource()), p.getServiceGroupId());
     }
 

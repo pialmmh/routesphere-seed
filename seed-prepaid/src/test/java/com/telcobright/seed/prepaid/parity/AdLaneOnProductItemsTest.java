@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * §15 · The owner's ad flow on the REAL switch ledger with the catalog cached ({@link AdLaneOnItems}). At res_2, Adco (705) holds
  * 51 (purchase 11 → package 11, the item "video 30 s" {@code 1001}, 100 views, 2030), 52 (purchase 12 → package 12, the item "image"
  * {@code 1003}, 5 views, 2027 — the soonest), 53 (purchase 13 → package 13: an account of NO item, 300 {@code AD_sec}, whose package has
- * the item "video 60 s" {@code 1002} counted in {@code AD_sec}), 54 cash 20 and 55 expired. At the root, the reseller (2) holds 23
+ * the item "video 60 s" {@code 1002} counted in {@code AD_sec}), 54 cash 20, 55 expired and 56 (purchase 16 → package 14, the item of the
+ * product {@code 2001} of service group 101, 50 views). At the root, the reseller (2) holds 23
  * (purchase 8 → package 21, the item "image", 50 views) beside its minutes (21) and cash (22): the root tier matches by item too. The
  * product "video 90 s" {@code 1004} is in no package. Mutations seen red: the item's key ignored in the walk (52 pays a video); the cause
  * left at INSUFFICIENT_BALANCE when no item exists; the match's key not put on the level.
@@ -39,7 +40,7 @@ class AdLaneOnProductItemsTest {
     static void catalogOf(LedgerLab lab) {
         for (long p : new long[] {11, 12, 13, 14}) {
             lab.ddl("INSERT INTO res_2.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (" + p + ", 'Package " + p + " of items', 100, 0, TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE)");
-            lab.ddl("UPDATE res_2.packagepurchase SET id_package = " + p + " WHERE id = " + p);
+            if (p != 14) lab.ddl("UPDATE res_2.packagepurchase SET id_package = " + p + " WHERE id = " + p);   // purchase 14 is Adco's cash: it stays
         }
         lab.item("res_2", 111, 11, AdLaneOnItems.VIDEO_30, "AD_view", "100").item("res_2", 121, 12, AdLaneOnItems.IMAGE, "AD_view", "5")
             .item("res_2", 131, 13, AdLaneOnItems.VIDEO_60, "AD_sec", "300").item("res_2", 141, 14, AdLaneOnItems.VIDEO_OF_101, "AD_view", "50");
@@ -50,9 +51,9 @@ class AdLaneOnProductItemsTest {
         }
         lab.ddl("UPDATE res_2.packageaccount SET id_packageitem = 111 WHERE id_packageaccount = 51");
         lab.ddl("UPDATE res_2.packageaccount SET id_packageitem = 121 WHERE id_packageaccount = 52");
-        // §15.3 · a package of Adco whose item's product belongs to group 101: account 56 on purchase 14 (package 14)
-        lab.purchase("res_2", 14, ADCO, "2030-01-01 00:00:00").ddl("UPDATE res_2.packagepurchase SET id_package = 14 WHERE id = 14");
-        lab.accountOfItem("res_2", 56, 14, 141, "AD_view", "50");
+        // §15.3 · a package of Adco whose item's product belongs to group 101: account 56 on a purchase of its own (16) of package 14
+        lab.purchase("res_2", 16, ADCO, "2030-01-01 00:00:00").ddl("UPDATE res_2.packagepurchase SET id_package = 14 WHERE id = 16");
+        lab.accountOfItem("res_2", 56, 16, 141, "AD_view", "50");
         lab.ddl("INSERT INTO btcl.package (id, name, basePrice, vatPercent, createDate, validity, aitPercent, activeStatus) VALUES (21, 'Reseller image views', 100, 0, TIMESTAMP '2026-01-01 00:00:00', 2592000, 0, TRUE)");
         lab.item("btcl", 211, 21, AdLaneOnItems.IMAGE, "AD_view", "50");
         lab.purchase("btcl", 8, RESELLER, "2030-01-01 00:00:00").ddl("UPDATE btcl.packagepurchase SET id_package = 21 WHERE id = 8");
@@ -164,7 +165,7 @@ class AdLaneOnProductItemsTest {
 
         CallContext view = scene.admitted("g2", ADCO, A_VIDEO_OF_101);
         scene.answer(view);
-        scene.flow.settle(view, com.telcobright.statewalk.session.Outcome.SUCCEEDED);
+        scene.hangUp(view);                                                         // settle, then the record of every tier
 
         assertThat(scene.balance("res_2", 56)).isEqualByComparingTo("49");
         java.util.List<com.telcobright.seed.sessionflow.api.CdrEvent> tiers = scene.cdrs.of("g2").get(0).tiers();
