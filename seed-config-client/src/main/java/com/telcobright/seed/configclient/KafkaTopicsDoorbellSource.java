@@ -4,6 +4,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * The per-tenant doorbell leg: ONE Kafka consumer on the EXACT list of the tenants' topics
@@ -38,6 +40,8 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
     private final Consumer<String> onTopicRing;
     /** L2b item 3 · Each message's words (topic, value), before the topic rings; null = the words are not wanted. */
     private final java.util.function.BiConsumer<String, String> onWords;
+    private final Supplier<org.apache.kafka.clients.consumer.Consumer<String, String>> consumers;
+    private final PollStopper stopper = new PollStopper();
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Thread thread;
     private volatile List<String> wanted = List.of();
@@ -50,11 +54,19 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
     /** L2b item 3 · The same, every message's words handed to {@code onWords} (topic, value) before its topic rings: a ledger reads them. */
     public KafkaTopicsDoorbellSource(String bootstrap, String groupId, boolean failFast, Consumer<String> onTopicRing,
                                      java.util.function.BiConsumer<String, String> onWords) {
+        this(bootstrap, groupId, failFast, onTopicRing, onWords, null);
+    }
+
+    /** The same, with the consumers made by {@code consumers} (a test hands a mock); null = a KafkaConsumer on {@code bootstrap}. */
+    KafkaTopicsDoorbellSource(String bootstrap, String groupId, boolean failFast, Consumer<String> onTopicRing,
+                              java.util.function.BiConsumer<String, String> onWords,
+                              Supplier<org.apache.kafka.clients.consumer.Consumer<String, String>> consumers) {
         this.onWords = onWords;
         this.bootstrap = bootstrap;
         this.groupId = groupId != null ? groupId : "config-doorbell-" + UUID.randomUUID();
         this.failFast = failFast;
         this.onTopicRing = onTopicRing;
+        this.consumers = consumers != null ? consumers : () -> new KafkaConsumer<>(props());
         this.thread = new Thread(this::run, "config-doorbell-kafka-topics");
         this.thread.setDaemon(true);
     }
@@ -74,8 +86,10 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
 
     private void run() {
         while (running.get()) {
-            try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props())) {
-                pollUntilStopped(consumer);
+            try {
+                listenWithOneConsumer();
+            } catch (WakeupException e) {
+                // only close() wakes the consumer: the loop's condition ends the thread
             } catch (Exception e) {
                 if (!running.get()) return;
                 if (failFast) throw new IllegalStateException("kafka doorbell failed (failFast)", e);
@@ -85,7 +99,19 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
         }
     }
 
-    private void pollUntilStopped(KafkaConsumer<String, String> consumer) {
+    /** One consumer's life: poll until stopped, and always close it here, on the poll thread, never interrupted. */
+    private void listenWithOneConsumer() {
+        org.apache.kafka.clients.consumer.Consumer<String, String> consumer = consumers.get();
+        stopper.polling(consumer);
+        try {
+            pollUntilStopped(consumer);
+        } finally {
+            stopper.released();
+            PollStopper.closeQuietly(consumer, log);
+        }
+    }
+
+    private void pollUntilStopped(org.apache.kafka.clients.consumer.Consumer<String, String> consumer) {
         Set<String> current = new HashSet<>();
         while (running.get()) {
             current = followSubscription(consumer, current);
@@ -98,7 +124,7 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
     }
 
     /** Re-subscribe only when the wanted list changed: a subscribe() call is a rebalance, not free. */
-    private Set<String> followSubscription(KafkaConsumer<String, String> consumer, Set<String> current) {
+    private Set<String> followSubscription(org.apache.kafka.clients.consumer.Consumer<String, String> consumer, Set<String> current) {
         Set<String> want = new HashSet<>(wanted);
         if (want.equals(current)) return current;
         if (want.isEmpty()) consumer.unsubscribe();
@@ -133,9 +159,13 @@ public final class KafkaTopicsDoorbellSource implements AutoCloseable {
         try { Thread.sleep(ms); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
     }
 
+    /** Stops the poll thread by waking its consumer (see {@link PollStopper}); returns when the consumer is closed. */
     @Override
     public void close() {
         running.set(false);
-        thread.interrupt();
+        stopper.stop(thread, log);
     }
+
+    /** For a test: whether the poll thread still runs. */
+    boolean polling() { return thread.isAlive(); }
 }
