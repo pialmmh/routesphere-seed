@@ -12,8 +12,12 @@ import java.util.List;
 
 /**
  * L2c · The local MySQL on 127.0.0.1:3306 (an LXC container: always the IP, never localhost); the tiers are databases of their own,
- * {@code l2c_lab_btcl}, {@code l2c_lab_res_2}, {@code l2c_lab_res_3}, dropped at the end. The user from {@code LAB_MYSQL_USER} (root), the
+ * {@code l2clabbtcl}, {@code l2clabres2}, {@code l2clabres3}, dropped at the end. The user from {@code LAB_MYSQL_USER} (root), the
  * password by NAME from {@code LAB_MYSQL_PASSWORD}; {@code allowMultiQueries=true} for the consumer's batch of UPDATEs.
+ *
+ * <p>ARCH-0100: the root's database word is the root's TENANT ID on the id service (the design: the root schema = the tenant id,
+ * {@code ^[a-z][a-z0-9]{1,15}$}), so the lab's root is {@code l2clabbtcl} — the old {@code l2c_lab_btcl} broke the rule and a purchase
+ * refused it in words before any mint.
  */
 public final class MysqlPurchaseLab implements PurchaseLabEngine {
 
@@ -28,7 +32,7 @@ public final class MysqlPurchaseLab implements PurchaseLabEngine {
         String password = System.getenv("LAB_MYSQL_PASSWORD");
         return password == null || password.isBlank() ? "no lab MySQL here: LAB_MYSQL_PASSWORD is not in the environment" : null;
     }
-    @Override public List<String> tiers() { return List.of("l2c_lab_btcl", "l2c_lab_res_2", "l2c_lab_res_3"); }
+    @Override public List<String> tiers() { return List.of("l2clabbtcl", "l2clabres2", "l2clabres3"); }
     @Override public DataSource labDataSource() { return pool(); }
     @Override public DataSource ledgerDataSource() { return pool(); }
 

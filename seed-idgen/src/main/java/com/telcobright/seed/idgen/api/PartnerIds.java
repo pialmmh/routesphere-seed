@@ -8,11 +8,15 @@ import java.util.regex.Pattern;
 /**
  * The owner's rule of 2026-10-09: <b>partner ids are unique within a tenant</b>, by an external unique-id generator for partner CRUD.
  * A tenant is one operator's whole tree (the root and every nested reseller tier), so the generator keeps ONE counter per tree —
- * entity {@code partner.<root>}, type {@code int} (the switch's {@code partner.idPartner}). Every road that creates a partner in the
- * tree takes its id from here, whichever process it runs in: prime-context's partner road, the WiFi's, the BSS's.
+ * entity {@code partner.<root>}, type {@code int} (the switch's {@code partner.idPartner}), under the root's tenant on the id service.
+ * Every road that creates a partner in the tree takes its id from here, whichever process it runs in: prime-context's partner road, the
+ * WiFi's, the BSS's.
  *
  * <p>A tree that existed before the generator keeps its ids: every mint is above the highest id the tree holds today, on whichever
  * shard mints it.
+ *
+ * <p>The tenant (tenant-master's tenant id, {@link TenantId}) is passed by the caller on every call, beside the root: on the bed today
+ * both are {@code btcl} (the root schema = the tenant id); there is no default.
  */
 public final class PartnerIds {
 
@@ -32,10 +36,10 @@ public final class PartnerIds {
     }
 
     /**
-     * A new partner id for the tree of {@code root}: unique within the tenant, and above {@code highestInTree} — the highest
-     * {@code idPartner} any tier of the tree holds today.
+     * A new partner id for the tree of {@code root} under {@code tenant} (the root's tenant id): unique within the tenant, and above
+     * {@code highestInTree} — the highest {@code idPartner} any tier of the tree holds today.
      */
-    public int next(String root, int highestInTree) {
-        return Integer.parseInt(ids.mintAbove(entityOf(root), IdKind.INT, 1, highestInTree).get(0));
+    public int next(String tenant, String root, int highestInTree) {
+        return Integer.parseInt(ids.mintAbove(TenantId.checked(tenant), entityOf(root), IdKind.INT, 1, highestInTree).get(0));
     }
 }

@@ -55,4 +55,23 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ARCH-0100: the live fixtures (live/BucketNextBinary, live/LiveShards — the tenant-first service built from a git archive
+                 and started on 127.0.0.1) for every module that proves itself against REAL shards (seed-prepaid's live purchases) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

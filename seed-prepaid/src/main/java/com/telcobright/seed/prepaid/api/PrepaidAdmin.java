@@ -43,7 +43,7 @@ import java.util.Optional;
  * the application builds it from ONE value of ITS OWN config and hands it in; the seed has no config file and names no service (R0):
  * <pre>
  *   IdSource ids = BucketNext.builder()
- *       .shards("http://10.10.199.21:7001,http://10.10.198.21:7001")   // EVERY shard's base URL, comma-separated
+ *       .shards("http://10.10.199.21:7001,http://10.10.198.21:7001")   // EVERY shard's base URL, comma-separated; no tenant here
  *       .timeout(Duration.ofSeconds(2))
  *       .build();
  *   PrepaidAdmin admin = prepaid.admin().withIds(ids);
@@ -51,6 +51,12 @@ import java.util.Optional;
  * Like Kafka's server list, but EVERY shard is named: a shard does not tell about the others (shard k of N hands out k, k+N, k+2N, …; the
  * client asks them in turn, skips one that is down, and fails closed when none answers — nothing is minted then, the purchase writes
  * nothing). The ids are minted ABOVE the highest the ledger holds ({@code mintAbove}), so a table that existed before keeps its ids.
+ *
+ * <p><b>The tenant on every mint (ARCH-0100; the owner, 2026-10-30: one id service per installation, the tenant mandatory on every call).</b>
+ * The id service is tenant-first ({@code /api/v2/{tenant}/…}, one counter per (tenant, entity)) and the client has no default tenant:
+ * every mint of a purchase carries <b>the root's tenant id</b> — the {@code root} word of the call ({@code purchase(root, tierDb, …)}),
+ * tenant-master's tenant id, the same word as the root schema and the topic suffix ({@code btcl} on the bed). The tier ({@code tierDb})
+ * is never the tenant: a reseller's accounts are minted under its root's tenant, in the root's counters.
  *
  * <p><b>The one-creator rule.</b> The ledger writes these ids into the database as they are (the ledger DB names the account's
  * {@code @GeneratedValue} key as minted by the caller — mem-ledger's {@code keysMintedByTheCaller}): in a lane on this engine nothing else
@@ -83,7 +89,8 @@ public final class PrepaidAdmin {
     /** A package bought by {@code partnerId} at {@code tierDb} of {@code root}: ONE unit through the tier's ledger; the same reference → the first. */
     public LedgerPort.Purchased purchase(String root, String tierDb, int partnerId, LedgerPort.Offer offer, String reference) {
         refuseABadPurchase(offer, reference);
-        return kit.ledger().purchase(buyerAt(tierOf(root, tierDb), partnerId), offer, reference, this::nextId);
+        LevelAdmission buyer = buyerAt(tierOf(root, tierDb), partnerId);
+        return kit.ledger().purchase(buyer, offer, reference, (table, highestInUse) -> nextId(root, table, highestInUse));
     }
 
     /**
@@ -186,8 +193,9 @@ public final class PrepaidAdmin {
         return row;
     }
 
-    private long nextId(String table, long highestInUse) {
-        return Long.parseLong(ids.mintAbove(table, IdKind.LONG, 1, highestInUse).get(0));
+    /** One id of {@code table} above what the ledger holds, under the ROOT's tenant (the root word: the tenant id = the root schema). */
+    private long nextId(String rootTenant, String table, long highestInUse) {
+        return Long.parseLong(ids.mintAbove(rootTenant, table, IdKind.LONG, 1, highestInUse).get(0));
     }
 
     private void refuseABadPurchase(LedgerPort.Offer offer, String reference) {

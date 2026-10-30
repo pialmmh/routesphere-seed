@@ -66,6 +66,11 @@ admin.purchase(root, tierDb, partnerId, offer, reference);
   writes nothing.
 - The ids are minted **above** the highest id the ledger holds (`mintAbove`), so a table that existed before the service keeps its ids.
 - The key's name is the application's (the seed reads no config); the seed names no service url anywhere.
+- **The tenant on every mint** (ARCH-0100; the owner, 2026-10-30: one id service per installation, the tenant mandatory on every
+  call). The service is tenant-first (`/api/v2/{tenant}/…`, one counter per (tenant, entity)) and seed-idgen's client has no default
+  tenant: `PrepaidAdmin` passes **the root's tenant id** — the `root` word of `purchase(root, tierDb, …)`, tenant-master's tenant id,
+  the same word as the root schema and the topic suffix (`btcl` on the bed) — on every mint of a purchase. The tier is never the
+  tenant: a reseller's accounts are minted in its root's counters. The config value above names the shards only, never a tenant.
 
 ## The one-creator rule
 

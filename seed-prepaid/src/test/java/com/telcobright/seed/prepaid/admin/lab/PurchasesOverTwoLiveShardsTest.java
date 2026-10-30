@@ -1,6 +1,7 @@
 package com.telcobright.seed.prepaid.admin.lab;
 
 import com.telcobright.seed.idgen.dependencies.BucketNext;
+import com.telcobright.seed.idgen.live.LiveShards;
 import com.telcobright.seed.sessionflow.spi.LedgerPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,8 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * L2c item 4 against TWO REAL bucket-next shards on 127.0.0.1 (skipped when the binary is not on this machine): the application's
- * {@code IdSource} is {@code BucketNext.builder().shards(<every shard's URL, comma-separated>)}; 60 purchases at once over the three tiers
+ * L2c item 4 against TWO REAL bucket-next shards on 127.0.0.1 — the tenant-first service built from a git archive by seed-idgen's live
+ * fixture, in the bed's shape ({@code tenants: [btcl]}, {@code legacy_tenant: btcl}); skipped when it cannot be built here. The
+ * application's {@code IdSource} is {@code BucketNext.builder().shards(<every shard's URL, comma-separated>)}, every mint under the root's
+ * tenant {@code btcl} (ARCH-0100); 60 purchases at once over the three tiers
  * (30, then shard 1 killed, then 30 more) — every purchase made, every purchase id and every account id unique (shard 1 hands out odd
  * ids, shard 2 even: after the kill only even ones), each above the highest its table held (purchases 300, accounts 500); then the
  * database = the cache in every tier. H2 in
@@ -37,7 +40,7 @@ class PurchasesOverTwoLiveShardsTest {
     private final AtomicInteger packages = new AtomicInteger(10);
 
     @BeforeEach
-    void theBinaryIsHere() { assumeTrue(LiveShards.theBinaryIsHere(), "no bucket-next binary at " + LiveShards.BIN); }
+    void theServiceCanBeBuiltHere() { assumeTrue(LiveShards.theBinaryIsHere(), LiveShards.whyNot()); }
 
     @AfterEach
     void nothingIsLeftRunning() throws Exception {
@@ -47,7 +50,7 @@ class PurchasesOverTwoLiveShardsTest {
 
     @Test
     void manyPurchasesAtOnceOverThreeTiers_aShardKilledInTheMiddle_everyIdUnique_theDatabaseIsTheCache() throws Exception {
-        shards = new LiveShards(dir, 2);
+        shards = LiveShards.bedShaped(dir, 2);
         shards.start(1, true);
         shards.start(2, true);
         books = PurchaseLab.over(new H2PurchaseLab(), BucketNext.builder().shards(shards.everyShard()).timeout(Duration.ofSeconds(1)).build());
