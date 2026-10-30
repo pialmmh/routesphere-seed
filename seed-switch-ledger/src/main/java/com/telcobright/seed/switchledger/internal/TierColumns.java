@@ -28,8 +28,9 @@ import java.util.TreeSet;
  * name the tier, the table and the column, and what brings them.
  *
  * <p>C4 · On PostgreSQL the same holds for the RIGHTS: the ledger's login must hold SELECT, INSERT, UPDATE and DELETE on every table it
- * caches (the cached ledger may write each of them); a right it lacks would refuse a row in the same silent way. Read as the login holds
- * them ({@code has_table_privilege}); another engine's grants are not read here.
+ * writes (the cached ledger may write each of them); a right it lacks would refuse a row in the same silent way. §15.3 · A table only a
+ * READ-ONLY entity maps (the service groups: loaded at the start, never written) needs SELECT alone — prime-context's 009 grants exactly
+ * that. Read as the login holds them ({@code has_table_privilege}); another engine's grants are not read here.
  */
 public final class TierColumns {
 
@@ -37,31 +38,45 @@ public final class TierColumns {
     public static final String WHAT_BRINGS_THEM = "run prime-context's migrate-all on this database first (its changelog brings the ledger's columns — 006: creditLimit,"
         + " isSelected, paymentRef; 007 (pc-prod 009): id_packageitem, product_catalog — and its provisioning gives the ledger's login its rights: primecontext.provision.ledger-*, C4)";
 
-    /** What the ledger's writes need on every table it caches. */
+    /** What the ledger's writes need on every table it writes. */
     private static final List<String> RIGHTS = List.of("SELECT", "INSERT", "UPDATE", "DELETE");
+    /** §15.3 · What a table only a read-only entity maps needs: the ledger loads it and never writes it. */
+    private static final List<String> READ_RIGHTS = List.of("SELECT");
 
     private static final int NAMED_AT_MOST = 12;
 
     private final String root;
     private final DataSource db;
     private final Map<String, Set<String>> columnsByTable;
+    private final Set<String> readOnlyTables;
 
-    private TierColumns(String root, DataSource db, Map<String, Set<String>> columnsByTable) {
+    private TierColumns(String root, DataSource db, Map<String, Set<String>> columnsByTable, Set<String> readOnlyTables) {
         this.root = root;
         this.db = db;
         this.columnsByTable = columnsByTable;
+        this.readOnlyTables = readOnlyTables;
     }
 
     /** The columns these entity types write, as mem-ledger maps them — table and column names in lower case. */
     public static TierColumns of(String root, DataSource db, Collection<Class<?>> types) {
         EntityMetadataExtractor extractor = new EntityMetadataExtractor();
         Map<String, Set<String>> columnsByTable = new LinkedHashMap<>();
+        Set<String> written = new TreeSet<>();
         for (Class<?> type : types) {
             EntityMetadata metadata = extractor.extractMetadata(type);
-            Set<String> columns = columnsByTable.computeIfAbsent(lower(metadata.getTableName()), t -> new TreeSet<>());
+            String table = lower(metadata.getTableName());
+            Set<String> columns = columnsByTable.computeIfAbsent(table, t -> new TreeSet<>());
             for (FieldMetadata field : metadata.getPersistableFields()) columns.add(lower(field.getColumnName()));
+            if (!readOnly(type)) written.add(table);
         }
-        return new TierColumns(root, db, columnsByTable);
+        Set<String> readOnlyTables = new TreeSet<>(columnsByTable.keySet());
+        readOnlyTables.removeAll(written);
+        return new TierColumns(root, db, columnsByTable, readOnlyTables);
+    }
+
+    /** §15.3 · An entity the ledger only loads (LedgerEntities' read-only: the service groups) — never written. */
+    private static boolean readOnly(Class<?> type) {
+        return LedgerEntities.ofType(type).map(LedgerEntities.Known::readOnly).orElse(false);
     }
 
     /** Every tier holds every column the ledger writes; otherwise refused in words — the tiers, tables and columns that lack. */
@@ -93,16 +108,16 @@ public final class TierColumns {
                 continue;
             }
             for (String column : table.getValue()) if (!there.contains(column)) lacking.add(tier + " lacks " + table.getKey() + "." + column);
-            if (postgres) lacking.addAll(rightsLackingOn(c, tier, table.getKey()));
+            if (postgres) lacking.addAll(rightsLackingOn(c, tier, table.getKey(), readOnlyTables.contains(table.getKey()) ? READ_RIGHTS : RIGHTS));
         }
         return lacking;
     }
 
-    /** C4 · PostgreSQL: the rights the ledger's writes need on a table it caches, as its login holds them. */
-    private static List<String> rightsLackingOn(Connection c, String tier, String table) throws SQLException {
+    /** C4 · PostgreSQL: the rights the ledger needs on a table it caches (all four where it writes, SELECT where it only loads), as its login holds them. */
+    private static List<String> rightsLackingOn(Connection c, String tier, String table, List<String> rights) throws SQLException {
         List<String> lacking = new ArrayList<>();
         try (PreparedStatement ps = c.prepareStatement("SELECT has_table_privilege(?, ?)")) {
-            for (String right : RIGHTS) {
+            for (String right : rights) {
                 ps.setString(1, tier + "." + table);
                 ps.setString(2, right);
                 try (ResultSet rs = ps.executeQuery()) {
