@@ -75,6 +75,8 @@ class PurchaseThroughTheLedgerTest {
 
         assertThat(lab.walRecords()).as("ONE record").isEqualTo(before + 1);
         assertThat(bought.accounts()).as("two accounts above every account held (21)").hasSize(2).allMatch(id -> id > 21);
+        assertThat(ids.tenants()).as("ARCH-0100: every id minted under the ROOT's tenant (btcl), never the tier's word (res_2)").containsExactly("btcl");
+        assertThat(ids.entitiesOf("btcl")).as("the purchase's and the account's tables, under btcl").hasSize(2);
         for (long id : bought.accounts()) LedgerLab.await("account " + id + " in the database", () -> lab.dbBalance("res_2", id) != null);
         assertThat(lab.dbBalance("res_2", bought.accounts().get(1))).as("the minutes, under the cache's id").isEqualByComparingTo("300");
         assertThat(lab.dbPurchase("res_2", bought.accounts().get(0))).isEqualByComparingTo(String.valueOf(bought.purchaseId()));

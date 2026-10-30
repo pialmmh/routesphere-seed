@@ -47,12 +47,15 @@ public final class Shard {
         }
     }
 
+    /** The body as the service's JSON object; anything else — a bare {@code 404 page not found} parses as the NUMBER 404 — is "not JSON". */
     private static JsonNode parse(String body) {
         if (body == null || body.isBlank()) return JSON.createObjectNode();
         try {
-            return JSON.readTree(body);
-        } catch (IOException e) {
-            return JSON.createObjectNode().put("error", "not JSON").put("message", body.length() > 200 ? body.substring(0, 200) : body);
+            JsonNode node = JSON.readTree(body);
+            if (node.isObject()) return node;
+        } catch (IOException notJson) {
+            // named below
         }
+        return JSON.createObjectNode().put("error", Answer.NOT_JSON).put("message", body.length() > 200 ? body.substring(0, 200) : body);
     }
 }

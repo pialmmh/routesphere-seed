@@ -46,6 +46,14 @@
             <artifactId>seed-idgen</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- ARCH-0100: the live fixtures (the tenant-first service built from a git archive, started on 127.0.0.1) for the live purchases -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-idgen</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <!-- PackageAccount, Partner, DynamicContext, LevelAdmission, IntlOutRating -->
         <dependency>
             <groupId>com.telcobright</groupId>

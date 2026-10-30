@@ -1,25 +1,24 @@
 package com.telcobright.seed.idgen;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.telcobright.seed.idgen.api.IdKind;
+import com.telcobright.seed.idgen.api.IdRefused;
 import com.telcobright.seed.idgen.api.PartnerIds;
 import com.telcobright.seed.idgen.dependencies.BucketNext;
+import com.telcobright.seed.idgen.live.LiveShards;
+import com.telcobright.seed.idgen.spi.IdSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -28,44 +27,55 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * The partner rule against TWO REAL bucket-next shards started here on 127.0.0.1 (the binary of git@github.com:pialmmh/bucket-next,
- * {@code make build}; {@code -Dbucketnext.bin=<path>} to name another). Skipped when the binary is not on this machine.
+ * The client against the REAL tenant-first bucket-next (the {@code tenant-first} ref built from a git archive into a temp dir, started
+ * here on 127.0.0.1 in the 7000 range with a config of the new shape: {@code state_dir}, {@code tenants}, {@code legacy_tenant} where
+ * the bed's profile has it). Skipped when the service cannot be built here ({@code -Dbucketnext.bin=<path>} names a built binary).
+ *
+ * <p>The bed's binary today (fc779e7, pre-tenant) is NOT a fixture: it has no {@code /api/v2/{tenant}/} road at all (a bare
+ * {@code 404 page not found}), so this client cannot run against it — it refuses in words naming the tenant-first service
+ * ({@code BucketNextSourceTest.aServiceOlderThanTenancy_…}). The old run shape ({@code state_path}) is gone with it.
  */
 class BucketNextLiveTest {
 
-    private static final Path BIN = Path.of(System.getProperty("bucketnext.bin",
-        System.getProperty("user.home") + "/telcobright-projects/bucket-next/bin/bucket-next"));
-    private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(300)).build();
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final String BTCL = "btcl";
 
     @TempDir Path dir;
-    private final Map<Integer, Process> running = new ConcurrentHashMap<>();
-    private final Map<Integer, Integer> portOf = new ConcurrentHashMap<>();
+    private LiveShards shards;
 
     @BeforeEach
-    void theBinaryIsHere() { assumeTrue(Files.isExecutable(BIN), "no bucket-next binary at " + BIN); }
+    void theServiceCanBeBuiltHere() { assumeTrue(LiveShards.theBinaryIsHere(), LiveShards.whyNot()); }
 
     @AfterEach
-    void stopEveryShard() { running.values().forEach(Process::destroyForcibly); }
+    void stopEveryShard() throws Exception { if (shards != null) shards.close(); }
+
+    private static IdSource clientOf(LiveShards shards) {
+        return BucketNext.builder().shards(shards.everyShard()).timeout(Duration.ofSeconds(1)).build();
+    }
+
+    // ── 1 · the bed's shape: two shards, legacy_tenant kept, the partner rule, a crash, nothing repeats, the v1 roads never touched ──
 
     @Test
-    void twoRealShards_manyCreatorsAtOnce_neverTheSameId_aboveTheTree_aShardKilledAndBack_nothingRepeats() throws Exception {
-        start(1, 2, true);
-        start(2, 2, true);
-        PartnerIds partners = new PartnerIds(BucketNext.builder().shards(url(1) + "," + url(2)).timeout(Duration.ofSeconds(1)).build());
+    void theBedsShape_twoRealShards_manyCreatorsAtOnce_neverTheSameId_aboveTheTree_aShardKilledAndBack_nothingRepeats_noV1Call() throws Exception {
+        shards = LiveShards.bedShaped(dir, 2);
+        shards.start(1, true);
+        shards.start(2, true);
+        PartnerIds partners = new PartnerIds(clientOf(shards));
 
         Set<Integer> minted = mintConcurrently(partners, 400);
         assertThat(minted).hasSize(400).allSatisfy(id -> assertThat(id).isGreaterThan(5000));
         assertThat(minted.stream().map(id -> id % 2).distinct()).as("both shards minted").hasSize(2);
 
-        running.remove(1).destroyForcibly().waitFor(5, TimeUnit.SECONDS);       // a crash: no clean shutdown
+        shards.kill(1);                                                         // a crash: no clean shutdown
         List<Integer> whileOneIsDown = mintOneByOne(partners, 20);
         assertThat(whileOneIsDown).allSatisfy(id -> assertThat(id % 2).as("only shard 2 serves").isZero());
         assertThat(whileOneIsDown).doesNotContainAnyElementsOf(minted);
 
-        start(1, 2, false);                                                     // back, on its own state file, no -init
+        shards.start(1, false);                                                 // back, on its own state_dir, no -init
         List<Integer> afterTheCrash = mintOneByOne(partners, 40);
         Set<Integer> all = new HashSet<>(minted);
         all.addAll(whileOneIsDown);
@@ -73,12 +83,90 @@ class BucketNextLiveTest {
         assertThat(afterTheCrash.stream().filter(id -> id % 2 == 1)).as("shard 1 serves again").isNotEmpty();
         all.addAll(afterTheCrash);
         assertThat(all).hasSize(460);
+
+        JsonNode info = body(shards.get(2, "/shard-info"));
+        assertThat(info.path("legacyTenant").asText()).isEqualTo(BTCL);
+        assertThat(info.path("v1Calls").asLong()).as("the client never used a pre-tenant road").isZero();
+        assertThat(body(shards.get(2, "/api/v2/btcl/status/partner.btcl")).path("tenant").asText()).isEqualTo(BTCL);
     }
+
+    // ── 2 · after the callers moved: no legacy_tenant — every road of the client on v2; the pre-tenant roads answer 400 ──
+
+    @Test
+    void withoutLegacyTenant_mintAndMintAbove_everyRoadOnV2_theRegistrationOnA404_theMoveForward_thePreTenantRoadsRefuse() throws Exception {
+        shards = LiveShards.serving(dir, 1, BTCL);
+        shards.start(1, true);
+        IdSource ids = clientOf(shards);
+
+        assertThat(ids.mint(BTCL, "order", IdKind.INT, 1)).as("next-id").containsExactly("1");
+        assertThat(ids.mint(BTCL, "order", IdKind.INT, 3)).as("next-batch").containsExactly("2", "3", "4");
+        assertThat(ids.mint(BTCL, "session", IdKind.UUID12, 2)).as("a non-counter kind").hasSize(2).allSatisfy(v -> assertThat(v).hasSize(12));
+
+        assertThat(shards.get(1, "/api/v2/btcl/status/partner.btcl").statusCode()).as("unknown to the shard yet").isEqualTo(404);
+        assertThat(ids.mintAbove(BTCL, "partner.btcl", IdKind.INT, 1, 5000)).as("registered on the 404, started above").containsExactly("5001");
+        assertThat(body(shards.get(1, "/api/v2/btcl/status/partner.btcl")).path("nextValue").asLong()).isEqualTo(5002);
+
+        assertThat(ids.mintAbove(BTCL, "order", IdKind.INT, 1, 9000)).as("a known counter moved forward past the ids in use").containsExactly("9001");
+        assertThat(ids.mintAbove(BTCL, "order", IdKind.INT, 2, 100)).as("already past: not moved back").containsExactly("9002", "9003");
+
+        HttpResponse<String> v1 = shards.get(1, "/api/next-id/order?dataType=int");
+        assertThat(v1.statusCode()).as("the pre-tenant road without legacy_tenant").isEqualTo(400);
+        assertThat(body(v1).path("error").asText()).isEqualTo("Tenant is required");
+        JsonNode legacy = body(shards.get(1, "/shard-info")).path("legacyTenant");
+        assertThat(legacy.isMissingNode() || legacy.isNull() || legacy.asText().isEmpty()).as("no legacy_tenant on /shard-info: " + legacy).isTrue();
+    }
+
+    // ── 3 · the same entity name in a second declared tenant = a separate counter ──
+
+    @Test
+    void theSameEntityInASecondDeclaredTenant_isASeparateCounter() throws Exception {
+        shards = LiveShards.serving(dir, 1, BTCL, "acme");
+        shards.start(1, true);
+        IdSource ids = clientOf(shards);
+
+        assertThat(ids.mint(BTCL, "order", IdKind.INT, 3)).containsExactly("1", "2", "3");
+        assertThat(ids.mint("acme", "order", IdKind.INT, 2)).as("acme counts from 1 on its own").containsExactly("1", "2");
+        assertThat(ids.mintAbove("acme", "order", IdKind.INT, 1, 700)).containsExactly("701");
+        assertThat(ids.mint(BTCL, "order", IdKind.INT, 1)).as("btcl's counter untouched by acme's raise").containsExactly("4");
+        assertThat(ids.mint(BTCL, "cdr", IdKind.LONG, 1)).containsExactly("1");
+        assertThat(ids.mint("acme", "cdr", IdKind.INT, 1)).as("a kind is bound per (tenant, entity), not per name").containsExactly("1");
+
+        assertThat(body(shards.get(1, "/api/v2/btcl/status/order")).path("nextValue").asLong()).isEqualTo(5);
+        assertThat(body(shards.get(1, "/api/v2/acme/status/order")).path("nextValue").asLong()).isEqualTo(702);
+        assertThat(body(shards.get(1, "/shard-info")).path("tenants")).extracting(JsonNode::asText).containsExactly("acme", BTCL);
+    }
+
+    // ── 4 · a tenant the installation does not serve: refused in the service's words, nothing registered ──
+
+    @Test
+    void anUnknownTenant_isRefusedInTheServicesWords_nothingRegistered_aBlankTenantNeverLeavesTheProcess() throws Exception {
+        shards = LiveShards.serving(dir, 1, BTCL);
+        shards.start(1, true);
+        IdSource ids = clientOf(shards);
+
+        assertThatThrownBy(() -> ids.mint("nobody", "order", IdKind.INT, 1))
+            .isInstanceOf(IdRefused.class)
+            .satisfies(e -> assertThat(((IdRefused) e).status()).isEqualTo(400))
+            .satisfies(e -> assertThat(((IdRefused) e).code()).isEqualTo("Unknown tenant"))
+            .hasMessageContaining("nobody/order").hasMessageContaining("tenant 'nobody' is not served by this installation (served tenants: btcl)");
+        assertThatThrownBy(() -> ids.mintAbove("nobody", "partner.btcl", IdKind.INT, 1, 5000))
+            .as("400, never 404: an unknown tenant is not an unregistered entity").isInstanceOf(IdRefused.class).hasMessageContaining("Unknown tenant");
+        assertThatThrownBy(() -> ids.mint("BTCL", "order", IdKind.INT, 1)).as("ill-formed: refused here, before any call")
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("tenant-master's tenant id");
+        assertThatThrownBy(() -> ids.mint(" ", "order", IdKind.INT, 1)).isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(body(shards.get(1, "/api/v2/btcl/list")).path("entities")).as("nothing registered anywhere").isEmpty();
+        assertThat(body(shards.get(1, "/shard-info")).path("v1Calls").asLong()).isZero();
+    }
+
+    // ── helpers ─────────────────────────────────────────────────────────────
+
+    private static JsonNode body(HttpResponse<String> r) throws Exception { return JSON.readTree(r.body()); }
 
     private static Set<Integer> mintConcurrently(PartnerIds partners, int count) throws InterruptedException {
         Set<Integer> minted = ConcurrentHashMap.newKeySet();
         ExecutorService pool = Executors.newFixedThreadPool(8);
-        IntStream.range(0, count).forEach(i -> pool.submit(() -> minted.add(partners.next("btcl", 5000))));
+        IntStream.range(0, count).forEach(i -> pool.submit(() -> minted.add(partners.next(BTCL, BTCL, 5000))));
         pool.shutdown();
         assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
         return minted;
@@ -86,41 +174,7 @@ class BucketNextLiveTest {
 
     private static List<Integer> mintOneByOne(PartnerIds partners, int count) {
         List<Integer> out = new ArrayList<>();
-        for (int i = 0; i < count; i++) out.add(partners.next("btcl", 5000));
+        for (int i = 0; i < count; i++) out.add(partners.next(BTCL, BTCL, 5000));
         return out;
-    }
-
-    // ── the shards ────────────────────────────────────────────────────────
-
-    private void start(int shard, int total, boolean init) throws Exception {
-        int port = portOf.computeIfAbsent(shard, k -> freePort());
-        Path config = dir.resolve("shard-" + shard + ".yaml");
-        Files.writeString(config, String.join("\n",
-            "shard_id: " + shard, "total_shards: " + total, "listen_port: " + port, "listen_address: 127.0.0.1",
-            "state_path: " + dir.resolve("shard-" + shard + "-state.json"), "segment_size: 10", ""));
-        List<String> command = new ArrayList<>(List.of(BIN.toString(), "-config", config.toString()));
-        if (init) command.add("-init");
-        Process p = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(dir.resolve("shard-" + shard + ".log").toFile()).start();
-        running.put(shard, p);
-        awaitHealthy(shard, p);
-    }
-
-    private void awaitHealthy(int shard, Process p) throws Exception {
-        long until = System.currentTimeMillis() + 5000;
-        while (System.currentTimeMillis() < until) {
-            if (!p.isAlive()) throw new IllegalStateException("shard " + shard + " stopped: " + Files.readString(dir.resolve("shard-" + shard + ".log")));
-            try {
-                if (HTTP.send(HttpRequest.newBuilder(URI.create(url(shard) + "/health")).GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode() == 200) return;
-            } catch (IOException notYet) {
-                Thread.sleep(50);
-            }
-        }
-        throw new IllegalStateException("shard " + shard + " did not answer /health within 5 s");
-    }
-
-    private String url(int shard) { return "http://127.0.0.1:" + portOf.get(shard); }
-
-    private static int freePort() {
-        try (ServerSocket s = new ServerSocket(0)) { return s.getLocalPort(); } catch (IOException e) { throw new IllegalStateException(e); }
     }
 }

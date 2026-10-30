@@ -12,11 +12,13 @@ import java.util.List;
 
 /**
  * The id source of a bucket-next cluster: every shard's base URL (from the product's own config file: no secret, the service has no
- * authentication and lives on the private network) and the time one call may take.
+ * authentication and lives on the private network) and the time one call may take. The TENANT is not here: it is the caller's word
+ * on every call ({@code IdSource.mint(tenant, …)}, {@code PartnerIds.next(tenant, root, …)}) — one cluster serves every tenant of the
+ * installation on {@code /api/v2/{tenant}/…}, and the client has no default tenant.
  *
  * <pre>
  *   IdSource ids = BucketNext.builder().shards("http://10.10.199.21:7001,http://10.10.198.21:7001").timeout(Duration.ofSeconds(2)).build();
- *   int idPartner = new PartnerIds(ids).next("btcl", highestInTree);
+ *   int idPartner = new PartnerIds(ids).next(root.tenantId(), root.dbName(), highestInTree);      // on the bed both words are btcl
  * </pre>
  */
 public final class BucketNext {
