@@ -127,23 +127,37 @@ the service first (`legacy_tenant: btcl` keeps prime-context's v1 client alive),
 
 ### 4 · Gates and mutants
 
-_(filled below as the runs return)_
+Code-final commit **6aea3ec** (items 1–3 + the lab rename + this draft). The clean copy = `git archive 6aea3ec` into
+`~/idgen-work/archives/seed-6aea3ec` (no worktree, no stale `target/`), `install -DskipTests` then `test -Dmaven.test.failure.ignore=true`
+(nothing skipped after a red), offline on `~/idgen-work/m2` under the one lock; counted by `~/arch-drafts/tools/count-surefire.sh`
+(`~/idgen-work/tools/gate.sh`). The live tests built the tenant-first binary themselves inside the gate — twice, one JVM per module
+(`BucketNextBinary: bucket-next tenant-first (0e8929f) built from a git archive into /tmp/bucket-next-tenant-first-…`), 7710/7711, every
+temp dir gone at JVM exit (`ls /tmp/bucket-next-tenant-first-*` → none). Mutants by `~/idgen-work/tools/mutate.py` (the L1 tool, its
+paths my own): every original kept under `~/idgen-work/reds/<name>/*.orig`, restored by copy with a fresh mtime, sha-checked
+(`STATE: restored …; hashes checked`); the worktree clean afterwards (`git status --short` empty).
+
+**State (01:28 +06): item 4 done — the clean copy 945/0/0/9, four mutants red, every original restored and hash-checked.**
 
 ## Suites
 
-| tree | result |
-|---|---|
-| worktree, first run (`-pl seed-idgen -am install`) | _pending_ |
-| worktree, the reactor | _pending_ |
-| clean copy (git archive of the code-final commit) | _pending_ |
+| tree | when | result |
+|---|---|---|
+| worktree, first run (`-pl seed-idgen -am install`) | 00:07–00:21 | seed-idgen 28 / 2 red (both fixed: the number-parse of a bare 404; the `null` legacyTenant — see item 1) |
+| worktree, `-pl seed-idgen install` | 00:23–01:03 (the lock) | **28/0/0/0** — the 4 live scenarios included |
+| worktree, `-pl seed-prepaid test` (after the reactor installed into the private repo) | 01:10–01:12 | 295 / 0 / **3 errors** / 6 skipped — the 3 = the MySQL lab's root `l2c_lab_btcl` refused by the tenant rule (item 2's finding); the 6 skipped = the known parity gaps |
+| worktree, the MySQL lab + the two tenant tests after the rename | 01:14–01:15 | **9/0/0/0** |
+| **clean copy of 6aea3ec** (the gate) | 01:16–01:20 | **945/0/0/9** (the base adf583d: 932/0/0/9 — +13: `BucketNextSourceTest` 14→18, `PartnerIdsTest` 4→6, `BucketNextLiveTest` 1→4, `PurchaseIdsUnderTheRootsTenantTest` +1, and the lab tests that run here; the 9 skipped unchanged) |
+
+`~/.m2/repository` untouched: no file under `com/telcobright` newer than the round's start.
 
 ## Mutants
 
-| mutant | what it breaks | red |
+| mutant | what it breaks | red (tests named; `mvn exit 1`; restored, hashes ok) |
 |---|---|---|
-| `m1-default-tenant` | a blank tenant becomes `btcl` in the client instead of a refusal | _pending_ |
-| `m2-v1-road-left` | `ShardCounter`'s status road left on the pre-tenant shape (`/api/status/{entity}`) | _pending_ |
-| `m3-prepaid-no-tenant` | `PrepaidAdmin` passes the tier's word instead of the root's tenant | _pending_ |
+| `m1-default-tenant` | `BucketNextSource.check`: a null/blank tenant becomes `btcl` instead of a refusal | `BucketNextSourceTest.aBlankOrIllFormedTenant_isRefusedBeforeAnyCall:90 [mint 'null']` — 1 failure of 24 |
+| `m2-v1-road-left` | `ShardCounter`'s status road left on the pre-tenant shape (`/api/status/{entity}`) | **11 red of 22**: the REAL service without `legacy_tenant` → `IdRefused (400 Tenant is required): … btcl/partner.btcl status — this installation serves tenants by name: call /api/v2/{tenant}/status/partner.btcl` (`withoutLegacyTenant_…:106`, `theSameEntityInASecondDeclaredTenant_…:129`); the bed's shape → `[the client never used a pre-tenant road]` (`v1Calls` moved, `:89`); `anUnknownTenant_…:153 [400, never 404 …]` (the v1 status road's 400 was taken for a refusal before the tenant check); the stub: 1 failure (the paths asserted) + 6 errors |
+| `m3-prepaid-tier-not-tenant` | `PrepaidAdmin` passes the TIER's word (`tierDb`) instead of the root's tenant | `PurchaseIdsUnderTheRootsTenantTest … not 'res_7'`, `PurchaseThroughTheLedgerTest` ×2 `… not 'res_2' — the caller passes the root's tenant on every call; there is no default` — 3 errors of 6 |
+| `m3b-prepaid-constant-tenant` | `PrepaidAdmin` passes the constant `"btcl"` | `PurchaseIdsUnderTheRootsTenantTest … :59 [the root's word, acme — not res_7, not btcl]` — 1 failure of 6 (the `btcl` fixtures stay green on purpose: that is why the `acme` root exists) |
 
 ## Rules of the round kept
 
