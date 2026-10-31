@@ -116,12 +116,20 @@ public final class BootstrapRoad implements AutoCloseable {
             this::onTenantCreated, deployment.app()).start();
     }
 
-    /** The topics of one root: {@code cdr_<root>} (the switch publishes), {@code config_event_loader_<root>} (the doorbell), the lane's own. */
+    /** The topics of one root: its CDR road ({@link #cdrTopicOf}: the switch publishes), {@code config_event_loader_<root>} (the doorbell), the lane's own. */
     public List<String> topicsOf(String root) {
-        List<String> topics = new ArrayList<>(List.of(Topics.platform(CDR, root), Topics.platform(DOORBELL, root)));
+        List<String> topics = new ArrayList<>(List.of(cdrTopicOf(root), Topics.platform(DOORBELL, root)));
         List<String> lanes = laneTopics.apply(root);
         if (lanes != null) topics.addAll(lanes);
         return topics;
+    }
+
+    /**
+     * A root's CDR road: {@code cdr_<category>_<root>} when the application names its service category ({@link KitMakers#category()}:
+     * ad-sphere's {@code ad} → {@code cdr_ad_btcl}, the topic the ad category's billing-core reads), else {@code cdr_<root>}.
+     */
+    public String cdrTopicOf(String root) {
+        return makers.category().map(category -> Topics.platform(CDR, category, root)).orElseGet(() -> Topics.platform(CDR, root));
     }
 
     private void ensureTheTopicsOf(String root) { ensureTheTopicsOf(deployment, root); }
@@ -260,7 +268,7 @@ public final class BootstrapRoad implements AutoCloseable {
     private void makeItsCdrRoad(RootResources r, RootRoadsMade made) {
         String bootstrap = r.kafka().bootstrap();
         if (!producers.containsKey(bootstrap)) made.producerOf = bootstrap;
-        cdr.add(made.rootDb, new KafkaCdrSink(producerOf(bootstrap), Topics.platform(CDR, made.rootDb), null));
+        cdr.add(made.rootDb, new KafkaCdrSink(producerOf(bootstrap), cdrTopicOf(made.rootDb), null));
         made.cdrRoad = true;
     }
 
@@ -337,7 +345,7 @@ public final class BootstrapRoad implements AutoCloseable {
     private String describe(RootResources r) {
         String tree = trees.snapshot(r.root()).map(t -> "tree v" + t.version()).orElse("NO TREE");
         String db = r.switchDb() == null ? "" : " on " + LogText.maskPassword(r.switchDb().url()) + " schema " + r.switchDb().schema();
-        return r.root() + ": " + tree + ", doors " + deployment.rulesOf(r.root()) + ", ledger " + r.ledger().kind() + db + ", CDR " + Topics.platform(CDR, r.root())
+        return r.root() + ": " + tree + ", doors " + deployment.rulesOf(r.root()) + ", ledger " + r.ledger().kind() + db + ", CDR " + cdrTopicOf(r.root())
             + " on " + r.kafka().bootstrap() + ", redis " + LogText.maskPassword(r.redisUrl()) + ", dir " + r.dir();
     }
 }

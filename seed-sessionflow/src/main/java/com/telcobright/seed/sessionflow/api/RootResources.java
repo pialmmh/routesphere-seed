@@ -10,7 +10,7 @@ import java.util.function.Function;
 
 /**
  * ONE served root's resources as its bootstrap names them (§C.1 {@code config.routesphere.root.<root>}): its switch database, its Kafka
- * (the CDR road {@code cdr_<root>}), its Redis, its ledger's kind and its own directory on this box. Each root has its own — link3 and
+ * (the CDR road {@code cdr_<root>}, {@code cdr_<category>_<root>} for an application of a service category), its Redis, its ledger's kind and its own directory on this box. Each root has its own — link3 and
  * btcl never share a road by accident.
  *
  * @param root     the root's name (its database: {@code link3})

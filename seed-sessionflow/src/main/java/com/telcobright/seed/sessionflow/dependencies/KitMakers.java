@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.function.Function;
 
@@ -32,6 +33,7 @@ public final class KitMakers {
     private final Function<Path, SessionJournal> journals;
     private final Clock clock;
     private final Function<String, String> environment;
+    private final String category;
 
     private KitMakers(Builder b) {
         this.trees = b.trees;
@@ -40,6 +42,7 @@ public final class KitMakers {
         this.journals = Objects.requireNonNull(b.journals, "journals");
         this.clock = Objects.requireNonNull(b.clock, "clock");
         this.environment = Objects.requireNonNull(b.environment, "environment");
+        this.category = b.category == null || b.category.isBlank() ? null : b.category;
     }
 
     /** The deployed makers: what the classpath carries, the real Kafka, a file journal per root, the system clock and environment. */
@@ -75,6 +78,13 @@ public final class KitMakers {
 
     public Function<String, String> environment() { return environment; }
 
+    /**
+     * The service CATEGORY the application serves (two-db, ruled 2026-10-30: one billing pair per category): each root's CDR road is then
+     * {@code cdr_<category>_<root>} ({@code ad} → {@code cdr_ad_btcl}, the topic the ad category's billing-core reads). Empty = no
+     * category: {@code cdr_<root>}, as before.
+     */
+    public Optional<String> category() { return Optional.ofNullable(category); }
+
     public static final class Builder {
         private TreesMaker trees;
         private final Map<String, LedgerMaker> ledgers = new LinkedHashMap<>();
@@ -82,6 +92,7 @@ public final class KitMakers {
         private Function<Path, SessionJournal> journals = dir -> SessionJournals.file(dir.resolve(JOURNAL_FILE));
         private Clock clock = Clock.systemUTC();
         private Function<String, String> environment = System::getenv;
+        private String category;
 
         private Builder() { ledger(new OrchestrixLedgerMaker()); }
 
@@ -92,6 +103,8 @@ public final class KitMakers {
         public Builder journals(Function<Path, SessionJournal> v) { this.journals = v; return this; }
         public Builder clock(Clock v) { this.clock = v; return this; }
         public Builder environment(Function<String, String> v) { this.environment = v; return this; }
+        /** The service category the application serves ({@code ad}); none = the plain {@code cdr_<root>}. */
+        public Builder category(String v) { this.category = v; return this; }
         public KitMakers build() { return new KitMakers(this); }
     }
 }

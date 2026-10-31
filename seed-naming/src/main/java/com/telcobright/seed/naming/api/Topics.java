@@ -7,6 +7,8 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>a PLATFORM topic — {@code <name>_<root>}: {@code cdr_btcl}, {@code cdr_summary_ping_btcl}, {@code config_event_loader_btcl} —
  *       unchanged, so billing-core and summary-service need no change;</li>
+ *   <li>a service CATEGORY's platform topic — {@code <name>_<category>_<root>}: {@code cdr_ad_btcl} (two-db, ruled 2026-10-30: one billing
+ *       pair per category, so each category's records have a road of their own, the one its own billing-core reads);</li>
  *   <li>an APPLICATION's own topic — {@code <app>_<in|out>_<name>_<root>}: {@code ad-sphere_in_requests_link3} — the direction in the
  *       name, so publish and subscribe never share a topic.</li>
  * </ul>
@@ -28,6 +30,10 @@ public final class Topics {
 
     /** {@code <name>_<root>} — {@code platform("cdr", "btcl")} = {@code cdr_btcl}. */
     public static String platform(String name, String root) { return checked(part("name", name) + "_" + part("root", root)); }
+    /** {@code <name>_<category>_<root>} — {@code platform("cdr", "ad", "btcl")} = {@code cdr_ad_btcl}: a service category's own road. */
+    public static String platform(String name, String category, String root) {
+        return checked(part("name", name) + "_" + part("category", category) + "_" + part("root", root));
+    }
 
     /** {@code <app>_<in|out>_<name>_<root>} — {@code app("ad-sphere", IN, "requests", "link3")} = {@code ad-sphere_in_requests_link3}. */
     public static String app(String app, Direction direction, String name, String root) {

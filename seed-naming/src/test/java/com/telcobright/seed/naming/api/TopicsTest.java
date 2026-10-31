@@ -17,6 +17,14 @@ class TopicsTest {
     }
 
     @Test
+    void aServiceCategorysPlatformTopic_isNameUnderscoreCategoryUnderscoreRoot() {
+        assertThat(Topics.platform("cdr", "ad", "btcl")).isEqualTo("cdr_ad_btcl");
+        assertThat(Topics.platform("cdr", "wifi", "link3")).isEqualTo("cdr_wifi_link3");
+        assertThatThrownBy(() -> Topics.platform("cdr", " ", "btcl")).hasMessageContaining("category is missing");
+        assertThatThrownBy(() -> Topics.platform("cdr", "a.d", "btcl")).hasMessageContaining("'.'");
+    }
+
+    @Test
     void anApplicationsOwnTopic_carriesItsDirection_soPublishAndSubscribeNeverShareOne() {
         assertThat(Topics.app("ad-sphere", Direction.IN, "requests", "link3")).isEqualTo("ad-sphere_in_requests_link3");
         assertThat(Topics.app("ad-sphere", Direction.OUT, "requests", "link3")).isEqualTo("ad-sphere_out_requests_link3");

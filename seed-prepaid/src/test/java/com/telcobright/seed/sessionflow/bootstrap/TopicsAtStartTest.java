@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * P1-E item 7 · the engine on a kit made from the bootstrap makes, at its start, every served root's topics (R9): its CDR road
- * {@code cdr_<root>}, its doorbell {@code config_event_loader_<root>}, and the lane's own ({@code topicsOf(root)}: {@code <app>_<in|out>_<name>_<root>}).
+ * {@code cdr_<root>} ({@code cdr_<category>_<root>} for an application of a service category), its doorbell {@code config_event_loader_<root>}, and the lane's own ({@code topicsOf(root)}: {@code <app>_<in|out>_<name>_<root>}).
  * A kit built by hand makes none (it has no road to a cluster).
  */
 class TopicsAtStartTest {
@@ -51,6 +51,14 @@ class TopicsAtStartTest {
         start(RoutesphereKit.fromBootstrap(w.source, "ad-sphere", w.makers()));
         assertThat(w.kafka.topics.get("10.10.188.2:9092")).containsExactlyInAnyOrder(
             "cdr_btcl", "config_event_loader_btcl", "lab_out_calls_btcl", "cdr_link3", "config_event_loader_link3", "lab_out_calls_link3");
+    }
+
+    @Test
+    void anAppOfAServiceCategory_makesItsCategorysCdrRoad_notThePlainOne() {
+        w.source.serve(BootstrapWorld.small(w.source.envelope()));
+        start(RoutesphereKit.fromBootstrap(w.source, "ad-sphere", w.makersOfCategory("ad")));
+        assertThat(w.kafka.topics.get("10.10.188.2:9092")).containsExactlyInAnyOrder(
+            "cdr_ad_btcl", "config_event_loader_btcl", "lab_out_calls_btcl", "cdr_ad_link3", "config_event_loader_link3", "lab_out_calls_link3");
     }
 
     @Test
