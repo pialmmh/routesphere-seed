@@ -72,6 +72,16 @@ class KitFromBootstrapTest {
     }
 
     @Test
+    void anAppOfAServiceCategory_putsEachRootsCdrOnItsCategorysRoad() {
+        RoutesphereKit kit = RoutesphereKit.fromBootstrap(w.source, "ad-sphere", w.makersOfCategory("ad"));
+        kit.cdr().publish("link3", "v-1", List.of(record("link3")));
+        kit.cdr().publish("btcl", "v-2", List.of(record("btcl")));
+        assertThat(w.kafka.producers.get("10.10.188.2:9092").history()).extracting(r -> r.topic() + ":" + r.key())
+            .containsExactly("cdr_ad_link3:v-1", "cdr_ad_btcl:v-2");
+        assertThat(kit.bootstrapRoad().orElseThrow().describe()).contains(" CDR cdr_ad_btcl on 10.10.188.2:9092").doesNotContain(" CDR cdr_btcl ");
+    }
+
+    @Test
     void aTiersMoney_goesToTheLedgerOfItsOwnRoot() {
         RoutesphereKit kit = kit();
         var link3Tier = kit.tenants().tenantByDbName("link3", "link3_res_5").orElseThrow();
