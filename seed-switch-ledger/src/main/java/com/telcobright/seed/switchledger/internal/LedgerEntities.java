@@ -42,6 +42,12 @@ public final class LedgerEntities {
     public record Digits(int precision, int scale) {}
 
     private static final Digits BALANCE = new Digits(20, 6), PRICE = new Digits(10, 2), PERCENT = new Digits(5, 2);
+    /**
+     * A package item's quantity (3.77, the owner 2026-11-05: "house ad credit can be a very large number to simulate unlimited credit"): 18
+     * digits, 2 after the point — prime-context's changelog 019 widens {@code packageitem.quantity} from (10,2) on both engines; the scale
+     * stays 2, so the column's text and every reader stay as they were.
+     */
+    private static final Digits QUANTITY = new Digits(18, 2);
 
     /** The word that names every table of the prepaid model — the money tables and, since C4, the catalog. */
     static final String EVERY_TABLE = "package";
@@ -74,7 +80,7 @@ public final class LedgerEntities {
         new Known(Books.PACKAGE_ITEM, LedgerPackageItem.class, "packageitem", new Shape(
             Set.of("idPackage", "quantity", "idUom", "category", "prefix", "description"),           // id_package: NOT NULL on MySQL; quantity, description: on PostgreSQL
             Map.of("idUom", 20, "prefix", 200, "description", 255),
-            Map.of("quantity", PRICE),
+            Map.of("quantity", QUANTITY),
             Set.of())),
         // §15.3 · the products: a TABLE written through the cache (prime-context's 009 / 007); its rules beyond the shape are ProductRules'
         new Known(Books.PRODUCT, com.telcobright.seed.switchledger.api.LedgerProduct.class, "product_catalog", new Shape(
