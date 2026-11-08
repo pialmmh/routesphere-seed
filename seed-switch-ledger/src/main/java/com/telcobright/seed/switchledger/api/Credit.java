@@ -24,6 +24,9 @@ import java.util.Optional;
  * <p>{@link #reparent} moves the account onto a new purchase through the ledger (298–316, 347–351: "a parent link written straight to MySQL
  * is reverted by the next call settle … since the account's expiry is derived from its parent purchase, moving the link is what makes a
  * topup's longer validity real"). Behind a switch's recharge road; the WiFi does not call it at go-live.
+ *
+ * <p>{@link #capAt} (the WiFi's clock time, F10) is the credit's mirror: the live balance capped at a ceiling under the same lock, never
+ * raised, never below zero — the minutes a time purchase's clock ran with no session holding its windows.
  */
 public final class Credit {
 
@@ -54,6 +57,55 @@ public final class Credit {
         PackageAccount after = written(ledger.unit().add(dbName, PackageAccount.class, accountId, BALANCE, delta));
         log.info("CREDIT {} | account {} of {}: +{} {} → {}", LogText.clean(reference), accountId, dbName, delta, after.getUom(), after.getBalanceAfter());
         return new Credited(accountId, after.getBalanceBefore(), after.getBalanceAfter(), after.getIdpackagePurchase());
+    }
+
+    /**
+     * The account's live balance CAPPED at {@code ceiling}, under its lock: a balance above the ceiling moves DOWN to it (never below zero), a
+     * balance at or under it is left alone — a cap never raises an account. A move outside any session: the WiFi's clock time (F10, the owner
+     * 2026-10-24 — "time based accounting shall be done through packageaccount entity, the consumed amount shall be reflected in the package
+     * accounts"): the ceiling is the minutes left until the purchase's end, so the account reflects the time its clock ran while no session
+     * held its windows. C1: ONE unit — a {@code require(balance = the one read)} and an {@code add} of the difference, under the lock the
+     * sessions take; a balance that moved between the read and the commit refuses the unit and the cap is decided AGAIN against the balance
+     * the lock sees — so two callers bringing one account to one ceiling take the time once (the second finds nothing above it). The WAL
+     * carries it to the database. (Carried from the WiFi seed branch wifi/clock-debit c806ad32 onto the live base, 2026-11-08.)
+     *
+     * @throws IllegalArgumentException a ceiling that is null, an account the schema does not hold, or a balance that kept moving
+     * @throws com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault the ledger did not answer, or the lock was not free in time
+     */
+    public Credited capAt(String dbName, long accountId, BigDecimal ceiling, String reference) {
+        if (ceiling == null) throw new IllegalArgumentException("a cap names its ceiling (" + reference + ")");
+        BigDecimal floor = ceiling.signum() < 0 ? BigDecimal.ZERO : ceiling;
+        String ref = LogText.clean(reference);
+        for (int attempt = 1; ; attempt++) {
+            PackageAccount live = heldAccount(dbName, accountId);
+            BigDecimal before = Books.balanceOf(live);
+            if (before.compareTo(floor) <= 0) {
+                log.debug("CAP {} | account {} of {}: {} {} is at or under the ceiling {}, left alone", ref, accountId, dbName, before, live.getUom(), floor);
+                return new Credited(accountId, before, before, live.getIdpackagePurchase());
+            }
+            CachedLedger.Outcome outcome = ledger.unit()
+                .require(dbName, PackageAccount.class, accountId, CachedLedger.Check.equalTo(BALANCE, before))
+                .add(dbName, PackageAccount.class, accountId, BALANCE, floor.subtract(before))
+                .commit();
+            if (outcome instanceof CachedLedger.Committed committed) {
+                PackageAccount after = accountRow(committed, dbName, accountId);
+                log.info("CAP {} | account {} of {}: {} → {} {} (−{})", ref, accountId, dbName, before, after.getBalanceAfter(), live.getUom(), before.subtract(floor));
+                return new Credited(accountId, before, after.getBalanceAfter(), after.getIdpackagePurchase());
+            }
+            String why = ((CachedLedger.Refused) outcome).reason();
+            if (attempt >= CAP_ATTEMPTS)
+                throw new IllegalArgumentException("the cap of account " + accountId + " of " + dbName + " was refused " + attempt + " times (" + ref + "): " + why);
+            log.debug("CAP {} | account {} of {}: refused ({}), the balance moved under the read — deciding again", ref, accountId, dbName, why);
+        }
+    }
+
+    /** How many times a cap reads the balance again after the lock found it moved; a third refusal is said in words. */
+    private static final int CAP_ATTEMPTS = 3;
+
+    /** The account row a committed unit wrote (the first PackageAccount among its rows), else the ledger's own copy. */
+    private PackageAccount accountRow(CachedLedger.Committed committed, String dbName, long accountId) {
+        for (Object row : committed.rows()) if (row instanceof PackageAccount a) return a;
+        return heldAccount(dbName, accountId);
     }
 
     /** Move the account onto purchase {@code newPurchaseId}, under its lock; the balance stays. C1: ONE unit — an update of its purchase. */

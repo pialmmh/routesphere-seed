@@ -102,4 +102,71 @@ class CreditTest {
         assertThatThrownBy(() -> ledger.credit().credit("res_2", 99, BigDecimal.ONE, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not held in schema res_2");
         assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
     }
+
+    // ── the cap (F10, the WiFi's clock time; carried from wifi/clock-debit c806ad32 onto the live base, 2026-11-08) ──
+
+    @Test
+    void aCapMovesAHigherBalanceDownToTheCeiling_mySqlSeesIt() {
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("70"), "clock-1");
+
+        assertThat(capped.before()).isEqualByComparingTo("100");
+        assertThat(capped.after()).isEqualByComparingTo("70");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("70");
+        LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).compareTo(new BigDecimal("70")) == 0);
+    }
+
+    @Test
+    void aCapNeverRaisesTheBalance_andTheSecondCapToTheSameCeilingTakesNothing() {
+        Credit.Credited above = ledger.credit().capAt("res_2", 11, new BigDecimal("250"), "clock-2");
+        assertThat(above.after()).as("a ceiling above the balance leaves it alone").isEqualByComparingTo("100");
+
+        ledger.credit().capAt("res_2", 11, new BigDecimal("60"), "clock-3");
+        Credit.Credited again = ledger.credit().capAt("res_2", 11, new BigDecimal("60"), "clock-4");
+        assertThat(again.before()).isEqualByComparingTo("60");
+        assertThat(again.after()).as("the time is taken once").isEqualByComparingTo("60");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("60");
+    }
+
+    @Test
+    void aCeilingBelowZero_takesTheAccountToZero_neverBelow() {
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("-5"), "clock-5");
+        assertThat(capped.after()).isEqualByComparingTo("0");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("0");
+        LedgerLab.await("the write-behind", () -> lab.dbBalance("res_2", 11).signum() == 0);
+    }
+
+    @Test
+    void aCapWhileAReserveIsOpen_capsTheFreeBalance_andTheSettleStillReturnsTheRest() {
+        LevelAdmission level = tier();
+        Reservation held = ledger.port().reserve(level, new BigDecimal("10"), "c-9#L0").orElseThrow();
+        level.setDebitReference("c-9#L0");
+        level.setReservedAmount(held.reserved());
+
+        Credit.Credited capped = ledger.credit().capAt("res_2", 11, new BigDecimal("70"), "clock-6");
+
+        assertThat(capped.before()).isEqualByComparingTo("90");
+        assertThat(capped.after()).isEqualByComparingTo("70");
+        TierSettlement done = ledger.port().settle(level, new BigDecimal("4"));
+        assertThat(done.balanceAfter()).as("70 + the 6 the settle returns").isEqualByComparingTo("76");
+    }
+
+    @Test
+    void theCapWaitsForTheAccountsLock_theOnePortsVerbsHold() throws Exception {
+        AccountLocks locks = AccountLocks.of(lab.ledger(), 2000);
+        CompletableFuture<BigDecimal> capped;
+        try (AccountLocks.Held held = locks.hold("res_2", 11)) {
+            capped = CompletableFuture.supplyAsync(() -> ledger.credit().capAt("res_2", 11, new BigDecimal("95"), "clock-7").after());
+            Thread.sleep(300);
+            assertThat(capped.isDone()).as("the cap waits while a verb holds the account").isFalse();
+            assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
+        }
+        assertThat(capped.get(5, TimeUnit.SECONDS)).isEqualByComparingTo("95");
+    }
+
+    @Test
+    void aCapWithNoCeiling_andAnUnknownAccount_areRefusedInWords() {
+        assertThatThrownBy(() -> ledger.credit().capAt("res_2", 11, null, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ceiling");
+        assertThatThrownBy(() -> ledger.credit().capAt("res_2", 99, BigDecimal.ONE, "x")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not held in schema res_2");
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("100");
+    }
 }
