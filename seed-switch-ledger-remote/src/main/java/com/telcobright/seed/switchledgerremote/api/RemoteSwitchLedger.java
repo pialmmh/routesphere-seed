@@ -63,9 +63,12 @@ public final class RemoteSwitchLedger implements LedgerPort, LiveBalance, AutoCl
         this.accounts = new RemoteAccounts(calls);
     }
 
+    /** A catalog snapshot carries every purchase's package: room for 10^5 purchases and more. */
+    public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
+
     /** A client of the service at {@code settings.address()}, plaintext on the private mesh, warmed (Health + the catalogs of its tiers). */
     public static RemoteSwitchLedger connect(RemoteLedgerSettings settings, String bearer) {
-        ManagedChannel channel = ManagedChannelBuilder.forTarget(settings.address()).usePlaintext().build();
+        ManagedChannel channel = ManagedChannelBuilder.forTarget(settings.address()).usePlaintext().maxInboundMessageSize(MAX_INBOUND_MESSAGE_BYTES).build();
         RemoteSwitchLedger ledger = over(channel, settings, bearer);
         ledger.warm();
         return ledger;
@@ -120,10 +123,13 @@ public final class RemoteSwitchLedger implements LedgerPort, LiveBalance, AutoCl
 
     // ── purchases, reads, the catalog ───────────────────────────────────────
 
+    /** The service mints the ids ({@code ids} is not used); the tier's catalog is fetched again after — its purchases' packages now name the new one, as the embedded index would. */
     @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) {
         PurchaseRequest request = PurchaseRequest.newBuilder().setBuyer(Wire.tierOf(buyer)).setOffer(WireRows.offerOf(offer)).setReference(Wire.orEmpty(reference)).build();
         var reply = calls.call("purchase", s -> s.purchase(request));
-        return WireRows.purchasedOf(reply);
+        Purchased made = WireRows.purchasedOf(reply);
+        catalogs.refresh(buyer.getDbName());
+        return made;
     }
 
     @Override public Optional<List<PackageAccount>> accountsOf(LevelAdmission buyer) {
