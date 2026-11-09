@@ -1,0 +1,349 @@
+// The switch ledger on the wire — road B (ARCH-0116, the owner 2026-11-09): the seed's LedgerPort verbs, the live-balance peek, the
+// credit door, the buyer's reads and the catalog, served by ONE money process per database (the switch-ledger service) and spoken by
+// every app (ad-sphere, wifi-sphere, …) through RemoteSwitchLedger. Design: routesphere docs/architecture/switch-ledger-service-2026-11-09.md §3.3.
+//
+// Frozen since item 1 landed (ratification by the architect only): the service name, the method names, and the six fields of Tier with
+// their numbers. Money is DECIMAL TEXT on the wire (BigDecimal.toPlainString), never float or double; an empty text = null. A date is
+// ISO-8601 local date-time text (LocalDateTime.toString); empty = none.
+//
+// Meaning on the wire, kept from the port:
+//  - a refusal of the ledger's own (NO_ACCOUNT, ACCOUNT_NOT_FOUND) travels in the reply (Hold.refusal_code, Refusal) with gRPC status OK;
+//    the client throws LedgerRefusal, as today;
+//  - the ledger not answering (UNAVAILABLE, DEADLINE_EXCEEDED, INTERNAL) is a LedgerFault at the client: BILLING_SYSTEM_ERROR, never a
+//    balance cause;
+//  - Credit, Reparent and CapAt answer NOT_FOUND for an account the schema does not hold (the client's IllegalArgumentException, which
+//    the WiFi clock catches);
+//  - Reserve, Charge, Settle, Release, Refund, Credit and Purchase are idempotent by their reference; CapAt is idempotent by its CEILING
+//    and is never deduplicated by reference (the sweeper repeats one reference every tick);
+//  - Unit is a stream both ways: lock, then moves answered as they WILL be, then commit — ONE WAL record for every tier, all or none.
+syntax = "proto3";
+
+package telcobright.switchledger.v1;
+
+option java_package = "com.telcobright.seed.switchledgerremote.wire";
+option java_multiple_files = true;
+option java_outer_classname = "SwitchLedgerProto";
+
+service SwitchLedger {
+  rpc Reserve   (Move)            returns (Hold);            // held=false = this account cannot pay; never an error
+  rpc Charge    (Move)            returns (Hold);            // CHARGE_NOW, no reserve row
+  rpc Settle    (Settlement)      returns (Settled);
+  rpc Release   (ReleaseRequest)  returns (Ack);
+  rpc Refund    (RefundRequest)   returns (Settled);
+  rpc Unit      (stream UnitRequest) returns (stream UnitReply);   // N moves over N tiers, all or none, ONE WAL record
+  rpc Credit    (CreditRequest)   returns (Credited);
+  rpc Reparent  (ReparentRequest) returns (Credited);
+  rpc CapAt     (CapRequest)      returns (Credited);        // the WiFi clock, F10
+  rpc BalanceOf (Tier)            returns (Balance);         // a peek, no lock
+  rpc Purchase  (PurchaseRequest) returns (Purchased);
+  rpc AccountsOf (Buyer)          returns (Accounts);
+  rpc PurchasesOf (Buyer)         returns (Purchases);
+  rpc Catalog   (Tier)            returns (CatalogSnapshot);
+  rpc AccountById       (AccountRef)  returns (Account);     // the WiFi's: an account by its id
+  rpc AccountOfPurchase (PurchaseRef) returns (Account);     // the unexpired account of a purchase (at = 0: any)
+  rpc HeldAccounts      (TierDb)      returns (AccountIds);  // ids with an open reserve row (the sweeper's skip list)
+  rpc Health    (Empty)           returns (HealthReply);     // ready, wal_lag, tiers[] {db_name, loaded}
+}
+
+// ── the tier: the six fields a money move reads from the level (design §2) ──
+
+message Tier {
+  string db_name = 1;              // the tier's schema (btcl, res_4027)
+  int32  level_index = 2;
+  int64  package_account_id = 3;   // 0 = the level names no account (the refusal NO_ACCOUNT)
+  int64  partner_id = 4;
+  string uom = 5;                  // empty = as rated
+  string debit_reference = 6;      // empty = none yet (the tier's first hold names it)
+}
+
+// A refusal of the ledger's own, carried with status OK: its code is the call's cause.
+message Refusal {
+  string code = 1;
+  string message = 2;
+}
+
+// ── the port's verbs ──
+
+message Move {
+  Tier   tier = 1;
+  string amount = 2;               // decimal text
+  string reference = 3;
+}
+
+message Hold {
+  bool   held = 1;                 // false = this account cannot pay (nothing moved); true = the ledger's facts below
+  bool   repeated = 2;
+  string refusal_code = 3;         // set = a refusal of the ledger's own (NO_ACCOUNT, ACCOUNT_NOT_FOUND); held is then false
+  int64  account = 4;              // 0 = the switch named the account itself
+  string uom = 5;
+  string reserved = 6;
+  string balance_before = 7;
+  string balance_after = 8;
+  string refusal_message = 9;
+}
+
+// The level's facts the settlement reads beside the tier: what it reserved in all and in how many windows.
+message Settlement {
+  Tier   tier = 1;
+  string charged = 2;
+  string total_reserved = 3;
+  int32  reservation_count = 4;
+}
+
+message Settled {
+  int32  level_index = 1;
+  string reserved = 2;
+  string charged = 3;
+  string returned = 4;
+  string balance_after = 5;        // empty = none
+  bool   closed = 6;
+  string note = 7;                 // empty = none
+  Refusal refusal = 8;
+}
+
+message ReleaseRequest {       // named so: inside the service a message called Release would be shadowed by the method Release
+  Tier   tier = 1;
+  string why = 2;
+  string total_reserved = 3;
+  int32  reservation_count = 4;
+}
+
+message RefundRequest {
+  Tier   tier = 1;
+  string amount = 2;
+  string why = 3;
+  string total_reserved = 4;
+  int32  reservation_count = 5;
+}
+
+message Ack {
+  Refusal refusal = 1;
+}
+
+// ── the unit: lock, moves, commit — a stream both ways, one reply per step ──
+
+message UnitRequest {
+  oneof step {
+    Lock       lock = 1;
+    Move       reserve = 2;
+    Move       charge = 3;
+    Settlement settle = 4;
+    ReleaseRequest release = 5;
+    RefundRequest  refund = 6;
+    Tier       balance_of = 7;
+    Abandon    abandon = 8;
+    Commit     commit = 9;
+  }
+}
+
+message Lock    { repeated Tier accounts = 1; }
+message Abandon { string why = 1; }
+message Commit  { string what = 1; }
+
+message UnitReply {
+  oneof answer {
+    Ack     locked = 1;
+    Hold    hold = 2;
+    Settled settled = 3;
+    Ack     released = 4;
+    Balance balance = 5;
+    Ack     abandoned = 6;
+    Ack     committed = 7;
+  }
+}
+
+// ── the credit door: the account the Tier names (its schema, its account id) ──
+
+message CreditRequest {
+  Tier   account = 1;
+  string amount = 2;               // a positive delta
+  string reference = 3;
+}
+
+message ReparentRequest {
+  Tier  account = 1;
+  int64 purchase_id = 2;
+}
+
+message CapRequest {
+  Tier   account = 1;
+  string ceiling = 2;
+  string reference = 3;            // the log line's; a cap is idempotent by its ceiling, never by this
+}
+
+message Credited {
+  int64  account_id = 1;
+  string before = 2;
+  string after = 3;
+  int64  purchase_id = 4;
+  Refusal refusal = 5;
+}
+
+message Balance {
+  bool   present = 1;              // false = this ledger cannot say
+  string balance = 2;
+  Refusal refusal = 3;
+}
+
+// ── purchases and the buyer's reads ──
+
+message PurchaseRequest {
+  Tier   buyer = 1;                // its schema and its partner
+  Offer  offer = 2;
+  string reference = 3;
+}
+
+message Offer {
+  int64  package_id = 1;
+  string name = 2;
+  string price = 3;
+  string at = 4;                   // ISO-8601 local date-time
+  string expires = 5;
+  repeated Bucket buckets = 6;
+}
+
+message Bucket {
+  string uom = 1;
+  string opening = 2;
+  optional int64 item_id = 3;      // absent = an account of no item
+}
+
+message Purchased {
+  int64 purchase_id = 1;
+  repeated int64 accounts = 2;
+  bool  repeated = 3;
+  Refusal refusal = 4;
+}
+
+message Buyer {
+  string db_name = 1;
+  int64  partner_id = 2;
+  int32  level_index = 3;
+}
+
+message Accounts {
+  bool present = 1;                // false = this ledger cannot say (it caches no purchases)
+  repeated Account accounts = 2;
+  Refusal refusal = 3;
+}
+
+message Account {
+  bool   present = 1;              // false = no such account (AccountById, AccountOfPurchase)
+  int64  id = 2;
+  int64  purchase_id = 3;
+  string name = 4;
+  string uom = 5;
+  string balance_before = 6;
+  string balance_after = 7;
+  string last_amount = 8;
+  string expires = 9;              // its purchase's expiry where the ledger knows it; empty = unknown
+  optional int64  item_id = 10;
+  optional string credit_limit = 11;
+  bool   selected = 12;
+}
+
+message Purchases {
+  bool present = 1;
+  repeated PurchaseRow purchases = 2;
+  Refusal refusal = 3;
+}
+
+message PurchaseRow {
+  int64  id = 1;
+  int64  package_id = 2;
+  string at = 3;
+  string expires = 4;
+  string status = 5;
+  string price = 6;
+  int32  priority = 7;
+}
+
+// ── the catalog: what CatalogIndex.Snapshot holds, as rows — the client builds the maps ──
+
+message CatalogSnapshot {
+  bool present = 1;                // false = this ledger holds no catalog for the tier
+  repeated CatalogPackage packages = 2;
+  repeated CatalogItem items = 3;
+  repeated CatalogProduct products = 4;
+  repeated ServiceGroup service_groups = 5;
+  repeated PurchasePackage purchase_packages = 6;
+}
+
+message CatalogPackage {
+  int64  id = 1;
+  string name = 2;
+  string price = 3;
+  int64  validity_seconds = 4;
+  bool   active = 5;
+}
+
+message CatalogItem {
+  int64  id = 1;
+  int64  package_id = 2;
+  string key = 3;                  // packageitem.prefix, the product key
+  string uom = 4;
+  string quantity = 5;
+  int32  category = 6;
+  string description = 7;
+}
+
+message CatalogProduct {
+  string key = 1;
+  optional int64 id = 2;           // the Odoo variant; absent for a portal product
+  string code = 3;
+  string name = 4;
+  string kind = 5;
+  string media = 6;                // empty = none
+  optional int32 seconds = 7;
+  string uom = 8;
+  bool   active = 9;
+  string source = 10;
+  optional int32 service_group_id = 11;
+}
+
+message ServiceGroup {
+  int32  id = 1;
+  string name = 2;
+}
+
+message PurchasePackage {
+  int64 purchase_id = 1;
+  int64 package_id = 2;
+}
+
+// ── the WiFi's reads ──
+
+message AccountRef {
+  string db_name = 1;
+  int64  account_id = 2;
+}
+
+message PurchaseRef {
+  string db_name = 1;
+  int64  purchase_id = 2;
+  int64  at_epoch_ms = 3;          // 0 = any account of the purchase; else the unexpired one at this instant
+}
+
+message TierDb {
+  string db_name = 1;
+}
+
+message AccountIds {
+  repeated int64 ids = 1;
+}
+
+// ── health ──
+
+message Empty {}
+
+message HealthReply {
+  bool  ready = 1;
+  int64 wal_lag = 2;               // records written and not yet consumed; -1 = the ledger does not say
+  repeated TierHealth tiers = 3;
+  string version = 4;
+}
+
+message TierHealth {
+  string db_name = 1;
+  bool   loaded = 2;
+}

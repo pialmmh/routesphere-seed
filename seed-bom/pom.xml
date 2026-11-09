@@ -101,6 +101,12 @@
                 <artifactId>seed-switch-ledger</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- ARCH-0116 (road B): the switch ledger's gRPC wire — RemoteSwitchLedger (kind `remote`) and the server adapter -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-switch-ledger-remote</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-ledger-client</artifactId>

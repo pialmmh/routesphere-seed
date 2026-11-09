@@ -35,6 +35,8 @@
         <!-- C2: the client of a cached ledger an application exposes — JDK HttpClient + Jackson only (TelcoREST's writes) -->
         <module>seed-ledger-client</module>
         <module>seed-switch-ledger</module>
+        <!-- ARCH-0116 (road B): the switch ledger on a gRPC wire — the client kind `remote` and the server adapter the switch-ledger service mounts -->
+        <module>seed-switch-ledger-remote</module>
         <!-- L2a: the call's money as a seed feature — the Prepaid builder over the base's one engine and the switch ledger; parity P1–P21 -->
         <module>seed-prepaid</module>
     </modules>

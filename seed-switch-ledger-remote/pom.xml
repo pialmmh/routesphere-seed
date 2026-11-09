@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.telcobright</groupId>
+        <artifactId>routesphere-seed-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seed-switch-ledger-remote</artifactId>
+    <packaging>jar</packaging>
+    <name>seed-switch-ledger-remote</name>
+    <description>
+        Road B (ARCH-0116, the owner 2026-11-09): ONE money process per database. The switch ledger's verbs — the base's LedgerPort, the
+        live-balance peek, the credit door (credit, reparent, the WiFi clock's capAt), the buyer's accounts, the catalog — on a gRPC wire
+        (telcobright.switchledger.v1), money as decimal text. Two halves in one module so client and service share one wire library:
+        the CLIENT an application wires by the word `ledger.kind: remote` (RemoteLedgerMaker → RemoteSwitchLedger, a LedgerPort like the
+        `switch` and `orchestrix` kinds), and the SERVER adapter (SwitchLedgerGrpcService) the owner of the engine mounts — the
+        switch-ledger service (its own repo) — the seed itself runs no server (R0), as CachedLedgerRoads is a library too. gRPC 1.69.1 and
+        protobuf 3.25.5 are the Quarkus 3.26.1 BOM's pins, so the service and this client speak with one library.
+    </description>
+
+    <properties>
+        <!-- the Quarkus 3.26.1 BOM's pins (read in ~/.m2 on 2026-11-09): the service (Quarkus 3.26.1) and this client share them -->
+        <grpc.version>1.69.1</grpc.version>
+        <protobuf.version>3.25.5</protobuf.version>
+        <protobuf-plugin.version>0.6.1</protobuf-plugin.version>
+        <h2.version>2.2.224</h2.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- gRPC 1.69.1 asks guava 33.3.1-android and proto-google-common-protos 2.48.0; the Quarkus 3.26.1 BOM pins both to the
+                 versions below, which the service resolves — this module takes the same two, nothing else of the BOM -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>33.4.8-jre</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.api.grpc</groupId>
+                <artifactId>proto-google-common-protos</artifactId>
+                <version>2.60.0</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- the base: LedgerPort, LedgerUnit, LedgerMaker, RootResources, TierSettlement, LevelAdmission's walk -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-sessionflow</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- the switch ledger: LiveBalance (the client is one), Credit (the server's cap door), SwitchLedger, LedgerAccount, Books' names -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-switch-ledger</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- LevelAdmission, PackageAccount, PackageAccountReserve, Partner, Tenant -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>rtc-domain</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.telcobright</groupId>
+                    <artifactId>state-walk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- the wire: gRPC 1.69.1 (stubs, protobuf marshalling, the netty transport — a loopback or the host's 10.10 address), protobuf 3.25.5 -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>${protobuf.version}</version>
+        </dependency>
+        <!-- the generated stubs carry @javax.annotation.Generated -->
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+
+        <!-- the tests: the switch ledger's lab (a REAL MemLedger over H2) behind a loopback server, the client in front -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-switch-ledger</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <extensions>
+            <!-- names the protoc binary of this box (linux-x86_64) for the plugin below -->
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
+        <plugins>
+            <!-- the proto → Java messages (protoc 3.25.5) and gRPC stubs (protoc-gen-grpc-java 1.69.1) -->
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>${protobuf-plugin.version}</version>
+                <configuration>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <pluginId>grpc-java</pluginId>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>compile-custom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- the loopback server runs the REAL engine (mem-ledger, Chronicle inside) in the test JVM: the same openings as seed-switch-ledger -->
+                    <argLine>
+                        --add-exports=java.base/jdk.internal.ref=ALL-UNNAMED
+                        --add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED
+                        --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED
+                        --add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED
+                        --add-opens=java.base/java.lang=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens=java.base/java.io=ALL-UNNAMED
+                        --add-opens=java.base/java.util=ALL-UNNAMED
+                        -Dchronicle.announcer.disable=true
+                        -Dchronicle.analytics.disable=true
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
