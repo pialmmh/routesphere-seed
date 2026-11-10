@@ -50,6 +50,7 @@ final class SwitchUnit implements LedgerUnit {
     public void lock(Collection<LevelAdmission> accounts) {
         List<AccountLocks.Key> keys = new ArrayList<>();
         for (LevelAdmission a : accounts) if (a.getPackageAccountId() != null && a.getDbName() != null) keys.add(new AccountLocks.Key(a.getDbName(), a.getPackageAccountId()));
+        for (LevelAdmission a : accounts) if (a.getPackageAccountId() != null && a.getDbName() != null) work.willRead(a.getDbName(), Books.ACCOUNT, a.getPackageAccountId());   // ARCH-0119: the accounts first
         if (held == null) { held = locks.holdAll(keys); return; }
         for (AccountLocks.Key key : AccountLocks.inTheGlobalOrder(keys)) held.alsoHold(key);
     }
@@ -57,6 +58,13 @@ final class SwitchUnit implements LedgerUnit {
     private void holdTheLockOf(String db, long accountId) {
         if (held == null) held = locks.hold(db, accountId);
         else held.alsoHold(db, accountId);
+        work.willRead(db, Books.ACCOUNT, accountId);
+    }
+
+    /** {@link #holdTheLockOf}, and (ARCH-0119, the lock road) the move's own row — its reserve row, its charge row — named with the account before the first read. */
+    private void holdTheLockOf(String db, long accountId, String entity, String rowKey) {
+        holdTheLockOf(db, accountId);
+        if (rowKey != null) work.willRead(db, entity, rowKey);
     }
 
     // ── the moves ───────────────────────────────────────────────────────────
@@ -76,7 +84,7 @@ final class SwitchUnit implements LedgerUnit {
         Reservation seen = answers.hold(reference);
         if (seen != null) return Optional.of(Answers.repeatOf(seen));
         String db = level.getDbName(), rowKey = rowKeyOf(level, reference);
-        holdTheLockOf(db, accountId);
+        holdTheLockOf(db, accountId, Books.RESERVE, rowKey);
         PackageAccount live = heldAccount(db, accountId, level);
         BigDecimal before = Books.balanceOf(live);
         if (before.compareTo(amount) < 0) return refused(level, accountId, before, amount, reference);
@@ -96,7 +104,7 @@ final class SwitchUnit implements LedgerUnit {
         Reservation seen = answers.charge(reference);
         if (seen != null) return Optional.of(Answers.repeatOf(seen));
         String db = level.getDbName();
-        holdTheLockOf(db, accountId);
+        holdTheLockOf(db, accountId, Books.CHARGE, books.keepsCharges() ? reference : null);
         Reservation durable = chargeMadeBefore(db, reference);
         if (durable != null) return Optional.of(durable);
         PackageAccount live = heldAccount(db, accountId, level);
@@ -121,7 +129,7 @@ final class SwitchUnit implements LedgerUnit {
         if (done != null) return done;
         long accountId = accountOf(level);
         String db = level.getDbName();
-        holdTheLockOf(db, accountId);
+        holdTheLockOf(db, accountId, Books.RESERVE, tier);
         PackageAccountReserve row = books.reserveRow(work, db, tier);
         if (row == null) return nothingOpen(level, tier, charged);
         BigDecimal toReturn = TierSettlement.reservedOf(level).subtract(charged);
@@ -142,7 +150,7 @@ final class SwitchUnit implements LedgerUnit {
         if (tier == null || answers.closedTier(tier) != null) return;
         long accountId = accountOf(level);
         String db = level.getDbName();
-        holdTheLockOf(db, accountId);
+        holdTheLockOf(db, accountId, Books.RESERVE, tier);
         PackageAccountReserve row = books.reserveRow(work, db, tier);
         if (row == null) { afterTheRecord.add(() -> answers.forget(tier)); return; }
         BigDecimal back = row.getReserveUnit() == null ? BigDecimal.ZERO : row.getReserveUnit();
@@ -160,7 +168,7 @@ final class SwitchUnit implements LedgerUnit {
         if (done != null) return done;
         long accountId = accountOf(level);
         String db = level.getDbName();
-        holdTheLockOf(db, accountId);
+        holdTheLockOf(db, accountId, Books.CHARGE, books.keepsCharges() ? tier : null);
         ChargeReference charge = books.keepsCharges() ? books.chargeRow(work, db, tier) : null;
         if (books.keepsCharges() && amount.signum() > 0) {
             if (charge == null) throw new LedgerFault("no charge is held under " + tier + " in " + db + ": nothing to refund (a charge carries its reference row)");
@@ -209,7 +217,11 @@ final class SwitchUnit implements LedgerUnit {
 
     @Override
     public void close() {
-        if (held != null) held.close();
+        try {
+            work.release();                                                       // ARCH-0119: a unit that did not write gives its rows back
+        } finally {
+            if (held != null) held.close();
+        }
     }
 
     // ── the small helpers (MemLedgerPort's, moved) ──────────────────────────

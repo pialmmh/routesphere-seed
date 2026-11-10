@@ -270,15 +270,26 @@ public interface LedgerPort {
      */
     final class LedgerFault extends RuntimeException {
         private final boolean onTheWire;
+        private final boolean busy;
 
-        public LedgerFault(String message) { super(message); this.onTheWire = false; }
-        public LedgerFault(String message, Throwable cause) { super(message, cause); this.onTheWire = false; }
-        private LedgerFault(String message, Throwable cause, boolean onTheWire) { super(message, cause); this.onTheWire = onTheWire; }
+        public LedgerFault(String message) { super(message); this.onTheWire = false; this.busy = false; }
+        public LedgerFault(String message, Throwable cause) { super(message, cause); this.onTheWire = false; this.busy = false; }
+        private LedgerFault(String message, Throwable cause, boolean onTheWire, boolean busy) { super(message, cause); this.onTheWire = onTheWire; this.busy = busy; }
 
         /** A fault of a ledger on the wire (a server that did not answer, or answered that it is broken). */
-        public static LedgerFault ofALedgerOnTheWire(String message, Throwable cause) { return new LedgerFault(message, cause, true); }
+        public static LedgerFault ofALedgerOnTheWire(String message, Throwable cause) { return new LedgerFault(message, cause, true, false); }
+
+        /**
+         * ARCH-0119 · The rows were BUSY: another writer held them and they were not free in time, their queue was full, or this unit's
+         * own hold ran out before its write. NOTHING was written and nothing is broken: the same call may be made again, or the house
+         * answers "busy". Never a money refusal — a caller that does not know {@link #busy()} sees the system fault it always saw.
+         */
+        public static LedgerFault ofBusyRows(String message, Throwable cause) { return new LedgerFault(message, cause, true, true); }
 
         /** True = of a ledger on the wire; false = of a ledger in the process (or a fault the seed raised itself). */
         public boolean onTheWire() { return onTheWire; }
+
+        /** True = the rows were busy and nothing was written ({@link #ofBusyRows}); false = every other fault. */
+        public boolean busy() { return busy; }
     }
 }

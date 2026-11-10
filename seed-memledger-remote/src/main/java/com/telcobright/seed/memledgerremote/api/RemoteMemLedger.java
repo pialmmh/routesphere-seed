@@ -35,6 +35,7 @@ import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.switchledger.spi.AnswersWithin;
 import com.telcobright.seed.switchledger.spi.ExpectingLedger;
 import com.telcobright.seed.switchledger.spi.GhostFreeReloads;
+import com.telcobright.seed.switchledger.spi.LeasingLedger;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptors;
 import io.grpc.ManagedChannel;
@@ -65,7 +66,7 @@ import java.util.concurrent.TimeUnit;
  * and a row the other application moved meanwhile is a STALE refusal (the engine's LedgerFault in the server's words). An older server
  * (no capabilities) keeps today's client-side ghost rule and is sent no rows as read, said once in the log.
  */
-public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger {
+public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger, LeasingLedger {
 
     /** A whole table may come back in one stream's messages; a batch of many rows in one: room for both. */
     public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
@@ -182,6 +183,57 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     /** Road 2 · No write will come: the rows go back now. @return false = the server held nothing of that lock any more */
     public boolean unlock(Lease lease) {
         return calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lease.lockId()).build())).getReleased();
+    }
+
+    // ── ARCH-0119 road 2 as the ENGINE asks it (LeasingLedger): the root's own words decide ──
+
+    /** The lock road is ON for this root ({@code lock-road: "on"}); a server that does not serve it refuses the hold in words, never a silent unlocked write. */
+    @Override public boolean holdsRows() { return settings.lockRoad().on(); }
+
+    @Override public int rowsOneHoldMayName() { return RemoteLedgerSettings.LockRoad.ROWS_ONE_HOLD_MAY_NAME; }
+
+    @Override
+    public LeasingLedger.Held hold(List<LeasingLedger.Row> rows) {
+        List<Lease.Row> asked = new ArrayList<>(rows.size());
+        for (LeasingLedger.Row row : rows) asked.add(new Lease.Row(row.tier(), row.entity(), row.id()));
+        try {
+            return new HeldRows(readForUpdate(asked, settings.lockRoad().leaseMs(), settings.lockRoad().waitMs()));
+        } catch (LedgerBusy busy) {
+            throw new LeasingLedger.RowsBusy(busy.code(), busy.getMessage());
+        }
+    }
+
+    /** The engine's batch under its hold: applied = the embedded ledger's success; the hold lost, or its rows busy = {@link LeasingLedger.RowsBusy}; any other refusal = its words. */
+    @Override
+    public EntityResponse execCrud(LeasingLedger.Held held, WALEntryBatch batch, List<AsRead> asRead) {
+        AtomicAnswer answer = apply(((HeldRows) held).lease, batch, asRead);
+        return switch (answer.outcome()) {
+            case APPLIED -> EntityResponse.success(null, answer.words());
+            case LOCK_LOST, BUSY -> throw new LeasingLedger.RowsBusy(answer.outcome().name(), answer.words());
+            default -> EntityResponse.error(answer.words());
+        };
+    }
+
+    @Override public void release(LeasingLedger.Held held) { unlockQuietly(((HeldRows) held).lease.lockId()); }
+
+    /** One unit's rows as the server holds them; a row decodes into its registered class, as a read does. */
+    private final class HeldRows implements LeasingLedger.Held {
+        private final Lease lease;
+
+        private HeldRows(Lease lease) { this.lease = lease; }
+
+        @Override
+        public boolean holds(String tier, String entity, Object id) {
+            String key = RowJson.keyText(id);
+            for (com.telcobright.seed.memledgerremote.wire.LockedRow row : lease.rows()) {
+                if (row.getKey().getDbName().equals(tier) && row.getKey().getEntityName().equals(entity) && row.getKey().getEntityId().equals(key)) return true;
+            }
+            return false;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T row(String tier, String entity, Object id) { return (T) lease.row(classOf(entity), tier, entity, id); }
     }
 
     private void unlockQuietly(String lockId) {

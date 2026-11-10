@@ -8,6 +8,8 @@ import com.telcobright.memledger.api.response.EntityResponse;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.switchledger.spi.ExpectingLedger;
 import com.telcobright.seed.switchledger.spi.ExpectingLedger.AsRead;
+import com.telcobright.seed.switchledger.spi.LeasingLedger;
+import com.telcobright.seed.switchledger.spi.LeasingLedger.RowsBusy;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,6 +38,14 @@ import java.util.UUID;
  * today's {@link LedgerFault} in the ledger's words, no retry here. Over any other ledger the commit is exactly the one
  * {@code execCrud(batch)} it always was. Whole-table reads ({@link #rowsAsLeft}) are NOT remembered: what a rule checked over a whole
  * table (a row that must not exist, a sum) is not guarded against the other writer.
+ *
+ * <p>ARCH-0119 road 2 (the lock road) · Over a ledger that HOLDS rows ({@link LeasingLedger#holdsRows()}) a unit that named the rows
+ * it will read ({@link #willRead}) holds them — all or none, ONE call — at its first read, reads them FROM THAT HOLD, and writes its one
+ * batch under it: no other writer, of this process or another application, changes a held row in between, so two units on one account
+ * take turns. A row named after the hold was taken, or not named at all, is read and remembered as read exactly as above. Busy rows (not
+ * free in time, a full queue) and a hold lost before the write are a {@link LedgerFault#busy() busy} fault: nothing written, the same call
+ * may be made again. A unit that will not commit gives its rows back with {@link #release}. Over any other ledger — and for a unit that
+ * named no row — nothing here differs from the unit it was.
  */
 public final class UnitOfWork {
 
@@ -64,9 +74,62 @@ public final class UnitOfWork {
     private final Map<RowKey, Staged> staged = new LinkedHashMap<>();
     /** ARCH-0118 S2 · The first row read from the ledger per key (row null = none there), in the order first read. */
     private final Map<RowKey, AsRead> firstRead = new LinkedHashMap<>();
+    /** ARCH-0119 · The ledger's lock road, or null: this ledger holds no rows (in the process, or the road is off). */
+    private final LeasingLedger leasing;
+    /** ARCH-0119 · The rows this unit named before its first read, in the order named, each once. */
+    private final Map<RowKey, LeasingLedger.Row> named = new LinkedHashMap<>();
+    /** ARCH-0119 · The hold over the named rows — taken at the first read, gone with the write or the release. */
+    private LeasingLedger.Held hold;
+    private boolean holdTaken;
     private boolean committed;
 
-    public UnitOfWork(MemLedger ledger) { this.ledger = ledger; }
+    public UnitOfWork(MemLedger ledger) {
+        this.ledger = ledger;
+        this.leasing = ledger instanceof LeasingLedger road && road.holdsRows() ? road : null;
+    }
+
+    // ── ARCH-0119 road 2: the rows this unit holds ──────────────────────────
+
+    /**
+     * A row this unit will read and may change: over a ledger that holds rows it is held with the unit's other named rows at the unit's
+     * first read. Named after that read it is read as any row (and travels as read). Over any other ledger: nothing.
+     */
+    public UnitOfWork willRead(String tier, String entity, Object id) {
+        if (leasing != null && !holdTaken) named.putIfAbsent(keyOf(tier, entity, id), new LeasingLedger.Row(tier, entity, id));
+        return this;
+    }
+
+    /** Does this unit hold the row on the ledger's lock road? */
+    public boolean holds(String tier, String entity, Object id) { return hold != null && hold.holds(tier, entity, id); }
+
+    /** This unit will not write: its held rows go back now. Safe to call twice, and after a commit. */
+    public void release() {
+        LeasingLedger.Held mine = hold;
+        hold = null;
+        if (mine != null) leasing.release(mine);
+    }
+
+    /** The hold, taken ONCE — at the first read after a row was named: all the named rows or none (the first ones when more are named than one hold may name). */
+    private void holdTheNamedRowsOnce() {
+        if (leasing == null || holdTaken || named.isEmpty()) return;
+        holdTaken = true;
+        List<LeasingLedger.Row> rows = named.values().stream().limit(Math.max(1, leasing.rowsOneHoldMayName())).toList();
+        hold = busyIsAFaultOfItsOwn("hold " + rows.size() + " row(s) for a unit (" + whatOf(rows.get(0)) + (rows.size() > 1 ? ", …" : "") + ")", () -> leasing.hold(rows));
+    }
+
+    private static String whatOf(LeasingLedger.Row row) { return row.entity() + " " + row.id() + " of " + row.tier(); }
+
+    /** {@link Books#guarded}, with the ledger's "busy" kept apart: a {@link LedgerFault#busy() busy} fault, never the broken-ledger one. */
+    private static <T> T busyIsAFaultOfItsOwn(String what, java.util.function.Supplier<T> call) {
+        try {
+            return Books.guarded(what, call);
+        } catch (LedgerFault fault) {
+            if (fault.getCause() instanceof RowsBusy busy) {
+                throw LedgerFault.ofBusyRows("the ledger's rows were busy, nothing was written (" + busy.code() + "): could not " + what + " — " + busy.getMessage(), busy);
+            }
+            throw fault;
+        }
+    }
 
     // ── reads: the unit first ───────────────────────────────────────────────
 
@@ -76,6 +139,8 @@ public final class UnitOfWork {
         RowKey key = keyOf(tier, entity, id);
         Staged row = staged.get(key);
         if (row != null) return row.op == Op.DELETE ? null : (T) row.image;
+        holdTheNamedRowsOnce();
+        if (hold != null && hold.holds(tier, entity, id)) return hold.row(tier, entity, id);      // held: no other writer changes it before this unit's write
         T cached = Books.guarded("read " + entity + " " + id + " of " + tier, () -> ledger.getEntity(tier, entity, id));
         firstRead.putIfAbsent(key, new AsRead(tier, entity, id, cached));
         return cached;
@@ -165,9 +230,9 @@ public final class UnitOfWork {
     public void commit(String what) {
         if (committed) throw new IllegalStateException("this unit was committed already: " + what);
         committed = true;
-        if (staged.isEmpty()) return;
+        if (staged.isEmpty()) { release(); return; }
         WALEntryBatch record = asOneRecord();
-        EntityResponse answer = Books.guarded(what, () -> written(record));
+        EntityResponse answer = busyIsAFaultOfItsOwn(what, () -> written(record));
         if (answer == null || !answer.isSuccess()) {
             throw new LedgerFault("the ledger refused to " + what + " (" + staged.size() + " row(s) in " + tiers() + "), nothing changed: "
                 + (answer == null ? "no answer" : answer.getMessage()));
@@ -176,8 +241,23 @@ public final class UnitOfWork {
 
     /** ARCH-0118 S2 · With the rows as read when the ledger checks them; else the one {@code execCrud(batch)}, as always. */
     private EntityResponse written(WALEntryBatch record) {
+        if (hold != null) return writtenUnderTheHold(record);
         if (ledger instanceof ExpectingLedger expecting && expecting.checksExpectations()) return expecting.execCrud(record, List.copyOf(firstRead.values()));
         return ledger.execCrud(record);
+    }
+
+    /** ARCH-0119 · The batch under the unit's hold; the hold ends with the answer — and is given back when no answer came. */
+    private EntityResponse writtenUnderTheHold(WALEntryBatch record) {
+        LeasingLedger.Held mine = hold;
+        hold = null;
+        try {
+            return leasing.execCrud(mine, record, List.copyOf(firstRead.values()));
+        } catch (RowsBusy lost) {
+            throw lost;                                                           // the ledger said the hold is gone: nothing to give back
+        } catch (RuntimeException noAnswer) {
+            leasing.release(mine);
+            throw noAnswer;
+        }
     }
 
     private WALEntryBatch asOneRecord() {
