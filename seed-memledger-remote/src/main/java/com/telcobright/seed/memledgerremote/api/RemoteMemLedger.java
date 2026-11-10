@@ -52,8 +52,8 @@ import java.util.concurrent.TimeUnit;
  * ledger's words, nothing changed); a server that does not answer = a {@link RemoteLedgerFault}. {@link #shutdown()} ends this
  * client's use of the server, never the server.
  *
- * <p>ARCH-0118 · Two applications on one instance: what the server does is asked at the start, once the server answered its first
- * call (Health's capabilities; a lab's {@link #over} asks at once), and asked again after the channel's connection changed — a server
+ * <p>ARCH-0118 · Two applications on one instance: what the server does is asked at the start, within its wait for the server's first
+ * answers (Health's capabilities; a lab's {@link #over} asks at once), and asked again after the channel's connection changed — a server
  * restarted into another version on the same address is followed ({@link ServerCapabilities}). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
  * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. A server that checks the rows a
  * batch read ({@code expect}) is an {@link ExpectingLedger}: a unit's batch carries each row it read as {@code RowJson.textOf} writes it,
@@ -84,9 +84,9 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
 
     /**
      * A client of the server at {@code settings.address()}, plaintext on the private mesh; {@code entities} = the classes rows decode into,
-     * by name. Nothing is sent here: a server just started may not serve yet, so the start WAITS for its first answer (remote-fixes item
-     * (d), {@code RemoteMemLedgerSource}) and asks the server's capabilities after it ({@link #whatTheServerDoes()}); outside a start they
-     * are asked at their first need — and again after the channel changed.
+     * by name. Nothing is sent here: a server just started may not serve yet, so the start WAITS for its first answers — the tiers it holds,
+     * then its capabilities ({@link #whatTheServerDoes()}) — within one wait (remote-fixes item (d), {@code RemoteMemLedgerSource}); outside
+     * a start they are asked at their first need — and again after the channel changed.
      */
     public static RemoteMemLedger connect(RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
         ManagedChannel channel = ManagedChannelBuilder.forTarget(settings.address()).usePlaintext().maxInboundMessageSize(MAX_INBOUND_MESSAGE_BYTES).build();
@@ -117,7 +117,7 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     /** The channel tries to connect again NOW, not after its own backoff (the start's wait: the server may have just come up). */
     public void reconnectNow() { channel.resetConnectBackoff(); }
 
-    /** What the server of this connection says it does (Health's capabilities) — the start asks it once the server answered its first call. */
+    /** What the server of this connection says it does (Health's capabilities) — the start asks it within its wait for the server's first answers. */
     public Set<String> whatTheServerDoes() { return capabilities.now(); }
 
     /** S1 · The server's reload takes out its own ghosts, under a gate no write passes: the engine must not take any out. */

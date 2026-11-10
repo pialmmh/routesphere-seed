@@ -41,6 +41,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A stand-in for the mem-ledger server in this module's tests (the real one is its own repository, proven there by the twice-run): the
@@ -64,6 +65,9 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     private final Server server;
     private final Set<String> applied = ConcurrentHashMap.newKeySet();
     private final Set<String> triedOnce = ConcurrentHashMap.newKeySet();
+    /** How many times Health was asked. */
+    final AtomicInteger healthAsked = new AtomicInteger();
+    private final AtomicInteger healthFailuresLeft = new AtomicInteger();
     private volatile boolean faultWrites;
     private volatile long stallFirstMs, stallEveryMs;
 
@@ -97,6 +101,9 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
 
     /** Every write waits {@code ms} and then fails: nothing is ever applied. */
     void stallEveryWrite(long ms) { stallEveryMs = ms; }
+
+    /** Its Health answers UNAVAILABLE the next {@code tries} times: a server that answers its first call, but not Health yet. */
+    void failHealthFor(int tries) { healthFailuresLeft.set(tries); }
 
     @Override
     public void apply(ApplyRequest request, StreamObserver<ApplyReply> out) {
@@ -170,6 +177,11 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     /** An older server's Health: no capabilities — unless told what to say. */
     @Override
     public void health(Nothing request, StreamObserver<HealthReply> out) {
+        healthAsked.incrementAndGet();
+        if (healthFailuresLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+            out.onError(Status.UNAVAILABLE.withDescription("the stub's Health does not serve yet").asRuntimeException());
+            return;
+        }
         HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub").addAllCapabilities(says);
         for (String tier : ledger.getRegisteredDatabases()) reply.addDatabases(Database.newBuilder().setName(tier).setLoaded(true));
         out.onNext(reply.build());

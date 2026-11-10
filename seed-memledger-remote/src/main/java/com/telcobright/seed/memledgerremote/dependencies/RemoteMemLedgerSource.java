@@ -15,9 +15,10 @@ import java.util.List;
  * Words: {@code address} (host:port, required), {@code deadline-ms} (2000 unless said), {@code token-var} (required: the NAME of the
  * environment variable holding the bearer — read ONCE here, handed to the client, never logged; an empty variable refuses the start
  * naming the variable, never a value), {@code start-wait-ms} (30000 unless said; 0 = one try): how long the start waits for the server's
- * FIRST answer — a server just started may not serve yet ({@link StartWait}). Once it answered, the server is asked what it does
- * (Health's capabilities, ARCH-0118: {@code ghosts}, {@code expect}; none = an older server, said in the log). A tier of the root's tree
- * the server does not hold yet is added at the start; a server that does not answer within the wait refuses the start in words.
+ * FIRST answers — a server just started may not serve yet ({@link StartWait}): the tiers it holds, then what it does (Health's
+ * capabilities, ARCH-0118: {@code ghosts}, {@code expect}; none = an older server, said in the log), both within the one wait. A tier of
+ * the root's tree the server does not hold yet is added at the start; a server that does not answer both within the wait refuses the
+ * start in words.
  */
 public final class RemoteMemLedgerSource implements MemLedgerSource {
 
@@ -36,8 +37,7 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
         long startWaitMs = startWaitMsOf(request);
         RemoteMemLedger ledger = connected(request, settings, bearer);
         try {
-            List<String> held = theServersFirstAnswer(ledger, startWaitMs);
-            ledger.whatTheServerDoes();
+            List<String> held = theServersFirstAnswers(ledger, startWaitMs);
             addTheTiersTheServerLacks(ledger, request, held);
             log.info("mem-ledger client: the ledger of root {} is the server at {} (deadline {} ms), tiers {}", request.root(), settings.address(), settings.deadlineMs(), request.tiers());
             return ledger;
@@ -48,8 +48,8 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
     }
 
     /**
-     * The client — nothing is sent yet: the server's first answer is waited for ({@link #theServersFirstAnswer}), and only then is the
-     * server asked what it does (ARCH-0118, {@link RemoteMemLedger#whatTheServerDoes()}): a server that does not answer refuses the start.
+     * The client — nothing is sent yet: the server's first answers are waited for ({@link #theServersFirstAnswers}) — the tiers it holds and
+     * what it does (ARCH-0118, {@link RemoteMemLedger#whatTheServerDoes()}): a server that does not answer both refuses the start.
      */
     private static RemoteMemLedger connected(Request request, RemoteLedgerSettings settings, String bearer) {
         try {
@@ -63,9 +63,19 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
         return new IllegalStateException("the root '" + request.root() + "': its ledger does not start — " + e.getMessage(), e);
     }
 
-    /** The tiers the server holds — its FIRST answer, waited for up to start-wait-ms (recall-db's unit says "started" before it serves). */
-    private static List<String> theServersFirstAnswer(RemoteMemLedger ledger, long startWaitMs) {
-        return StartWait.forTheFirstAnswer(ledger.settings().address(), startWaitMs, ledger::getRegisteredDatabases, ledger::reconnectNow);
+    /**
+     * The tiers the server holds, and what it does — its FIRST answers, waited for together up to start-wait-ms (recall-db's unit says
+     * "started" before it serves; its Health is the heavier verb, reading its WAL's lag): a server just started gets the same patience for
+     * its capabilities as for its first call.
+     */
+    private static List<String> theServersFirstAnswers(RemoteMemLedger ledger, long startWaitMs) {
+        return StartWait.forTheFirstAnswer(ledger.settings().address(), startWaitMs, () -> heldAndWhatItDoes(ledger), ledger::reconnectNow);
+    }
+
+    private static List<String> heldAndWhatItDoes(RemoteMemLedger ledger) {
+        List<String> held = ledger.getRegisteredDatabases();
+        ledger.whatTheServerDoes();
+        return held;
     }
 
     private static void addTheTiersTheServerLacks(RemoteMemLedger ledger, Request request, List<String> held) {

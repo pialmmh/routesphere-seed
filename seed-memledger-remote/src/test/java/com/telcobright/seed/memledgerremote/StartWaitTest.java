@@ -83,6 +83,38 @@ class StartWaitTest {
         assertThat((System.nanoTime() - startedAt) / 1_000_000).as("refused only once start-wait-ms passed").isGreaterThanOrEqualTo(1_500);
     }
 
+    /**
+     * The merge of remote-fixes and ARCH-0118 (memledger-next): what the server does (Health's capabilities) is part of its first answers.
+     * A server that answers the first call but never Health refuses the start in words — once start-wait-ms passed, as any first answer.
+     */
+    @Test
+    void aServerThatAnswersItsFirstCallButNeverHealth_refusesTheStartInWords_onceStartWaitMsPassed() {
+        StubServer server = new StubServer(lab.ledger(), 0, token);
+        opened.add(server);
+        server.failHealthFor(Integer.MAX_VALUE);
+        long startedAt = System.nanoTime();
+
+        assertThatThrownBy(() -> made(words(server.port(), "1500"), token))
+            .hasMessageContaining("the root 'btcl': its ledger does not start")
+            .hasMessageContaining("start-wait-ms 1500")
+            .hasMessageContaining("is not serving (Health)");
+        assertThat((System.nanoTime() - startedAt) / 1_000_000).as("refused only once start-wait-ms passed").isGreaterThanOrEqualTo(1_500);
+        assertThat(server.healthAsked.get()).as("Health asked again within the wait").isGreaterThan(1);
+    }
+
+    /** ... and a just-started server whose Health answers only after its first call is waited for, as its first call is. */
+    @Test
+    void aServerWhoseHealthAnswersTwoTriesLate_isWaitedFor_andTheStartSucceeds() {
+        StubServer server = new StubServer(lab.ledger(), 0, token);
+        opened.add(server);
+        server.failHealthFor(2);
+
+        LedgerPort ledger = made(words(server.port(), null), token);
+        opened.add((AutoCloseable) ledger);
+
+        assertThat(server.healthAsked.get()).as("two tries refused, a later one answered").isGreaterThanOrEqualTo(3);
+    }
+
     @Test
     void aRefusedBearer_isAnAnswer_refusedAtOnce() {
         StubServer server = new StubServer(lab.ledger(), 0, token);
