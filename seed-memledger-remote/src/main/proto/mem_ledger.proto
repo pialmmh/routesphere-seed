@@ -33,6 +33,27 @@
 //  - capabilities (HealthReply field 6): what the server does, a word each — "ghosts" (it takes the ghosts out itself: the client must
 //    not), "expect" (it checks expects). A server that says neither is an older one: its client keeps the client-side ghost rule and
 //    sends no expects — one writer per instance.
+//
+// ARCH-0119 (the owner 2026-11-10: "safe apis to remove the concerns of multi-threading"; "1 sec max lock"; a bounded queue per account,
+// full = refused at once; "you do the best design in recall db, to handle concurrency") — additive in both directions, as ARCH-0118 was:
+//  ROAD 1 · ATOMIC. An entry may be a PATCH: not the new row, but what to CHANGE in the row the cache holds (changes) and what must HOLD
+//    for the row after the changes (guards). The server reads the row, changes it, checks it and writes it under the batch's own row
+//    locks — one call, and no lock ever waits on the network. A guard not met refuses the WHOLE batch with refusal_code GUARD: nothing
+//    changed; failed_entry names the entry and failed_row_json is the row as the cache holds it. insert_if_absent = "change it, or
+//    create it" (entity_json is then the row to insert when the cache holds none). The reply's results carry every PATCHed row as the
+//    batch left it. The WAL still gets whole rows: the server hands mem-ledger an UPDATE or an INSERT.
+//    No money word is on this wire: the CLIENT names the fields and the numbers.
+//  ROAD 2 · LEASE. ReadForUpdate locks every row named — all of them or none — and answers them as the cache holds them now, with a
+//    token. The lock is held lease_ms at most (never more than the server's maximum, 1000 ms), then the server takes it back by itself.
+//    ApplyLocked = this batch is written under that lock; after its answer the lock is released, whatever the answer was. It is a
+//    METHOD of its own, never a field of ApplyRequest: an older server ignores a field it does not know and would write the batch with
+//    no lock at all, while a method it does not know is refused (UNIMPLEMENTED). A lock
+//    that is no longer the holder's (its lease ran out; the server restarted) refuses the batch with refusal_code LOCK_LOST. A locked
+//    batch may change a row it holds, a row it carries as read (expects), or a new row; anything else is NOT_COVERED. Unlock releases a
+//    lock that will not be written under; asked twice it answers released = false.
+//    A request that cannot be granted waits in a bounded queue per row (max_wait_ms, never past its own deadline); a row whose queue is
+//    full refuses the request AT ONCE: granted = false, refusal_code QUEUE_FULL. A lock refused is an ANSWER (status OK), never a fault.
+//  capabilities: "patch" (road 1), "lease" (road 2). A client told to use a road refuses to start against a server that does not say it.
 syntax = "proto3";
 
 package telcobright.memledger.v1;
@@ -50,6 +71,9 @@ service MemLedger {
   rpc ReloadNewRows       (ReloadRequest) returns (ReloadReply);       // reloadNewRows(): add-only, above each table's mark
   rpc AddDatabase         (DatabaseName)  returns (AddDatabaseReply);  // addDatabase(schema): a tier created at run time
   rpc Health              (Nothing)       returns (HealthReply);       // health() + getRegisteredDatabases()
+  rpc ReadForUpdate       (LockRequest)   returns (LockReply);         // ARCH-0119 road 2: lock the rows (all or none) and read them
+  rpc ApplyLocked         (ApplyLockedRequest) returns (ApplyReply);   // ARCH-0119 road 2: Apply under that lock; the lock ends with the answer
+  rpc Unlock              (UnlockRequest) returns (UnlockReply);       // ARCH-0119 road 2: release a lock that will not be written under
 }
 
 // ── the write ───────────────────────────────────────────────────────────────
@@ -58,6 +82,14 @@ message ApplyRequest {
   string   transaction_id = 1;   // the batch's id; the WAL record's; a repeat under it is answered, never applied twice
   repeated WalEntry entries = 2; // one row each; the same row twice in one batch is refused
   repeated Expectation expects = 3; // ARCH-0118: the rows the batch read, as read; any one that differs now = STALE, nothing written
+}
+
+// ARCH-0119 road 2 · A batch written under a lock: the caller's own id of the lock, the token ReadForUpdate answered, and the batch as
+// Apply takes it (its transaction_id, entries and expects mean what they mean there).
+message ApplyLockedRequest {
+  string       lock_id = 1;
+  string       token   = 2;
+  ApplyRequest batch   = 3;
 }
 
 // ARCH-0118 · One row as the client READ it before deciding the batch: compared field by field with what the cache holds under the
@@ -75,7 +107,40 @@ message WalEntry {
   string entity_name = 2;        // the name the entity is registered under (PackageAccount, PackageAccountReserve, …)
   Op     op          = 3;
   string entity_id   = 4;        // the row's key as text
-  string entity_json = 5;        // the post-image (INSERT, UPDATE); empty for DELETE
+  string entity_json = 5;        // the post-image (INSERT, UPDATE); empty for DELETE; PATCH + insert_if_absent: the row to insert
+  repeated Change changes = 6;   // ARCH-0119 road 1 (PATCH): applied in this order to the row the cache holds
+  repeated Guard  guards  = 7;   // ARCH-0119 road 1 (PATCH): each must hold for the row AFTER the changes, or the whole batch is refused GUARD
+  bool insert_if_absent   = 8;   // ARCH-0119 road 1 (PATCH): the cache holds no such row → INSERT entity_json (changes are NOT applied to it)
+}
+
+// ARCH-0119 · One change of one field of the row the cache holds. A decimal travels as text; arithmetic is exact (BigDecimal).
+message Change {
+  string     field      = 1;     // the field's Java name, as in entity_json
+  ChangeKind kind       = 2;
+  string     value      = 3;     // ADD, MIN: a decimal as text · SET: a JSON value (a decimal as "text", null, a string, a number)
+  string     from_field = 4;     // COPY: the field whose value THE ROW HAD BEFORE this entry's changes
+}
+
+enum ChangeKind {
+  CHANGE_UNSPECIFIED = 0;        // refused
+  ADD  = 1;                      // field = field + value (value may be negative); a null field counts as 0
+  SET  = 2;                      // field = value
+  COPY = 3;                      // field = the row's from_field as it was before this entry
+  MIN  = 4;                      // field = the smaller of field and value
+}
+
+// ARCH-0119 · What must hold for the row after the entry's changes. Decimals are compared by value (10 = 10.000000).
+message Guard {
+  GuardKind kind  = 1;
+  string    field = 2;
+  string    value = 3;           // a decimal as text
+}
+
+enum GuardKind {
+  GUARD_UNSPECIFIED = 0;         // refused
+  FIELD_GE = 1;                  // field >= value
+  FIELD_EQ = 2;                  // field = value
+  FIELD_LE = 3;                  // field <= value
 }
 
 enum Op {
@@ -83,6 +148,7 @@ enum Op {
   INSERT = 1;
   UPDATE = 2;
   DELETE = 3;
+  PATCH  = 4;                    // ARCH-0119 road 1: change the row the cache holds (changes, guards) — the server computes the new row
 }
 
 message ApplyReply {
@@ -90,7 +156,48 @@ message ApplyReply {
   string message         = 2;    // the ledger's words
   string refusal_code    = 3;    // empty when applied; REFUSED otherwise — STALE (ARCH-0118) when a row the batch read is not what it read
   bool   already_applied = 4;    // this transaction_id was applied before: nothing was written again
+  repeated RowResult results = 5; // ARCH-0119 road 1: every PATCHed row as the batch left it, in the batch's order (also on a repeat)
+  int32  failed_entry    = 6;    // ARCH-0119 road 1, refusal_code GUARD: the entry (1 = the first) whose guard did not hold; else 0
+  string failed_row_json = 7;    // ARCH-0119 road 1, refusal_code GUARD: that entry's row as the cache holds it (unchanged); empty = none
 }
+// refusal_code since ARCH-0119: GUARD (road 1: a guard did not hold) · LOCK_LOST, NOT_COVERED (road 2) — each = nothing changed.
+
+// ARCH-0119 · One PATCHed row after the batch.
+message RowResult {
+  string db_name     = 1;
+  string entity_name = 2;
+  string entity_id   = 3;
+  bool   inserted    = 4;        // the cache held none and insert_if_absent created it
+  string entity_json = 5;        // the row as the batch left it
+}
+
+// ── ARCH-0119 road 2: the lease ─────────────────────────────────────────────
+
+message LockRequest {
+  string lock_id      = 1;       // the caller's own id of this lock (a UUID): it can Unlock by it even if it never reads the answer
+  repeated EntityKey rows = 2;   // every row to lock: all of them, or none
+  int32  lease_ms     = 3;       // how long it may hold them; 0 = the server's default; never more than the server's maximum
+  int32  max_wait_ms  = 4;       // how long it may wait in the rows' queues; 0 = do not queue (granted now, or refused now)
+  string client       = 5;       // who asks, for the server's log
+}
+
+message LockReply {
+  bool   granted      = 1;
+  string refusal_code = 2;       // empty when granted; QUEUE_FULL | NOT_FREE_IN_TIME | TOO_MANY_ROWS | REFUSED
+  string message      = 3;       // the server's words
+  string token        = 4;       // names this lock for its write (ApplyLockedRequest.token)
+  int32  lease_ms     = 5;       // the lease given, from the grant, on the server's clock
+  repeated LockedRow rows = 6;   // every row asked, as the cache holds it now, in the order asked
+}
+
+message LockedRow {
+  EntityKey key       = 1;
+  bool   found        = 2;       // false = the cache holds none (the key is locked all the same)
+  string entity_json  = 3;
+}
+
+message UnlockRequest { string lock_id = 1; }
+message UnlockReply   { bool released = 1; }   // false = nothing of that id was held or waiting (asked twice, a lease that ran out)
 
 // ── the reads ───────────────────────────────────────────────────────────────
 

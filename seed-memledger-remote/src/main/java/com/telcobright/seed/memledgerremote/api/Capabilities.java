@@ -13,5 +13,11 @@ public final class Capabilities {
     /** The server checks the rows a batch read ({@code ApplyRequest.expects}) under the batch's row locks: one that differs = STALE. */
     public static final String EXPECT = "expect";
 
+    /** ARCH-0119 road 1 · The server computes a PATCHed row itself (changes, guards) under the batch's row locks: one call, no lock on the wire. */
+    public static final String PATCH = "patch";
+
+    /** ARCH-0119 road 2 · The server leases rows between a read and its write (ReadForUpdate, Apply under a lock, Unlock): 1 s at most. */
+    public static final String LEASE = "lease";
+
     private Capabilities() {}
 }
