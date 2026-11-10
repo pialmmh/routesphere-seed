@@ -93,6 +93,39 @@ class RowJsonTest {
             .as("an operation the wire does not know is mem-ledger's to refuse").isNull();
     }
 
+    // ── ARCH-0118 S2: a row as held vs the same row as read ─────────────────
+
+    /** What one client alone sends as "read" is what the server holds: its row's round trip is the same — no spurious STALE. */
+    @Test
+    void everyKnownEntity_isTheSameAsItsOwnRoundTrip_soOneClientAloneNeverReadsAStaleRowOfItsOwn() throws Exception {
+        for (LedgerEntities.Known known : LedgerEntities.known()) {
+            Object held = filled(known.type());
+            Object readByTheClient = RowJson.rowOf(known.type(), RowJson.textOf(held));
+            assertThat(RowJson.differenceFrom(held, RowJson.textOf(readByTheClient))).as(known.name() + ": held vs read and sent back").isNull();
+            Object empty = known.type().getDeclaredConstructor().newInstance();
+            assertThat(RowJson.differenceFrom(empty, RowJson.textOf(RowJson.rowOf(known.type(), RowJson.textOf(empty))))).as(known.name() + " as its constructor leaves it").isNull();
+        }
+    }
+
+    @Test
+    void aDecimalIsComparedByItsValue_andTheFirstFieldThatDiffersIsNamed() {
+        assertThat(RowJson.differenceFrom(account(11, "10"), RowJson.textOf(account(11, "10.000000")))).as("10 = 10.000000").isNull();
+
+        LedgerAccount moved = account(11, "10.000000");
+        moved.setBalanceAfter(new BigDecimal("7.000000"));
+
+        assertThat(RowJson.differenceFrom(moved, RowJson.textOf(account(11, "10.000000")))).isEqualTo("balanceAfter is 7.000000, the batch read 10.000000");
+    }
+
+    @Test
+    void aFieldOneSideLacks_isRefusedInWords_neverAGuess() {
+        String asRead = RowJson.textOf(account(11, "10"));
+        assertThatThrownBy(() -> RowJson.differenceFrom(account(11, "10"), asRead.replace("{", "{\"colour\":\"red\",")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LedgerAccount has no field 'colour'");
+        assertThatThrownBy(() -> RowJson.differenceFrom(account(11, "10"), asRead.replace("\"creditLimit\":null,", "")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("the row as read names no 'creditLimit' of LedgerAccount");
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static WALEntry entry(String db, String entity, WALEntry.OperationType op, Object id, Object image) {
