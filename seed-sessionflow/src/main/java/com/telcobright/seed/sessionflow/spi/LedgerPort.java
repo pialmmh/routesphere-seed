@@ -263,9 +263,22 @@ public interface LedgerPort {
         public String code() { return code; }
     }
 
-    /** The ledger did not answer, or is broken. */
+    /**
+     * The ledger did not answer, or is broken. {@link #onTheWire()} (ARCH-0117, the remote-fixes round): the fault is of a ledger ON THE
+     * WIRE — a server the MemLedger is a client of — so even the admission's FIRST read (the plan's) makes it the admission's system fault;
+     * a fault of a ledger in the process keeps the plan's road it always had (that candidate refused INTERNAL_ERROR, the next one tried).
+     */
     final class LedgerFault extends RuntimeException {
-        public LedgerFault(String message) { super(message); }
-        public LedgerFault(String message, Throwable cause) { super(message, cause); }
+        private final boolean onTheWire;
+
+        public LedgerFault(String message) { super(message); this.onTheWire = false; }
+        public LedgerFault(String message, Throwable cause) { super(message, cause); this.onTheWire = false; }
+        private LedgerFault(String message, Throwable cause, boolean onTheWire) { super(message, cause); this.onTheWire = onTheWire; }
+
+        /** A fault of a ledger on the wire (a server that did not answer, or answered that it is broken). */
+        public static LedgerFault ofALedgerOnTheWire(String message, Throwable cause) { return new LedgerFault(message, cause, true); }
+
+        /** True = of a ledger on the wire; false = of a ledger in the process (or a fault the seed raised itself). */
+        public boolean onTheWire() { return onTheWire; }
     }
 }

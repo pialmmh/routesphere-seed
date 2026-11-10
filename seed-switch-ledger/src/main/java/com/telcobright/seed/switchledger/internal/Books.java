@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
+import com.telcobright.core.cache.CacheableEntity;
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
@@ -7,6 +8,7 @@ import com.telcobright.seed.switchledger.api.ChargeReference;
 import com.telcobright.seed.switchledger.api.LedgerPurchase;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerRefusal;
+import com.telcobright.seed.switchledger.spi.AnswersWithin;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -46,6 +48,8 @@ public final class Books {
     private final MemLedger ledger;
     private final Clock clock;
     private final Set<String> held;
+    /** ARCH-0117 · The MemLedger is a client of a server ({@link AnswersWithin}): its faults are said to be on the wire. */
+    private final boolean onTheWire;
 
     public Books(MemLedger ledger, Clock clock) { this(ledger, clock, Set.of(ACCOUNT, RESERVE)); }
 
@@ -54,6 +58,7 @@ public final class Books {
         this.ledger = ledger;
         this.clock = clock;
         this.held = Set.copyOf(held);
+        this.onTheWire = ledger instanceof AnswersWithin;
     }
 
     public MemLedger ledger() { return ledger; }
@@ -85,12 +90,17 @@ public final class Books {
 
     /** The account as the ledger holds it now ({@code getBalance}, 68–75; the read every verb opens with, 86–87). Null = not held. */
     public PackageAccount liveAccount(String dbName, long accountId) {
-        return guarded("read account " + accountId + " of " + dbName, () -> ledger.getEntity(dbName, ACCOUNT, accountId));
+        return read("read account " + accountId + " of " + dbName, () -> ledger.getEntity(dbName, ACCOUNT, accountId));
     }
 
     /** The purchase as the ledger holds it now (an account's expiry and status, the walk's read). Null = not held. */
     public LedgerPurchase livePurchase(String dbName, long purchaseId) {
-        return guarded("read purchase " + purchaseId + " of " + dbName, () -> ledger.getEntity(dbName, PURCHASE, purchaseId));
+        return read("read purchase " + purchaseId + " of " + dbName, () -> ledger.getEntity(dbName, PURCHASE, purchaseId));
+    }
+
+    /** Every row of an entity in a tier, as the ledger holds them now (an index's making: the partner index, the catalog). */
+    public <K, E extends CacheableEntity<K, ?>> Map<K, E> rowsOf(String dbName, String entity) {
+        return read("list " + entity + " of " + dbName, () -> ledger.<K, E>getAllEntities(dbName, entity));
     }
 
     /** The account as the unit will leave it (a move staged earlier in the unit), else as the ledger holds it. Null = not held. */
@@ -238,13 +248,22 @@ public final class Books {
 
     // ── the ledger's answers ────────────────────────────────────────────────
 
-    static <T> T guarded(String what, Supplier<T> call) {
+    static <T> T guarded(String what, Supplier<T> call) { return guarded(what, call, false); }
+
+    /**
+     * A read of THIS ledger, {@link #guarded}: in the process exactly that; a ledger on the wire's fault says it is one
+     * ({@link LedgerFault#onTheWire()}) — the admission's system fault even at its first read, the plan's.
+     */
+    <T> T read(String what, Supplier<T> call) { return guarded(what, call, onTheWire); }
+
+    private static <T> T guarded(String what, Supplier<T> call, boolean onTheWire) {
         try {
             return call.get();
         } catch (LedgerFault | LedgerRefusal own) {
             throw own;
         } catch (RuntimeException e) {
-            throw new LedgerFault("the ledger could not " + what + ": " + e, e);
+            String words = "the ledger could not " + what + ": " + e;
+            throw onTheWire ? LedgerFault.ofALedgerOnTheWire(words, e) : new LedgerFault(words, e);
         }
     }
 }

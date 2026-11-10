@@ -57,8 +57,9 @@ final class AccountWalk<C extends RoutesphereContext> {
     /**
      * L2b item 2 · A dry run rates the first account at once (nothing held, as before); otherwise the tier is PLANNED — its accounts to lock
      * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.reserveBalance}). The plan's reads of the
-     * ledger (the partner's accounts, the tier's catalog) are the view's FIRST — on the wire when the ledger is a server: a fault there is
-     * the admission's system fault ({@code BILLING_SYSTEM_ERROR}), exactly as a fault of the hold is, never INTERNAL_ERROR.
+     * ledger (the partner's accounts, the tier's catalog) are the view's FIRST: a fault there of a ledger ON THE WIRE (a server) is the
+     * admission's system fault ({@code BILLING_SYSTEM_ERROR}), exactly as a fault of the hold is; any other throw takes the road it always
+     * had (the candidate refused INTERNAL_ERROR, the next one tried) — the embedded store behaves exactly as before the remote-fixes round.
      */
     Verdict planReserve(C ctx, Tier tier, Partner partner) {
         PayingTier paying = new PayingTier(tier, partner);
@@ -66,6 +67,7 @@ final class AccountWalk<C extends RoutesphereContext> {
         try {
             candidates = accountsToTry(ctx, paying);
         } catch (LedgerPort.LedgerFault fault) {
+            if (!fault.onTheWire()) throw fault;
             return Verdict.reject(TierReserve.of(flow).ledgerFault(ctx, tier.levelIndex(), tier.dbName(), partner.getIdPartner(), fault));
         }
         String reference = TierReserve.referenceOf(referenceOf(ctx), ctx.candidatesTried, tier.levelIndex());

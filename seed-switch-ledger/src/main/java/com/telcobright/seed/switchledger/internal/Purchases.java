@@ -160,16 +160,15 @@ final class Purchases {
     /** New rows merged, a tier added, an account moved: the index of every tier made again on its next ask. */
     void forgetTheIndex() { accountsByPartner.forget(); }
 
-    /** The tier's partner → accounts index; a read the ledger does not answer is a LedgerFault naming the tier. */
-    private Map<Long, List<Long>> indexOf(String db) {
-        return accountsByPartner.of(db, tier -> Books.guarded("index the accounts of " + tier + " by partner", () -> indexFromTheCache(tier)));
-    }
+    /** The tier's partner → accounts index; a read the ledger does not answer is a LedgerFault naming the tier and the table. */
+    private Map<Long, List<Long>> indexOf(String db) { return accountsByPartner.of(db, this::indexFromTheCache); }
 
+    /** Only the two reads are the ledger's (guarded); a slip in the making itself stays what it is (INTERNAL_ERROR, its stack logged). */
     private Map<Long, List<Long>> indexFromTheCache(String db) {
         Map<Long, Long> partnerOfPurchase = new HashMap<>();
-        for (LedgerPurchase p : books.ledger().<Long, LedgerPurchase>getAllEntities(db, Books.PURCHASE).values()) partnerOfPurchase.put(p.getId(), p.getIdPartner());
+        for (LedgerPurchase p : books.<Long, LedgerPurchase>rowsOf(db, Books.PURCHASE).values()) partnerOfPurchase.put(p.getId(), p.getIdPartner());
         Map<Long, List<Long>> index = new ConcurrentHashMap<>();
-        for (PackageAccount a : books.ledger().<Long, PackageAccount>getAllEntities(db, Books.ACCOUNT).values()) {
+        for (PackageAccount a : books.<Long, PackageAccount>rowsOf(db, Books.ACCOUNT).values()) {
             Long partner = a.getIdpackagePurchase() == null ? null : partnerOfPurchase.get(a.getIdpackagePurchase());
             if (partner != null) index.computeIfAbsent(partner, p -> new ArrayList<>()).add(a.getId());
         }
