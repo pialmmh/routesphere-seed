@@ -148,6 +148,22 @@ class RemoteStoreTest {
         assertThat(server.writesSeen.size() - before).as("twice, never a third time").isEqualTo(2);
     }
 
+    /**
+     * Remote-fixes item (e): after the second deadline the batch's fate is UNKNOWN — the server may still apply it (a stall inside its
+     * append) — so the fault says so, greppably, with the transaction id to reconcile by; the behaviour stays (no third try).
+     */
+    @Test
+    void aSecondDeadline_saysTheOutcomeIsUnknown_andTheTransactionIdToReconcileBy() throws Exception {
+        port = made(remoteWords(400));
+        server.stallEveryWrite(900);
+
+        Throwable t = catchThrowable(() -> port.reserve(tier(11L), new BigDecimal("10"), "u-1#L0"));
+
+        assertThat(t).isInstanceOf(LedgerFault.class);
+        assertThat(server.writesSeen).as("sent twice, never a third time").hasSize(2);
+        assertThat(t.getMessage()).contains("UNKNOWN outcome: batch " + server.writesSeen.get(0) + " sent twice, no answer within 400 ms — reconcile by this transaction id");
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private Map<String, Object> remoteWords(long deadlineMs) {

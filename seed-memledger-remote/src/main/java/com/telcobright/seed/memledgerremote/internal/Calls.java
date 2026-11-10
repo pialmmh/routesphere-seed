@@ -19,11 +19,13 @@ import java.util.function.Function;
  * One call of the client: a blocking stub bounded by {@code deadline-ms}, and any status but OK turned into a
  * {@link RemoteLedgerFault} in words that name the server, the verb and what it said. The write alone is sent a second time —
  * ONCE, the SAME batch under the SAME transaction id — when its deadline passes (design §2.3): the first may have been applied, and
- * the server answers a repeat with {@code already_applied}; a second deadline is a fault.
+ * the server answers a repeat with {@code already_applied}; a second failure is a fault whose words say the outcome is UNKNOWN.
  */
 public final class Calls {
 
     private static final Logger log = LoggerFactory.getLogger(Calls.class);
+    /** The greppable words of a batch whose fate the client cannot tell (remote-fixes item (e)). */
+    public static final String UNKNOWN_OUTCOME = "UNKNOWN outcome";
 
     private final MemLedgerBlockingStub blocking;
     private final RemoteLedgerSettings settings;
@@ -53,8 +55,19 @@ public final class Calls {
         try {
             return withinTheDeadline().apply(batch);
         } catch (StatusRuntimeException second) {
-            throw faultOf(second, "Apply of batch " + batch.getTransactionId() + " (sent twice)");
+            throw unknownOutcome(batch.getTransactionId(), second);
         }
+    }
+
+    /**
+     * Remote-fixes item (e) · The first try's deadline passed and the second try did not tell: the batch may still be applied by the server
+     * (a stall inside its append) — said plainly, with the transaction id to reconcile by. The behaviour stays: no third try; the engine
+     * takes it as a fault and records nothing.
+     */
+    private RemoteLedgerFault unknownOutcome(String transactionId, StatusRuntimeException second) {
+        String secondSaid = second.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED ? "" : " (the second try: " + faultOf(second, "Apply").getMessage() + ")";
+        return new RemoteLedgerFault("the mem-ledger server at " + settings.address() + ": " + UNKNOWN_OUTCOME + ": batch " + transactionId + " sent twice, no answer within "
+            + settings.deadlineMs() + " ms — reconcile by this transaction id" + secondSaid, second);
     }
 
     private MemLedgerBlockingStub withinTheDeadline() { return blocking.withDeadlineAfter(settings.deadlineMs(), TimeUnit.MILLISECONDS); }
