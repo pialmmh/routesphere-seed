@@ -94,6 +94,17 @@ class StartWaitTest {
         assertThat((System.nanoTime() - startedAt) / 1_000_000).as("never the 30 s of start-wait-ms").isLessThan(5_000);
     }
 
+    /** The remote-fixes closing: a wait or a deadline that is not a whole number refuses the start in words — the root and the word named. */
+    @Test
+    void aWaitOrADeadlineThatIsNotAWholeNumber_refusesTheStartInWords_namingTheRootAndTheWord() {
+        assertThatThrownBy(() -> made(words(aFreePort(), "30s"), token))
+            .hasMessageContaining("the root 'btcl': ledger.start-wait-ms is a whole number of milliseconds (0 or more), not '30s'");
+        Map<String, Object> slowDeadline = words(aFreePort(), null);
+        slowDeadline.put("deadline-ms", "1_000");
+        assertThatThrownBy(() -> made(slowDeadline, token))
+            .hasMessageContaining("the root 'btcl': ledger.deadline-ms is a whole number of milliseconds (more than 0), not '1_000'");
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static Map<String, Object> words(int port, String startWaitMs) {

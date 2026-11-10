@@ -59,18 +59,30 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
     }
 
     private static RemoteLedgerSettings settingsOf(Request request) {
-        String deadline = request.word().apply("deadline-ms");
-        long deadlineMs = deadline == null || deadline.isBlank() ? RemoteLedgerSettings.DEFAULT_DEADLINE_MS : Long.parseLong(deadline.trim());
+        long deadlineMs = millisecondsOf(request, "deadline-ms", RemoteLedgerSettings.DEFAULT_DEADLINE_MS, 1, "more than 0");
         return new RemoteLedgerSettings(required(request, "address"), deadlineMs, required(request, "token-var"));
     }
 
     /** {@code start-wait-ms}: 0 or more milliseconds; not said = {@value #DEFAULT_START_WAIT_MS}. */
-    private static long startWaitMsOf(Request request) {
-        String said = request.word().apply("start-wait-ms");
-        if (said == null || said.isBlank()) return DEFAULT_START_WAIT_MS;
-        long ms = Long.parseLong(said.trim());
-        if (ms < 0) throw new IllegalStateException("the root '" + request.root() + "': ledger.start-wait-ms is 0 or more milliseconds, not " + ms);
+    private static long startWaitMsOf(Request request) { return millisecondsOf(request, "start-wait-ms", DEFAULT_START_WAIT_MS, 0, "0 or more"); }
+
+    /** A word of whole milliseconds, {@code least} or more; not said = {@code unlessSaid}; anything else refuses the start, the root and the word named. */
+    private static long millisecondsOf(Request request, String key, long unlessSaid, long least, String range) {
+        String said = request.word().apply(key);
+        if (said == null || said.isBlank()) return unlessSaid;
+        long ms = wholeNumberOrLessThan(said.trim(), least);
+        if (ms < least) {
+            throw new IllegalStateException("the root '" + request.root() + "': ledger." + key + " is a whole number of milliseconds (" + range + "), not '" + said.trim() + "'");
+        }
         return ms;
+    }
+
+    private static long wholeNumberOrLessThan(String said, long least) {
+        try {
+            return Long.parseLong(said);
+        } catch (NumberFormatException notAWholeNumber) {
+            return least - 1;
+        }
     }
 
     /** The bearer's VALUE by the variable's NAME, from the process environment only. */
