@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit;
  */
 final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCloseable {
 
-    final String token = UUID.randomUUID().toString();
+    final String token;
     final List<String> writesSeen = new CopyOnWriteArrayList<>();
     private final MemLedger ledger;
     private final Server server;
@@ -55,10 +55,14 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     private volatile boolean faultWrites;
     private volatile long stallFirstMs, stallEveryMs;
 
-    StubServer(MemLedger ledger) {
+    StubServer(MemLedger ledger) { this(ledger, 0, UUID.randomUUID().toString()); }
+
+    /** On {@code port} (0 = any) with the bearer {@code token}: a server that starts AFTER its client was told both. */
+    StubServer(MemLedger ledger, int port, String token) {
         this.ledger = ledger;
+        this.token = token;
         try {
-            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", 0)).addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
+            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", port)).addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
         } catch (IOException e) {
             throw new IllegalStateException("the stub server did not start", e);
         }

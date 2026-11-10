@@ -84,6 +84,9 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
 
     @Override public long slowestAnswerMs() { return settings.deadlineMs(); }
 
+    /** The channel tries to connect again NOW, not after its own backoff (the start's wait: the server may have just come up). */
+    public void reconnectNow() { channel.resetConnectBackoff(); }
+
     // ── the eight methods the engine calls ──────────────────────────────────
 
     @Override
