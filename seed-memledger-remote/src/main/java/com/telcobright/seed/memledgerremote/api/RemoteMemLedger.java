@@ -192,6 +192,8 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
 
     @Override public int rowsOneHoldMayName() { return RemoteLedgerSettings.LockRoad.ROWS_ONE_HOLD_MAY_NAME; }
 
+    @Override public int waitersOneRowMayHave() { return settings.lockRoad().queueMax(); }
+
     @Override
     public LeasingLedger.Held hold(List<LeasingLedger.Row> rows) {
         List<Lease.Row> asked = new ArrayList<>(rows.size());

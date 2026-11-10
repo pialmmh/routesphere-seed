@@ -96,7 +96,7 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
     /**
      * ARCH-0119 · {@code lock-road}: {@code "on"} or {@code "off"} (off unless said) — written in quotes: a bare on is a YAML boolean
      * and reaches here as another word, refused in words. {@code lock-lease-ms} (1–1000; 1000 unless said), {@code lock-wait-ms} (0 or
-     * more; 1000 unless said).
+     * more; 1000 unless said), {@code lock-queue-max} (0 or more; 32 unless said).
      */
     private static RemoteLedgerSettings.LockRoad lockRoadOf(Request request) {
         String said = request.word().apply("lock-road");
@@ -106,11 +106,21 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
         else throw new IllegalStateException("the root '" + request.root() + "': ledger.lock-road is \"on\" or \"off\" (in quotes), not '" + said.trim() + "'");
         long leaseMs = millisecondsOf(request, "lock-lease-ms", RemoteLedgerSettings.LockRoad.DEFAULT_LEASE_MS, 1, "1 to " + RemoteLedgerSettings.LockRoad.LEASE_MS_MAX);
         long waitMs = millisecondsOf(request, "lock-wait-ms", RemoteLedgerSettings.LockRoad.DEFAULT_WAIT_MS, 0, "0 or more");
+        long queueMax = wholeNumberOf(request, "lock-queue-max", RemoteLedgerSettings.LockRoad.DEFAULT_QUEUE_MAX);
         try {
-            return new RemoteLedgerSettings.LockRoad(on, Math.toIntExact(leaseMs), Math.toIntExact(waitMs));
+            return new RemoteLedgerSettings.LockRoad(on, Math.toIntExact(leaseMs), Math.toIntExact(waitMs), Math.toIntExact(queueMax));
         } catch (IllegalArgumentException | ArithmeticException e) {
             throw new IllegalStateException("the root '" + request.root() + "': " + e.getMessage(), e);
         }
+    }
+
+    /** {@code lock-queue-max}: how many units of this application may wait for one account (0 or more; 32 unless said). */
+    private static long wholeNumberOf(Request request, String key, long unlessSaid) {
+        String said = request.word().apply(key);
+        if (said == null || said.isBlank()) return unlessSaid;
+        long n = wholeNumberOrLessThan(said.trim(), 0);
+        if (n < 0) throw new IllegalStateException("the root '" + request.root() + "': ledger." + key + " is a whole number (0 or more), not '" + said.trim() + "'");
+        return n;
     }
 
     /** ARCH-0119 · A root that says {@code lock-road: "on"} over a server that does not serve the lock road does not start: never a silent fall back to no lock. */

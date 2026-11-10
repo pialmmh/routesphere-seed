@@ -214,6 +214,7 @@ class LockRoadUnitTest {
                 case "checksExpectations": return true;
                 case "holdsRows": return on;
                 case "rowsOneHoldMayName": return rowsOneHoldMayName;
+                case "waitersOneRowMayHave": return 32;
                 case "hold": {
                     @SuppressWarnings("unchecked") List<LeasingLedger.Row> rows = (List<LeasingLedger.Row>) args[0];
                     calls.add("hold " + rows.stream().map(row -> row.entity() + " " + row.id()).toList());

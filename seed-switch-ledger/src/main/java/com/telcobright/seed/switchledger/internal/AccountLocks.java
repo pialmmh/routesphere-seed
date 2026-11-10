@@ -2,6 +2,7 @@ package com.telcobright.seed.switchledger.internal;
 
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
+import com.telcobright.seed.switchledger.spi.LeasingLedger;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -76,12 +77,24 @@ public final class AccountLocks {
 
     private final Map<Key, Slot> slots = new ConcurrentHashMap<>();
     private final long timeoutMs;
+    /** ARCH-0119 · The most units that may WAIT for one row; {@code Integer.MAX_VALUE} = no cap, as it always was. */
+    private final int waitersMax;
+    /** ARCH-0119 · A full queue and a lock not free in time are the busy fault ({@link LedgerFault#busy()}); false = the fault they always were. */
+    private final boolean busyIsAFaultOfItsOwn;
 
-    private AccountLocks(long timeoutMs) { this.timeoutMs = timeoutMs; }
+    private AccountLocks(long timeoutMs) { this(timeoutMs, Integer.MAX_VALUE, false); }
+
+    private AccountLocks(long timeoutMs, int waitersMax, boolean busyIsAFaultOfItsOwn) {
+        this.timeoutMs = timeoutMs;
+        this.waitersMax = waitersMax;
+        this.busyIsAFaultOfItsOwn = busyIsAFaultOfItsOwn;
+    }
 
     /** The lock table of this ledger (made on the first ask, with that ask's timeout). */
     public static AccountLocks of(MemLedger ledger, long timeoutMs) {
-        return PER_LEDGER.computeIfAbsent(ledger, l -> new AccountLocks(timeoutMs));
+        return PER_LEDGER.computeIfAbsent(ledger, l -> l instanceof LeasingLedger road && road.holdsRows()
+            ? new AccountLocks(timeoutMs, Math.max(0, road.waitersOneRowMayHave()), true)                // ARCH-0119: the lock road — a short queue, busy its own answer
+            : new AccountLocks(timeoutMs));
     }
 
     /** Hold the account's lock; release it with {@link Held#close()}. */
@@ -110,7 +123,17 @@ public final class AccountLocks {
     }
 
     private Slot take(Key key) {
-        Slot slot = slots.compute(key, (k, s) -> { Slot used = s == null ? new Slot() : s; used.users++; return used; });
+        boolean[] full = new boolean[1];
+        Slot slot = slots.compute(key, (k, s) -> {
+            Slot used = s == null ? new Slot() : s;
+            // users = the holder and every waiter: with waitersMax waiting already there is no place — unless this thread IS the holder (a second hold never waits)
+            if (used.users > waitersMax && !used.lock.isHeldByCurrentThread()) { full[0] = true; return used; }
+            used.users++;
+            return used;
+        });
+        if (full[0]) {
+            throw LedgerFault.ofBusyRows("the queue of " + key.what() + " in " + key.tier() + " is full (" + waitersMax + " waiting in this application): answered busy at once, nothing was written", null);
+        }
         try {
             if (slot.lock.tryLock(timeoutMs, TimeUnit.MILLISECONDS)) return slot;
         } catch (InterruptedException e) {
@@ -119,10 +142,17 @@ public final class AccountLocks {
             throw new LedgerFault("interrupted while waiting for the lock of " + key.what() + " in " + key.tier(), e);
         }
         leave(key);
-        throw new LedgerFault("the lock of " + key.what() + " in " + key.tier() + " was not free within " + timeoutMs + " ms");
+        String notFree = "the lock of " + key.what() + " in " + key.tier() + " was not free within " + timeoutMs + " ms";
+        throw busyIsAFaultOfItsOwn ? LedgerFault.ofBusyRows(notFree + ": nothing was written", null) : new LedgerFault(notFree);
     }
 
     private void leave(Key key) { slots.compute(key, (k, s) -> s == null || --s.users <= 0 ? null : s); }
+
+    /** ARCH-0119 · How many units wait for the row's lock now (the holder not counted) — an estimate that is exact once the row is quiet; for the health view and the tests. */
+    public int waitingFor(Key key) {
+        Slot slot = slots.get(key);
+        return slot == null ? 0 : slot.lock.getQueueLength();
+    }
 
     /** C2 · Does THIS thread hold the row's lock already (the locks are re-entrant: a second hold by the same thread never waits)? */
     public boolean heldByThisThread(Key key) {

@@ -28,6 +28,12 @@ public interface LeasingLedger {
     int rowsOneHoldMayName();
 
     /**
+     * How many units of THIS process may wait for one account at a time (the owner's rule, inside one application as on the server:
+     * a short queue per account; no place in it = answered "busy" at once, never a longer queue).
+     */
+    int waitersOneRowMayHave();
+
+    /**
      * Hold every row — all or none — and read them as held.
      *
      * @throws RowsBusy a row's queue is full (refused at once) or the rows were not free in time: nothing is held
