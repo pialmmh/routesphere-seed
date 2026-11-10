@@ -91,7 +91,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
     /**
      * The embedded store (the default): a MemLedger in this process over the root's switch database, its WAL and queue in the root's directory
      * — opened only under its bookmark row's lock ({@link BookmarkLock}: recall-db's own, on PostgreSQL), taken BEFORE the MemLedger replays
-     * its WAL or moves the row.
+     * its WAL or moves the row. A build that fails in ANY way — an Error too (a class that cannot initialize) — gives the lock back.
      */
     private static Opened openEmbedded(RootResources root, javax.sql.DataSource dataSource, Set<String> tiers, LedgerDbSettings ledgerDb) {
         BookmarkLock bookmark = BookmarkLock.take(dataSource, bookmarkSchemaOf(tiers));
@@ -103,9 +103,9 @@ public final class SwitchLedgerMaker implements LedgerMaker {
             Set<String> configured = ledgerDb == null ? null : LedgerDb.register(builder, ledgerDb);
             if (ledgerDb == null) registerTheTwo(builder, root);
             return new Opened(builder.build(), configured, bookmark);
-        } catch (RuntimeException e) {
+        } catch (Throwable failed) {
             bookmark.close();
-            throw e;
+            throw failed;
         }
     }
 
@@ -129,17 +129,20 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         return new Opened(memLedger, ledgerDb == null ? null : entities.keySet(), null);
     }
 
-    /** The engine over the MemLedger, owning it (and what it holds for its life): a build that fails closes what was opened. */
+    /**
+     * The engine over the MemLedger, owning it (and what it holds for its life): a build that fails in any way — an Error too — closes what
+     * was opened, the MemLedger first, then what it held (its bookmark lock is given back only once it is down).
+     */
     private LedgerPort ownedPortOver(Opened opened, RootResources root, Context context, Set<String> tiers, TierColumns columns, LedgerDbSettings ledgerDb) {
         MemLedger memLedger = opened.memLedger();
         try {
             MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), context.clock(), opened.configured()).port();
             return new OwnedMemLedgerPort(port, memLedger, tiers, checkedFirst(columns, AddTierLive.of(memLedger)), mergeSpacingMsOf(root),
                 ledgerDb == null ? null : LedgerDb.of(ledgerDb), opened.heldForItsLife());
-        } catch (RuntimeException e) {
+        } catch (Throwable failed) {
             memLedger.shutdown();
             OwnedMemLedgerPort.release(opened.heldForItsLife());
-            throw e;
+            throw failed;
         }
     }
 
