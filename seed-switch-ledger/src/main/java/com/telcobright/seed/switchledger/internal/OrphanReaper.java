@@ -19,6 +19,10 @@ import java.util.ArrayList;
  * exceed the maximum possible call duration, so an in-flight call's reserve is never released"); a row whose time cannot be read is never
  * touched (550–554: "don't release something we can't date"); at most {@code reaperBatchLimit} rows per pass (547). For the host's schedule
  * (the base's slot-reconcile cadence), one call per tier schema; {@code SwitchLedgers.reaper(…)} hands it out.
+ *
+ * <p>ARCH-0118 S3 · Two applications on one ledger: with a {@code reservePrefix} in its settings (the application's
+ * {@code ledger.reserve-prefix}) the reaper gives back only the reserves held under a key that starts with it — another application's
+ * orphans are its own reaper's. Without one, every reserve, as before.
  */
 public final class OrphanReaper {
 
@@ -42,11 +46,14 @@ public final class OrphanReaper {
         int released = 0;
         for (PackageAccountReserve row : new ArrayList<>(books.reserveRows(dbName).values())) {
             if (released >= settings.reaperBatchLimit()) break;
-            if (isOrphan(row, cutoff) && giveBack(dbName, row)) released++;
+            if (isOurs(row) && isOrphan(row, cutoff) && giveBack(dbName, row)) released++;
         }
         if (released > 0) log.warn("the reaper gave back {} orphaned reserve(s) in {} (older than {} min)", released, dbName, settings.reaperMaxAgeMinutes());
         return released;
     }
+
+    /** S3 · This application's reserve: held under its own prefix, or any reserve when it names none. */
+    private boolean isOurs(PackageAccountReserve row) { return row != null && settings.ownsReserve(row.getChannelCallUuid()); }
 
     /** An orphan is dated, and dated before the cutoff; a row with no readable time is left where it is. */
     private static boolean isOrphan(PackageAccountReserve row, LocalDateTime cutoff) {
