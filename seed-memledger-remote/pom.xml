@@ -109,6 +109,13 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <!-- the tests: the money engine's account walk over the client (a view's admission against a hung server) — never on the main path -->
+        <dependency>
+            <groupId>com.telcobright</groupId>
+            <artifactId>seed-prepaid</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

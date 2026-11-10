@@ -14,7 +14,6 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * §15 · The catalog of ONE tier as the walk reads it — every read a map get on an immutable snapshot made from the cache: packages by id,
@@ -25,18 +24,19 @@ import java.util.concurrent.ConcurrentHashMap;
 final class CatalogIndex {
 
     private final Books books;
-    private final Map<String, Snapshot> byTier = new ConcurrentHashMap<>();
+    /** Made outside the map's lock: on the wire when the ledger is a server. */
+    private final IndexPerTier<Snapshot> byTier = new IndexPerTier<>();
 
     CatalogIndex(Books books) { this.books = books; }
 
-    /** The tier's catalog; empty when this ledger caches no catalog. */
+    /** The tier's catalog; empty when this ledger caches no catalog. A read the ledger does not answer is a LedgerFault naming the tier. */
     Optional<LedgerPort.ItemCatalog> of(String db) {
         if (!books.keepsCatalog() || db == null) return Optional.empty();
-        return Optional.of(byTier.computeIfAbsent(db, this::snapshot));
+        return Optional.of(byTier.of(db, tier -> Books.guarded("make the catalog of " + tier, () -> snapshot(tier))));
     }
 
     /** New rows were merged somewhere: every tier's snapshot is made again on its next ask. */
-    void forget() { byTier.clear(); }
+    void forget() { byTier.forget(); }
 
     private Snapshot snapshot(String db) {
         Map<Long, CatalogPackage> packages = new HashMap<>();

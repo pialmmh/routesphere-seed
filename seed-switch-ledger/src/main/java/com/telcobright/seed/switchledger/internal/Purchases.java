@@ -47,8 +47,8 @@ final class Purchases {
     private final Map<String, Purchased> answered = new LinkedHashMap<>(1024, 0.75f, false) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, Purchased> eldest) { return size() > KEPT; }
     };
-    /** tier → partner → its accounts' ids (made from the cache on the first ask). */
-    private final Map<String, Map<Long, List<Long>>> accountsByPartner = new ConcurrentHashMap<>();
+    /** tier → partner → its accounts' ids (made from the cache on the first ask, outside the map's lock: on the wire when the ledger is a server). */
+    private final IndexPerTier<Map<Long, List<Long>>> accountsByPartner = new IndexPerTier<>();
 
     Purchases(Books books) { this.books = books; }
 
@@ -62,7 +62,7 @@ final class Purchases {
         Purchased made = stage(unit, buyer, offer, key, ids);
         unit.commit("make purchase " + made.purchaseId() + " of partner " + buyer.getPartnerId() + " in " + db + " (" + reference + ")");
         answered.put(reference, made);
-        Map<Long, List<Long>> index = accountsByPartner.get(db);                        // made from the cache later if not made yet (it has them now)
+        Map<Long, List<Long>> index = accountsByPartner.keptOrNull(db);                 // made from the cache later if not made yet (it has them now)
         if (index != null) index.computeIfAbsent((long) buyer.getPartnerId(), p -> new ArrayList<>()).addAll(made.accounts());
         log.info("PURCHASE {} | partner {} of {}: purchase {} with accounts {} until {}", LogText.clean(reference), buyer.getPartnerId(), db, made.purchaseId(), made.accounts(), offer.expires());
         return made;
@@ -117,7 +117,7 @@ final class Purchases {
         List<Held> held = new ArrayList<>(ids.size());
         for (Long id : List.copyOf(ids)) {
             PackageAccount live = books.liveAccount(db, id);
-            LedgerPurchase purchase = live == null || live.getIdpackagePurchase() == null ? null : books.ledger().getEntity(db, Books.PURCHASE, live.getIdpackagePurchase());
+            LedgerPurchase purchase = live == null || live.getIdpackagePurchase() == null ? null : books.livePurchase(db, live.getIdpackagePurchase());
             if (purchase != null && "ACTIVE".equalsIgnoreCase(purchase.getStatus())) held.add(new Held(withItsExpiry(live, purchase), purchase));
         }
         held.sort(PRIME_CONTEXTS_ORDER);
@@ -158,9 +158,12 @@ final class Purchases {
     }
 
     /** New rows merged, a tier added, an account moved: the index of every tier made again on its next ask. */
-    void forgetTheIndex() { accountsByPartner.clear(); }
+    void forgetTheIndex() { accountsByPartner.forget(); }
 
-    private Map<Long, List<Long>> indexOf(String db) { return accountsByPartner.computeIfAbsent(db, this::indexFromTheCache); }
+    /** The tier's partner → accounts index; a read the ledger does not answer is a LedgerFault naming the tier. */
+    private Map<Long, List<Long>> indexOf(String db) {
+        return accountsByPartner.of(db, tier -> Books.guarded("index the accounts of " + tier + " by partner", () -> indexFromTheCache(tier)));
+    }
 
     private Map<Long, List<Long>> indexFromTheCache(String db) {
         Map<Long, Long> partnerOfPurchase = new HashMap<>();

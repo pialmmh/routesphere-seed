@@ -56,11 +56,18 @@ final class AccountWalk<C extends RoutesphereContext> {
 
     /**
      * L2b item 2 · A dry run rates the first account at once (nothing held, as before); otherwise the tier is PLANNED — its accounts to lock
-     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.reserveBalance}).
+     * and its hold — and held with every other tier in the walk's one unit ({@code PrepaidEngine.reserveBalance}). The plan's reads of the
+     * ledger (the partner's accounts, the tier's catalog) are the view's FIRST — on the wire when the ledger is a server: a fault there is
+     * the admission's system fault ({@code BILLING_SYSTEM_ERROR}), exactly as a fault of the hold is, never INTERNAL_ERROR.
      */
     Verdict planReserve(C ctx, Tier tier, Partner partner) {
         PayingTier paying = new PayingTier(tier, partner);
-        Candidates candidates = accountsToTry(ctx, paying);
+        Candidates candidates;
+        try {
+            candidates = accountsToTry(ctx, paying);
+        } catch (LedgerPort.LedgerFault fault) {
+            return Verdict.reject(TierReserve.of(flow).ledgerFault(ctx, tier.levelIndex(), tier.dbName(), partner.getIdPartner(), fault));
+        }
         String reference = TierReserve.referenceOf(referenceOf(ctx), ctx.candidatesTried, tier.levelIndex());
         if (ctx.dryRun) return holdOnTheFirstThatPays(ctx, tier, partner, paying, candidates, reference).verdict();
         WalkPlan.of(ctx).add(levelsOf(tier, partner, candidates.accounts()), () -> causeOf(holdOnTheFirstThatPays(ctx, tier, partner, paying, candidates, reference)));

@@ -88,6 +88,11 @@ public final class Books {
         return guarded("read account " + accountId + " of " + dbName, () -> ledger.getEntity(dbName, ACCOUNT, accountId));
     }
 
+    /** The purchase as the ledger holds it now (an account's expiry and status, the walk's read). Null = not held. */
+    public LedgerPurchase livePurchase(String dbName, long purchaseId) {
+        return guarded("read purchase " + purchaseId + " of " + dbName, () -> ledger.getEntity(dbName, PURCHASE, purchaseId));
+    }
+
     /** The account as the unit will leave it (a move staged earlier in the unit), else as the ledger holds it. Null = not held. */
     public PackageAccount liveAccount(UnitOfWork unit, String dbName, long accountId) { return unit.read(dbName, ACCOUNT, accountId); }
 
