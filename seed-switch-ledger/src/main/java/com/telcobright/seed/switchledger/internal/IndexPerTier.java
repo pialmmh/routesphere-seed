@@ -24,7 +24,10 @@ final class IndexPerTier<V> {
         return first != null ? awaited(first) : made(tier, mine, make);
     }
 
-    /** The tier's index when one is made and kept; null while none is (a write then leaves its rows to the next making). */
+    /**
+     * The tier's index when one is made and kept; null while none is — then a write {@link #forget(String) forgets the tier}: a making in
+     * flight may have read the ledger before the write, and must not be kept without its rows.
+     */
     V keptOrNull(String tier) {
         CompletableFuture<V> index = kept.get(tier);
         return index == null || !index.isDone() || index.isCompletedExceptionally() ? null : index.join();
@@ -32,6 +35,9 @@ final class IndexPerTier<V> {
 
     /** Every tier's index made again on its next ask. */
     void forget() { kept.clear(); }
+
+    /** The tier's index made again on its next ask — a making in flight answers its own askers and is not kept. */
+    void forget(String tier) { kept.remove(tier); }
 
     private V made(String tier, CompletableFuture<V> mine, Function<String, V> make) {
         try {

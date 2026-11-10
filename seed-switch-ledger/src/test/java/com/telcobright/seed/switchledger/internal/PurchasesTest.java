@@ -11,11 +11,16 @@ import com.telcobright.seed.switchledger.api.LedgerPurchase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +73,59 @@ class PurchasesTest {
         assertThat(again.purchaseId()).isEqualTo(bought.purchaseId());
         assertThat(lab.walRecords()).as("nothing written twice").isEqualTo(before + 1);
         assertThat(purchases.accountsOf(buyer(4)).orElseThrow()).hasSize(3);
+    }
+
+    /**
+     * The remote-fixes closing (the review's finding on the partner index): a purchase that commits WHILE its tier's partner index is
+     * being made — the making read the purchases before the commit (on the wire: two whole-table round trips) — must not leave a kept
+     * index without the new accounts: the purchase drops that making, and the next ask makes the index again, the new package in it.
+     */
+    @Test
+    void aPurchaseWhileThePartnerIndexIsBeingMade_isInTheIndexTheNextAskReads() throws Exception {
+        MemLedger memLedger = lab.start();
+        PurchasesReadSlowly slow = new PurchasesReadSlowly(memLedger);
+        Purchases purchases = new Purchases(new Books(slow.ledger(), Clock.systemUTC(), Set.of(Books.ACCOUNT, Books.RESERVE, Books.CHARGE, Books.PURCHASE)));
+        Thread making = Thread.ofPlatform().name(PurchasesReadSlowly.MAKER).start(() -> purchases.accountsOf(buyer(4)));
+        assertThat(slow.reading.await(10, TimeUnit.SECONDS)).as("the making read the purchases (before the purchase) and waits on the wire").isTrue();
+
+        LedgerPort.Purchased bought = purchases.purchase(buyer(4), offer(), "pay-mid-making", this::above);
+        slow.answer.countDown();
+        making.join(10_000);
+
+        assertThat(purchases.accountsOf(buyer(4)).orElseThrow()).extracting(PackageAccount::getId)
+            .as("the new purchase's accounts are in the index the next ask reads (the package pays, not the cash)")
+            .containsExactly(bought.accounts().get(0), bought.accounts().get(1), 30L);
+    }
+
+    /** The lab's ledger whose FIRST purchases read on the making's thread answers what it held then, after the test lets it go. */
+    private static final class PurchasesReadSlowly {
+        static final String MAKER = "the-partner-index-making";
+        final CountDownLatch reading = new CountDownLatch(1), answer = new CountDownLatch(1);
+        private final MemLedger real;
+
+        PurchasesReadSlowly(MemLedger real) { this.real = real; }
+
+        MemLedger ledger() {
+            return (MemLedger) Proxy.newProxyInstance(MemLedger.class.getClassLoader(), new Class<?>[] {MemLedger.class}, (proxy, method, args) -> {
+                if (isTheMakingsPurchasesRead(method.getName(), args)) return heldThenAnswered(real.<Long, LedgerPurchase>getAllEntities((String) args[0], Books.PURCHASE));
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+        }
+
+        private boolean isTheMakingsPurchasesRead(String method, Object[] args) {
+            return "getAllEntities".equals(method) && Books.PURCHASE.equals(args[1]) && MAKER.equals(Thread.currentThread().getName()) && reading.getCount() > 0;
+        }
+
+        private Object heldThenAnswered(java.util.Map<Long, LedgerPurchase> asItWasThen) throws InterruptedException {
+            java.util.Map<Long, LedgerPurchase> copy = new HashMap<>(asItWasThen);
+            reading.countDown();
+            answer.await(10, TimeUnit.SECONDS);
+            return copy;
+        }
     }
 
     /** The application's ids: one above what the ledger holds (seed-idgen's mintAbove, as the admin road adapts it). */

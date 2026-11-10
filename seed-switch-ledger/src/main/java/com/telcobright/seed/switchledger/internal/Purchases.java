@@ -62,10 +62,23 @@ final class Purchases {
         Purchased made = stage(unit, buyer, offer, key, ids);
         unit.commit("make purchase " + made.purchaseId() + " of partner " + buyer.getPartnerId() + " in " + db + " (" + reference + ")");
         answered.put(reference, made);
-        Map<Long, List<Long>> index = accountsByPartner.keptOrNull(db);                 // made from the cache later if not made yet (it has them now)
-        if (index != null) index.computeIfAbsent((long) buyer.getPartnerId(), p -> new ArrayList<>()).addAll(made.accounts());
+        indexTheNewAccounts(db, buyer.getPartnerId(), made.accounts());
         log.info("PURCHASE {} | partner {} of {}: purchase {} with accounts {} until {}", LogText.clean(reference), buyer.getPartnerId(), db, made.purchaseId(), made.accounts(), offer.expires());
         return made;
+    }
+
+    /**
+     * The new accounts into their tier's kept partner index. None kept — none made yet, or one being made right now, which may have read
+     * the purchases BEFORE this one committed (on the wire: two whole-table round trips) — the tier is forgotten: the next ask makes the
+     * index from the ledger, which holds them now.
+     */
+    private void indexTheNewAccounts(String db, long partner, List<Long> accounts) {
+        Map<Long, List<Long>> index = accountsByPartner.keptOrNull(db);
+        if (index == null) {
+            accountsByPartner.forget(db);
+            return;
+        }
+        index.computeIfAbsent(partner, p -> new ArrayList<>()).addAll(accounts);
     }
 
     private Purchased stage(UnitOfWork unit, LevelAdmission buyer, Offer offer, String key, Ids ids) {
