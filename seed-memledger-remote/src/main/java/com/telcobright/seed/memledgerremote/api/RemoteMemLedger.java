@@ -36,6 +36,7 @@ import com.telcobright.seed.switchledger.spi.AnswersWithin;
 import com.telcobright.seed.switchledger.spi.ExpectingLedger;
 import com.telcobright.seed.switchledger.spi.GhostFreeReloads;
 import com.telcobright.seed.switchledger.spi.LeasingLedger;
+import com.telcobright.seed.switchledger.spi.PatchingLedger;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptors;
 import io.grpc.ManagedChannel;
@@ -66,7 +67,7 @@ import java.util.concurrent.TimeUnit;
  * and a row the other application moved meanwhile is a STALE refusal (the engine's LedgerFault in the server's words). An older server
  * (no capabilities) keeps today's client-side ghost rule and is sent no rows as read, said once in the log.
  */
-public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger, LeasingLedger {
+public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger, LeasingLedger, PatchingLedger {
 
     /** A whole table may come back in one stream's messages; a batch of many rows in one: room for both. */
     public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
@@ -183,6 +184,63 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     /** Road 2 · No write will come: the rows go back now. @return false = the server held nothing of that lock any more */
     public boolean unlock(Lease lease) {
         return calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lease.lockId()).setToken(lease.token()).build())).getReleased();
+    }
+
+    // ── ARCH-0119 road 1 as the ENGINE asks it (PatchingLedger): the root's own word decides ──
+
+    /** The one-call road is ON for this root ({@code one-call-moves: "on"}); a server that does not serve it refuses the batch in words. */
+    @Override public boolean movesInOneCall() { return settings.oneCallMoves(); }
+
+    @Override
+    public PatchingLedger.Answer patch(PatchingLedger.Patch patch) {
+        Atomic batch = Atomic.batch(patch.transactionId());
+        for (PatchingLedger.Entry entry : patch.entries()) {
+            if (entry.kind() == PatchingLedger.Entry.Kind.DELETE) {
+                batch.delete(entry.tier(), entry.entity(), entry.id());
+                continue;
+            }
+            batch.change(entry.tier(), entry.entity(), entry.id(), row -> {
+                for (PatchingLedger.Change change : entry.changes()) {
+                    switch (change.op()) {
+                        case ADD -> row.add(change.field(), (java.math.BigDecimal) change.value());
+                        case SET -> row.set(change.field(), change.value());
+                        case COPY -> row.copy(change.field(), change.fromField());
+                    }
+                }
+                for (PatchingLedger.Guard guard : entry.guards()) {
+                    switch (guard.sign()) {
+                        case AT_LEAST -> row.atLeast(guard.field(), (java.math.BigDecimal) guard.value());
+                        case EQUAL -> row.equalTo(guard.field(), guard.value());
+                    }
+                }
+                if (entry.insertIfAbsent() != null) row.orInsert(entry.insertIfAbsent());
+            });
+        }
+        AtomicAnswer answer = apply(batch);
+        return switch (answer.outcome()) {
+            case APPLIED -> new PatchingLedger.Answer(PatchingLedger.Outcome.APPLIED, answer.words(), 0, null, rowsAfter(patch, answer));
+            case GUARD -> new PatchingLedger.Answer(PatchingLedger.Outcome.GUARD, answer.words(), answer.failedEntry(), failedRowOf(patch, answer), Map.of());
+            case BUSY -> new PatchingLedger.Answer(PatchingLedger.Outcome.BUSY, answer.words(), 0, null, Map.of());
+            default -> new PatchingLedger.Answer(PatchingLedger.Outcome.OTHER, answer.outcome() + ": " + answer.words(), 0, null, Map.of());
+        };
+    }
+
+    /** Per entry number, the row the batch left: a changed or inserted row decodes into its registered class; a deleted row has no line. */
+    private Map<Integer, Object> rowsAfter(PatchingLedger.Patch patch, AtomicAnswer answer) {
+        Map<Integer, Object> rows = new LinkedHashMap<>();
+        for (int i = 0; i < patch.entries().size(); i++) {
+            PatchingLedger.Entry entry = patch.entries().get(i);
+            if (entry.kind() == PatchingLedger.Entry.Kind.DELETE) continue;
+            Object row = answer.row(classOf(entry.entity()), entry.entity(), entry.id());
+            if (row != null) rows.put(i + 1, row);
+        }
+        return rows;
+    }
+
+    private Object failedRowOf(PatchingLedger.Patch patch, AtomicAnswer answer) {
+        int failed = answer.failedEntry();
+        if (failed < 1 || failed > patch.entries().size()) return null;
+        return answer.failedRow(classOf(patch.entries().get(failed - 1).entity()));
     }
 
     // ── ARCH-0119 road 2 as the ENGINE asks it (LeasingLedger): the root's own words decide ──

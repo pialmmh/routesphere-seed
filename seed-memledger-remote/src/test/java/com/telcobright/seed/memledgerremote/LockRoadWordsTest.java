@@ -96,6 +96,28 @@ class LockRoadWordsTest {
         assertThatThrownBy(() -> made(badWait, token)).hasMessageContaining("the root 'btcl': ledger.lock-wait-ms is a whole number of milliseconds (0 or more), not 'soon'");
     }
 
+    @Test
+    void theOneCallRoadsWord_isOnOrOff_andOnOverAServerThatDoesNotServeIt_refusesTheStart() {
+        StubServer older = new StubServer(lab.ledger(), 0, token);
+        opened.add(older);
+        Map<String, Object> on = words(older.port(), null);
+        on.put("one-call-moves", "on");
+        assertThatThrownBy(() -> made(on, token))
+            .hasMessageContaining("ledger.one-call-moves is \"on\" and the mem-ledger server at 127.0.0.1:" + older.port() + " does not serve the one-call road");
+        Map<String, Object> bare = words(older.port(), null);
+        bare.put("one-call-moves", "true");
+        assertThatThrownBy(() -> made(bare, token)).hasMessageContaining("the root 'btcl': ledger.one-call-moves is \"on\" or \"off\" (in quotes), not 'true'");
+
+        StubServer serves = new StubServer(lab.ledger(), 0, token, List.of(Capabilities.EXPECT, Capabilities.PATCH));
+        opened.add(serves);
+        Map<String, Object> onOverPatch = words(serves.port(), null);
+        onOverPatch.put("one-call-moves", "on");
+        opened.add((AutoCloseable) made(onOverPatch, token));
+        Map<String, Object> off = words(older.port(), null);
+        off.put("one-call-moves", "off");
+        opened.add((AutoCloseable) made(off, token));
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static Map<String, Object> words(int port, String lockRoad) {

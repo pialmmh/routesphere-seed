@@ -5,9 +5,10 @@ package com.telcobright.seed.memledgerremote.dependencies;
  * address), {@code deadline-ms} (the bound of every call and the port's {@code slowestAnswerMs()}; 2000 unless said), {@code token-var}
  * (the NAME of the environment variable holding the bearer — the value is read once at the start by the source and never held here),
  * and (ARCH-0119) the lock road's words, {@link LockRoad}: {@code lock-road} ({@code "on"} | {@code "off"}; off unless said),
- * {@code lock-lease-ms}, {@code lock-wait-ms} and {@code lock-queue-max}.
+ * {@code lock-lease-ms}, {@code lock-wait-ms} and {@code lock-queue-max}; and the one-call road's word, {@code one-call-moves}
+ * ({@code "on"} | {@code "off"}; off unless said): a hold and a settle are then ONE call each.
  */
-public record RemoteLedgerSettings(String address, long deadlineMs, String tokenVar, LockRoad lockRoad) {
+public record RemoteLedgerSettings(String address, long deadlineMs, String tokenVar, LockRoad lockRoad, boolean oneCallMoves) {
 
     public static final long DEFAULT_DEADLINE_MS = 2_000;
 
@@ -18,7 +19,13 @@ public record RemoteLedgerSettings(String address, long deadlineMs, String token
     }
 
     /** The settings as they were before the lock road: it is off. */
-    public RemoteLedgerSettings(String address, long deadlineMs, String tokenVar) { this(address, deadlineMs, tokenVar, LockRoad.OFF); }
+    public RemoteLedgerSettings(String address, long deadlineMs, String tokenVar) { this(address, deadlineMs, tokenVar, LockRoad.OFF, false); }
+
+    /** The settings with the lock road's words and the one-call road off. */
+    public RemoteLedgerSettings(String address, long deadlineMs, String tokenVar, LockRoad lockRoad) { this(address, deadlineMs, tokenVar, lockRoad, false); }
+
+    /** The same settings with the one-call road (ARCH-0119 road 1: {@code one-call-moves: "on"}) on or off. */
+    public RemoteLedgerSettings withOneCallMoves(boolean on) { return new RemoteLedgerSettings(address, deadlineMs, tokenVar, lockRoad, on); }
 
     /**
      * ARCH-0119 road 2 · Does a unit of this root HOLD its rows on the server for its read-then-write, and for how long.

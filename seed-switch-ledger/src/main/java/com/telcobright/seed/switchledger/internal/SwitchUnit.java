@@ -244,7 +244,7 @@ final class SwitchUnit implements LedgerUnit {
     }
 
     /** The row is the TIER's: its reference once held ({@code <sid>#L<n>}); a window ({@code …#W<n>}) grows it. */
-    private static String rowKeyOf(LevelAdmission level, String reference) {
+    static String rowKeyOf(LevelAdmission level, String reference) {
         if (level.getDebitReference() != null) return level.getDebitReference();
         int window = reference.indexOf("#W");
         return window < 0 ? reference : reference.substring(0, window);
@@ -265,7 +265,7 @@ final class SwitchUnit implements LedgerUnit {
     }
 
     /** No row is open under the tier: it was settled, released or reaped before. Nothing moves; the base is told it is owed, in words. */
-    private static TierSettlement nothingOpen(LevelAdmission level, String tier, BigDecimal charged) {
+    static TierSettlement nothingOpen(LevelAdmission level, String tier, BigDecimal charged) {
         log.error("{} | no reserve row is open in {} for account {}: settled, released or reaped before — nothing moved", LogText.clean(tier), level.getDbName(), level.getPackageAccountId());
         return TierSettlement.owed(level, charged, "no reserve row open under " + tier + " (settled, released or reaped before): nothing moved");
     }

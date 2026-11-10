@@ -49,6 +49,8 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private final Books books;
     private final AccountLocks locks;
     private final Answers answers = new Answers();
+    /** ARCH-0119 road 1 · A hold and a settle as ONE call each; null = the ledger is in the process or its one-call road is off. */
+    private final OneCallMoves oneCall;
     private final Purchases purchases;
     private final CatalogIndex catalog;
     private final LedgerCrud crud;
@@ -59,6 +61,7 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         this.purchases = new Purchases(books);
         this.catalog = new CatalogIndex(books);
         this.crud = new LedgerCrud(books, locks, this::forgetTheIndexes);
+        this.oneCall = OneCallMoves.over(books, answers);
     }
 
     /** How long one answer of the ledger may take: 0 in the process, the deadline of a ledger that is elsewhere. */
@@ -85,11 +88,21 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     @Override
     public Optional<Reservation> reserve(LevelAdmission level, BigDecimal amount, String reference) {
+        if (oneCall != null) {
+            OneCallMoves.Made<Optional<Reservation>> made = oneCall.reserve(level, amount, reference);
+            if (made.here()) return made.value();
+        }
         return oneMove("hold " + amount + " under " + reference, u -> u.reserve(level, amount, reference, Long.MAX_VALUE));
     }
 
     @Override
-    public TierSettlement settle(LevelAdmission level, BigDecimal charged) { return oneMove("settle " + level.getDebitReference(), u -> u.settle(level, charged)); }
+    public TierSettlement settle(LevelAdmission level, BigDecimal charged) {
+        if (oneCall != null) {
+            OneCallMoves.Made<TierSettlement> made = oneCall.settle(level, charged);
+            if (made.here()) return made.value();
+        }
+        return oneMove("settle " + level.getDebitReference(), u -> u.settle(level, charged));
+    }
 
     @Override
     public void release(LevelAdmission level, String why) { oneMove("release " + level.getDebitReference(), u -> { u.release(level, why); return null; }); }

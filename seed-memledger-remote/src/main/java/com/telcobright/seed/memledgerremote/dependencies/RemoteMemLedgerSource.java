@@ -41,7 +41,8 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
             addTheTiersTheServerLacks(ledger, request, held);
             requireTheLockRoadItAsksFor(ledger, request);
             log.info("mem-ledger client: the ledger of root {} is the server at {} (deadline {} ms, lock road {}), tiers {}", request.root(), settings.address(), settings.deadlineMs(),
-                settings.lockRoad().on() ? "ON: lease " + settings.lockRoad().leaseMs() + " ms, wait " + settings.lockRoad().waitMs() + " ms" : "off", request.tiers());
+                (settings.lockRoad().on() ? "ON: lease " + settings.lockRoad().leaseMs() + " ms, wait " + settings.lockRoad().waitMs() + " ms" : "off")
+                    + (settings.oneCallMoves() ? "; one-call moves ON" : ""), request.tiers());
             return ledger;
         } catch (RuntimeException e) {
             ledger.shutdown();
@@ -90,7 +91,15 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
 
     private static RemoteLedgerSettings settingsOf(Request request) {
         long deadlineMs = millisecondsOf(request, "deadline-ms", RemoteLedgerSettings.DEFAULT_DEADLINE_MS, 1, "more than 0");
-        return new RemoteLedgerSettings(required(request, "address"), deadlineMs, required(request, "token-var"), lockRoadOf(request));
+        return new RemoteLedgerSettings(required(request, "address"), deadlineMs, required(request, "token-var"), lockRoadOf(request), onOrOff(request, "one-call-moves"));
+    }
+
+    /** A word that is {@code "on"} or {@code "off"} (off unless said), written in quotes: a bare on is a YAML boolean and reaches here as another word, refused in words. */
+    private static boolean onOrOff(Request request, String key) {
+        String said = request.word().apply(key);
+        if (said == null || said.isBlank() || said.trim().equals("off")) return false;
+        if (said.trim().equals("on")) return true;
+        throw new IllegalStateException("the root '" + request.root() + "': ledger." + key + " is \"on\" or \"off\" (in quotes), not '" + said.trim() + "'");
     }
 
     /**
@@ -125,6 +134,10 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
 
     /** ARCH-0119 · A root that says {@code lock-road: "on"} over a server that does not serve the lock road does not start: never a silent fall back to no lock. */
     private static void requireTheLockRoadItAsksFor(RemoteMemLedger ledger, Request request) {
+        if (ledger.settings().oneCallMoves() && !ledger.servesAtomic()) {
+            throw new IllegalStateException("ledger.one-call-moves is \"on\" and the mem-ledger server at " + ledger.settings().address() + " does not serve the one-call road (it says "
+                + ledger.whatTheServerDoes() + "): move the server to a build that says '" + com.telcobright.seed.memledgerremote.api.Capabilities.PATCH + "', or say one-call-moves: \"off\"");
+        }
         if (ledger.settings().lockRoad().on() && !ledger.servesLeases()) {
             throw new IllegalStateException("ledger.lock-road is \"on\" and the mem-ledger server at " + ledger.settings().address() + " does not serve the lock road (it says "
                 + ledger.whatTheServerDoes() + "): move the server to a build that says '" + com.telcobright.seed.memledgerremote.api.Capabilities.LEASE + "', or say lock-road: \"off\"");
