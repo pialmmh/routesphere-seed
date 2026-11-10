@@ -116,7 +116,7 @@ class ProtoSeamTest {
         assertThat(numbered(message("Guard"))).containsExactly("1 kind", "2 field", "3 value");
         assertThat(numbered(message("RowResult"))).containsExactly("1 db_name", "2 entity_name", "3 entity_id", "4 inserted", "5 entity_json");
         assertThat(valuesOf("ChangeKind")).containsExactly("0 CHANGE_UNSPECIFIED", "1 ADD", "2 SET", "3 COPY", "4 MIN");
-        assertThat(valuesOf("GuardKind")).containsExactly("0 GUARD_UNSPECIFIED", "1 FIELD_GE", "2 FIELD_EQ", "3 FIELD_LE");
+        assertThat(valuesOf("GuardKind")).containsExactly("0 GUARD_UNSPECIFIED", "1 FIELD_GE", "2 FIELD_EQ", "3 FIELD_LE", "4 ROW_ABSENT");
         assertThat(message("Change").findFieldByName("value").getType()).as("a decimal is text, never a float").isEqualTo(FieldDescriptor.Type.STRING);
         assertThat(message("Guard").findFieldByName("value").getType()).isEqualTo(FieldDescriptor.Type.STRING);
         assertThat(WalEntry.getDescriptor().findFieldByName("changes").isRepeated()).isTrue();

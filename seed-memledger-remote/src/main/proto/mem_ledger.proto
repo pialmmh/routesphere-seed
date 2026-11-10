@@ -129,11 +129,13 @@ enum ChangeKind {
   MIN  = 4;                      // field = the smaller of field and value
 }
 
-// ARCH-0119 · What must hold for the row after the entry's changes. Decimals are compared by value (10 = 10.000000).
+// ARCH-0119 · What must hold for the row after the entry's changes. Two numbers are compared by value (10 = 10.000000); when the
+// field or the value is no number they are compared as TEXT (a status word by equality; an ISO-8601 date or date-time of one shape
+// orders as its text does). A guard sees the row the CACHE holds — a row the database holds and the cache does not is not seen.
 message Guard {
   GuardKind kind  = 1;
-  string    field = 2;
-  string    value = 3;           // a decimal as text
+  string    field = 2;           // empty for ROW_ABSENT
+  string    value = 3;           // a decimal, a word or a date, as text; empty for ROW_ABSENT
 }
 
 enum GuardKind {
@@ -141,6 +143,7 @@ enum GuardKind {
   FIELD_GE = 1;                  // field >= value
   FIELD_EQ = 2;                  // field = value
   FIELD_LE = 3;                  // field <= value
+  ROW_ABSENT = 4;                // the cache holds NO such row (an entry with this guard carries no change and never inserts)
 }
 
 enum Op {
