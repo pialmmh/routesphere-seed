@@ -1,17 +1,19 @@
 package com.telcobright.seed.memledgerremote.api;
 
+import com.telcobright.core.wal.WALEntryBatch;
 import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
 import com.telcobright.seed.memledgerremote.wire.Expectation;
+import com.telcobright.seed.switchledger.spi.ExpectingLedger;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
 /**
- * ARCH-0118 S2 · The rows a batch's unit READ, on the wire ({@code ApplyRequest.expects}): each row as the client read it — its JSON as
- * {@link RowJson#textOf} writes a row — or {@code present = false} for a row it saw none of. The server reads them back, each key in its
- * own type, and checks them under the batch's row locks against what its cache holds ({@link RowJson#differenceFrom}). What cannot be
- * read is {@link WireBatch.Unreadable}, in mem-ledger's shape of words, naming the expectation.
+ * ARCH-0118 S2 · The rows a batch's unit READ, on the wire both ways ({@code ApplyRequest.expects}): each row as the client read it —
+ * its JSON as {@link RowJson#textOf} writes a row — or {@code present = false} for a row it saw none of. The server reads them back, each
+ * key in its own type, and checks them under the batch's row locks against what its cache holds ({@link RowJson#differenceFrom}). What
+ * cannot be read is {@link WireBatch.Unreadable}, in mem-ledger's shape of words, naming the expectation.
  */
 public final class WireExpectations {
 
@@ -23,6 +25,24 @@ public final class WireExpectations {
     }
 
     private WireExpectations() {}
+
+    // ── the application's side ──────────────────────────────────────────────
+
+    /** The batch as the wire carries it ({@link WireBatch#requestOf}), with the rows its unit read, each as read. */
+    public static ApplyRequest requestOf(WALEntryBatch batch, List<ExpectingLedger.AsRead> asRead) {
+        ApplyRequest.Builder request = WireBatch.requestOf(batch).toBuilder();
+        for (ExpectingLedger.AsRead row : asRead) request.addExpects(expectationOf(row));
+        return request.build();
+    }
+
+    private static Expectation expectationOf(ExpectingLedger.AsRead row) {
+        Expectation.Builder out = Expectation.newBuilder().setDbName(orEmpty(row.tier())).setEntityName(orEmpty(row.entity()))
+            .setEntityId(RowJson.keyText(row.id())).setPresent(row.row() != null);
+        if (row.row() != null) out.setEntityJson(RowJson.textOf(row.row()));
+        return out.build();
+    }
+
+    private static String orEmpty(String text) { return text == null ? "" : text; }
 
     // ── the server's side ───────────────────────────────────────────────────
 

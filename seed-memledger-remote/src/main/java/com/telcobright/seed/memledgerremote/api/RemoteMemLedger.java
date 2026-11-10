@@ -28,6 +28,7 @@ import com.telcobright.seed.memledgerremote.wire.ReloadFailure;
 import com.telcobright.seed.memledgerremote.wire.ReloadReply;
 import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.switchledger.spi.AnswersWithin;
+import com.telcobright.seed.switchledger.spi.ExpectingLedger;
 import com.telcobright.seed.switchledger.spi.GhostFreeReloads;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptors;
@@ -53,10 +54,12 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>ARCH-0118 · Two applications on one instance: what the server does is asked ONCE when the client connects (Health's
  * capabilities). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
- * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. An older server (no capabilities)
- * keeps today's client-side rule, said once in the log.
+ * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. A server that checks the rows a
+ * batch read ({@code expect}) is an {@link ExpectingLedger}: a unit's batch carries each row it read as {@code RowJson.textOf} writes it,
+ * and a row the other application moved meanwhile is a STALE refusal (the engine's LedgerFault in the server's words). An older server
+ * (no capabilities) keeps today's client-side ghost rule and is sent no rows as read, said once in the log.
  */
-public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads {
+public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger {
 
     /** A whole table may come back in one stream's messages; a batch of many rows in one: room for both. */
     public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
@@ -103,6 +106,9 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     /** S1 · The server's reload takes out its own ghosts, under a gate no write passes: the engine must not take any out. */
     @Override public boolean takesOutGhosts() { return capabilities.contains(Capabilities.GHOSTS); }
 
+    /** S2 · The server checks the rows a batch read, under the batch's row locks. */
+    @Override public boolean checksExpectations() { return capabilities.contains(Capabilities.EXPECT); }
+
     // ── the eight methods the engine calls ──────────────────────────────────
 
     @Override
@@ -130,8 +136,13 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
 
     /** THE write: the batch whole or not at all; a refusal is the answer the embedded ledger gives (not success, its words). */
     @Override
-    public EntityResponse execCrud(WALEntryBatch batch) {
-        ApplyReply reply = calls.apply(WireBatch.requestOf(batch));
+    public EntityResponse execCrud(WALEntryBatch batch) { return answerOf(calls.apply(WireBatch.requestOf(batch))); }
+
+    /** S2 · THE write with the rows its unit read: one not as read = STALE, an error answer in the server's words, nothing changed. */
+    @Override
+    public EntityResponse execCrud(WALEntryBatch batch, List<AsRead> asRead) { return answerOf(calls.apply(WireExpectations.requestOf(batch, asRead))); }
+
+    private static EntityResponse answerOf(ApplyReply reply) {
         return reply.getApplied() > 0 ? EntityResponse.success(null, reply.getMessage()) : EntityResponse.error(reply.getMessage());
     }
 
