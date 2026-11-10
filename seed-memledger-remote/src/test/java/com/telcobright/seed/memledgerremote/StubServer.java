@@ -20,7 +20,10 @@ import com.telcobright.seed.memledgerremote.wire.EntityTable;
 import com.telcobright.seed.memledgerremote.wire.HealthReply;
 import com.telcobright.seed.memledgerremote.wire.MemLedgerGrpc;
 import com.telcobright.seed.memledgerremote.wire.Nothing;
+import com.telcobright.seed.memledgerremote.wire.ReloadReply;
+import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.memledgerremote.wire.StatisticsReply;
+import com.telcobright.memledger.api.ReloadResult;
 import com.telcobright.seed.switchledger.internal.LedgerEntities;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
@@ -43,11 +46,16 @@ import java.util.concurrent.TimeUnit;
  * wire in front of a REAL MemLedger (the switch ledger's lab) on a loopback grpc-netty-shaded server (127.0.0.1, an ephemeral port),
  * behind the bearer guard with a token minted for this run. It can be told to behave badly: {@link #faultEveryWrite}, or to answer a
  * write only after a wait ({@link #stallTheFirstTryOfEachBatch}, {@link #stallEveryWrite}) — what a client must survive.
+ *
+ * <p>It is an OLDER server (ARCH-0118): its Health says no capabilities, its reload is mem-ledger's own (no ghost taken out), and it
+ * reads no rows as read — it only notes how many each write carried ({@link #rowsAsReadSeen}).
  */
 final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCloseable {
 
     final String token = UUID.randomUUID().toString();
     final List<String> writesSeen = new CopyOnWriteArrayList<>();
+    /** ARCH-0118 · How many rows as read ({@code expects}) each write carried, in the order seen. */
+    final List<Integer> rowsAsReadSeen = new CopyOnWriteArrayList<>();
     private final MemLedger ledger;
     private final Server server;
     private final Set<String> applied = ConcurrentHashMap.newKeySet();
@@ -78,6 +86,7 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     @Override
     public void apply(ApplyRequest request, StreamObserver<ApplyReply> out) {
         writesSeen.add(request.getTransactionId());
+        rowsAsReadSeen.add(request.getExpectsCount());
         if (faultWrites) { out.onError(Status.UNAVAILABLE.withDescription("Batch failed, nothing changed: the stub's WAL would not append").asRuntimeException()); return; }
         if (stallEveryMs > 0) { pause(stallEveryMs); out.onError(Status.UNAVAILABLE.withDescription("stalled").asRuntimeException()); return; }
         boolean firstTry = triedOnce.add(request.getTransactionId());
@@ -135,6 +144,15 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
         }
     }
 
+    /** An older server's reload: mem-ledger's own, add-only — no ghost taken out, none counted. */
+    @Override
+    public void reloadNewRows(ReloadRequest request, StreamObserver<ReloadReply> out) {
+        ReloadResult read = ledger.reloadNewRows();
+        out.onNext(ReloadReply.newBuilder().setAdded(read.added()).setScanned(read.scanned()).addAllKeptNotRead(read.keptNotRead()).build());
+        out.onCompleted();
+    }
+
+    /** An older server's Health: no capabilities. */
     @Override
     public void health(Nothing request, StreamObserver<HealthReply> out) {
         HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub");
