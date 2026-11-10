@@ -345,7 +345,19 @@ public final class BootstrapRoad implements AutoCloseable {
     private String describe(RootResources r) {
         String tree = trees.snapshot(r.root()).map(t -> "tree v" + t.version()).orElse("NO TREE");
         String db = r.switchDb() == null ? "" : " on " + LogText.maskPassword(r.switchDb().url()) + " schema " + r.switchDb().schema();
-        return r.root() + ": " + tree + ", doors " + deployment.rulesOf(r.root()) + ", ledger " + r.ledger().kind() + db + ", CDR " + cdrTopicOf(r.root())
-            + " on " + r.kafka().bootstrap() + ", redis " + LogText.maskPassword(r.redisUrl()) + ", dir " + r.dir();
+        return r.root() + ": " + tree + ", doors " + deployment.rulesOf(r.root()) + ", ledger " + r.ledger().kind() + storeOf(r.ledger()) + db + ", CDR "
+            + cdrTopicOf(r.root()) + " on " + r.kafka().bootstrap() + ", redis " + LogText.maskPassword(r.redisUrl()) + ", dir " + r.dir();
+    }
+
+    /**
+     * Remote-fixes item (c) · where a switch ledger's MemLedger is, as its words say it — the start that says it succeeded, so it is the store
+     * that opened ({@code SwitchLedgerMaker.storeOf} reads the same word the same way): {@code (embedded)} when not said, {@code (remote <address>)}
+     * for its server, else {@code (<store>)}. Another kind's words are its own: nothing.
+     */
+    private static String storeOf(RootResources.Ledger ledger) {
+        if (!RootResources.Ledger.SWITCH.equals(ledger.kind())) return "";
+        String said = ledger.word("store");
+        String store = said == null || said.isBlank() ? "embedded" : said.trim().toLowerCase(java.util.Locale.ROOT);
+        return "remote".equals(store) ? " (remote " + String.valueOf(ledger.word("address")).trim() + ")" : " (" + store + ")";
     }
 }
