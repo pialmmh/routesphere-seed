@@ -40,7 +40,6 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -52,8 +51,9 @@ import java.util.concurrent.TimeUnit;
  * ledger's words, nothing changed); a server that does not answer = a {@link RemoteLedgerFault}. {@link #shutdown()} ends this
  * client's use of the server, never the server.
  *
- * <p>ARCH-0118 · Two applications on one instance: what the server does is asked ONCE when the client connects (Health's
- * capabilities). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
+ * <p>ARCH-0118 · Two applications on one instance: what the server does is asked when the client connects (Health's capabilities),
+ * and asked again after the channel's connection changed — a server restarted into another version on the same address is followed
+ * ({@link ServerCapabilities}). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
  * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. A server that checks the rows a
  * batch read ({@code expect}) is an {@link ExpectingLedger}: a unit's batch carries each row it read as {@code RowJson.textOf} writes it,
  * and a row the other application moved meanwhile is a STALE refusal (the engine's LedgerFault in the server's words). An older server
@@ -70,10 +70,10 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     private final Calls calls;
     private final RemoteLedgerSettings settings;
     private final Map<String, Class<?>> entities;
-    private final Set<String> capabilities;
+    private final ServerCapabilities capabilities;
     private volatile boolean shutdown;
 
-    private RemoteMemLedger(ManagedChannel channel, Calls calls, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities, Set<String> capabilities) {
+    private RemoteMemLedger(ManagedChannel channel, Calls calls, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities, ServerCapabilities capabilities) {
         this.channel = channel;
         this.calls = calls;
         this.settings = settings;
@@ -92,11 +92,11 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
         }
     }
 
-    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. The server's capabilities are asked here, once. */
+    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. The server's capabilities are asked here, and again after the channel changed. */
     public static RemoteMemLedger over(ManagedChannel channel, RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
         Channel withBearer = bearer == null ? channel : ClientInterceptors.intercept(channel, new BearerHeader(bearer));
         Calls calls = new Calls(withBearer, settings);
-        return new RemoteMemLedger(channel, calls, settings, entities, ServerCapabilities.askedOf(calls, settings.address()));
+        return new RemoteMemLedger(channel, calls, settings, entities, ServerCapabilities.askedOf(channel, calls, settings.address()));
     }
 
     public RemoteLedgerSettings settings() { return settings; }
@@ -104,10 +104,10 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
     @Override public long slowestAnswerMs() { return settings.deadlineMs(); }
 
     /** S1 · The server's reload takes out its own ghosts, under a gate no write passes: the engine must not take any out. */
-    @Override public boolean takesOutGhosts() { return capabilities.contains(Capabilities.GHOSTS); }
+    @Override public boolean takesOutGhosts() { return capabilities.now().contains(Capabilities.GHOSTS); }
 
     /** S2 · The server checks the rows a batch read, under the batch's row locks. */
-    @Override public boolean checksExpectations() { return capabilities.contains(Capabilities.EXPECT); }
+    @Override public boolean checksExpectations() { return capabilities.now().contains(Capabilities.EXPECT); }
 
     // ── the eight methods the engine calls ──────────────────────────────────
 

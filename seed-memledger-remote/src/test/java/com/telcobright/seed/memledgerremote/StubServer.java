@@ -29,6 +29,7 @@ import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.channel.ChannelOption;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
@@ -48,31 +49,42 @@ import java.util.concurrent.TimeUnit;
  * write only after a wait ({@link #stallTheFirstTryOfEachBatch}, {@link #stallEveryWrite}) — what a client must survive.
  *
  * <p>It is an OLDER server (ARCH-0118): its Health says no capabilities, its reload is mem-ledger's own (no ghost taken out), and it
- * reads no rows as read — it only notes how many each write carried ({@link #rowsAsReadSeen}).
+ * reads no rows as read — it only notes how many each write carried ({@link #rowsAsReadSeen}). Told what to say, its Health says a
+ * newer server's words WITHOUT doing their rules ({@code ServerSwapTest}: what is asserted there is what the client does).
  */
 final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCloseable {
 
-    final String token = UUID.randomUUID().toString();
+    final String token;
     final List<String> writesSeen = new CopyOnWriteArrayList<>();
     /** ARCH-0118 · How many rows as read ({@code expects}) each write carried, in the order seen. */
     final List<Integer> rowsAsReadSeen = new CopyOnWriteArrayList<>();
     private final MemLedger ledger;
+    /** What its Health says it does: nothing unless told (an older server). */
+    private final List<String> says;
     private final Server server;
     private final Set<String> applied = ConcurrentHashMap.newKeySet();
     private final Set<String> triedOnce = ConcurrentHashMap.newKeySet();
     private volatile boolean faultWrites;
     private volatile long stallFirstMs, stallEveryMs;
 
-    StubServer(MemLedger ledger) {
+    StubServer(MemLedger ledger) { this(ledger, 0, UUID.randomUUID().toString(), List.of()); }
+
+    /** On {@code port} (0 = any free one; a port just let go is taken again), taking {@code token}; its Health says {@code says}. */
+    StubServer(MemLedger ledger, int port, String token, List<String> says) {
         this.ledger = ledger;
+        this.token = token;
+        this.says = List.copyOf(says);
         try {
-            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", 0)).addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
+            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", port)).withOption(ChannelOption.SO_REUSEADDR, true)
+                .addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
         } catch (IOException e) {
             throw new IllegalStateException("the stub server did not start", e);
         }
     }
 
     String address() { return "127.0.0.1:" + server.getPort(); }
+
+    int port() { return server.getPort(); }
 
     /** Every write answers UNAVAILABLE and changes nothing (a WAL that would not append). */
     void faultEveryWrite() { faultWrites = true; }
@@ -152,10 +164,10 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
         out.onCompleted();
     }
 
-    /** An older server's Health: no capabilities. */
+    /** An older server's Health: no capabilities — unless told what to say. */
     @Override
     public void health(Nothing request, StreamObserver<HealthReply> out) {
-        HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub");
+        HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub").addAllCapabilities(says);
         for (String tier : ledger.getRegisteredDatabases()) reply.addDatabases(Database.newBuilder().setName(tier).setLoaded(true));
         out.onNext(reply.build());
         out.onCompleted();
