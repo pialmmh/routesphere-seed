@@ -1,5 +1,6 @@
 package com.telcobright.seed.switchledger.internal;
 
+import com.telcobright.seed.switchledger.spi.AnswersWithin;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.seed.sessionflow.api.TierSettlement;
@@ -35,7 +36,8 @@ import java.util.function.Function;
  * move. Every verb is idempotent by its reference: a repeated reserve answers its first result ({@code repeated = true}) and debits
  * nothing; a repeated settle or release answers the first and moves nothing. The account is the tier's own ({@code level.getPackageAccountId()}
  * — none is the refusal {@code NO_ACCOUNT}), in the TIER's own schema. A MemLedger that does not answer is a {@link LedgerFault}, never a
- * refusal. In the process: {@link #slowestAnswerMs()} is 0.
+ * refusal. In the process: {@link #slowestAnswerMs()} is 0; over a MemLedger that is elsewhere (ARCH-0117: {@code ledger.store: remote})
+ * it is that ledger's own bound on one answer ({@link AnswersWithin}).
  */
 public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
@@ -58,6 +60,10 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
         this.catalog = new CatalogIndex(books);
         this.crud = new LedgerCrud(books, locks, this::forgetTheIndexes);
     }
+
+    /** How long one answer of the ledger may take: 0 in the process, the deadline of a ledger that is elsewhere. */
+    @Override
+    public long slowestAnswerMs() { return books.ledger() instanceof AnswersWithin elsewhere ? elsewhere.slowestAnswerMs() : 0; }
 
     /** New rows were merged (a reload, a tier added, a write through the CRUD): the partner index and the catalog are made again on the next ask. */
     private void forgetTheIndexes() {
