@@ -52,6 +52,8 @@ public final class LedgerLab implements AutoCloseable {
     /** The extra entities' tables: made in every schema, those made later too (a tier created live). */
     private final List<String> moreTables = new ArrayList<>();
     private MemLedger ledger;
+    /** ARCH-0117 item 4 · The road the tests reach the ledger by, when one is said ({@link Road}); null = the MemLedger itself. */
+    private Road.Open road;
     /** L2b item 3 · Built as a ledger DB (its entities by name or prefix, its cache-only tables); null = the two tables + the extra ones. */
     private com.telcobright.seed.switchledger.dependencies.LedgerDbSettings ledgerDb;
 
@@ -221,6 +223,7 @@ public final class LedgerLab implements AutoCloseable {
 
     /** L2b 2b · The process dies and starts again: the MemLedger shut down, a new one built over the same database and WAL (it replays, then loads). */
     public MemLedger restart() {
+        closeTheRoad();
         ledger.shutdown();
         return start();
     }
@@ -248,10 +251,65 @@ public final class LedgerLab implements AutoCloseable {
             more.forEach(builder::registerEntity);
         }
         ledger = builder.build();
-        return ledger;
+        road = openTheRoadSaid();
+        return ledger();
     }
 
-    public MemLedger ledger() { return ledger; }
+    /** The lab's ledger as the tests reach it: the MemLedger itself, or what the road said answers for it. */
+    public MemLedger ledger() { return road == null ? ledger : road.ledger(); }
+
+    /** How long one answer of the lab's ledger may take: 0 in the process, the road's deadline when the ledger is reached over one. */
+    public long slowestAnswerMs() { return road == null ? 0 : road.slowestAnswerMs(); }
+
+    // ── the twice-run (ARCH-0117 item 4) ────────────────────────────────────
+
+    /**
+     * A road between the tests and the lab's MemLedger. With none (the default) a test holds the MemLedger itself — the embedded road.
+     * With one, it holds what the road answers for it — a client of a server in front of the SAME MemLedger — so every suite that asks
+     * the lab for its ledger runs over that road unchanged, and its assertions are the proof that the two roads answer the same. A road
+     * is found on the test classpath ({@code ServiceLoader}) and taken only when the system property {@value #ROAD} names it. What the
+     * lab itself looks at (the cache, the WAL, the database) stays the real ledger's: the truth behind either road.
+     */
+    public interface Road {
+
+        String name();
+
+        /** The road open in front of {@code real}; {@code entities} = what the lab registered, by name. */
+        Open open(MemLedger real, Map<String, Class<? extends CacheableEntity>> entities);
+
+        interface Open extends AutoCloseable {
+            MemLedger ledger();
+            long slowestAnswerMs();
+            @Override void close();
+        }
+    }
+
+    public static final String ROAD = "ledger.lab.road";
+
+    private Road.Open openTheRoadSaid() {
+        String said = System.getProperty(ROAD);
+        if (said == null || said.isBlank()) return null;
+        for (Road known : java.util.ServiceLoader.load(Road.class)) if (said.equals(known.name())) return known.open(ledger, registered());
+        throw new IllegalStateException(ROAD + "=" + said + " names no LedgerLab.Road on the test classpath");
+    }
+
+    /** What this lab's ledger registered, by name: its ledger DB's entities, or the two tables and the extra ones. */
+    private Map<String, Class<? extends CacheableEntity>> registered() {
+        Map<String, Class<? extends CacheableEntity>> byName = new LinkedHashMap<>();
+        if (ledgerDb != null) {
+            com.telcobright.seed.switchledger.internal.LedgerEntities.named(ledgerDb).forEach((name, known) -> byName.put(name, known.type()));
+            return byName;
+        }
+        byName.put(Books.ACCOUNT, com.telcobright.seed.switchledger.api.LedgerAccount.class);
+        byName.put(Books.RESERVE, PackageAccountReserve.class);
+        byName.putAll(more);
+        return byName;
+    }
+
+    private void closeTheRoad() {
+        if (road != null) road.close();
+        road = null;
+    }
 
     /** The lab's H2 url: a maker that opens its own MemLedger connects here (P1-E item 6). */
     public String url() { return url; }
@@ -321,6 +379,7 @@ public final class LedgerLab implements AutoCloseable {
 
     @Override
     public void close() {
+        closeTheRoad();
         if (ledger != null) ledger.shutdown();
         sql("SHUTDOWN");
         try (Stream<Path> files = Files.walk(dir)) {

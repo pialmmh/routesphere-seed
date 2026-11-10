@@ -174,6 +174,6 @@ class MemLedgerPortTest {
         assertThat(peeked.get()).isEqualByComparingTo("70");
         assertThat(ledger.balances().balanceOf(tier("res_2", null))).isEmpty();
         assertThat(ledger.balances().balanceOf(tier("res_2", 99L))).isEmpty();
-        assertThat(port.slowestAnswerMs()).as("in the process").isZero();
+        assertThat(port.slowestAnswerMs()).as("0 in the process; the road's deadline when the ledger is reached over one").isEqualTo(lab.slowestAnswerMs());
     }
 }
