@@ -51,25 +51,32 @@ class KitFromBootstrapTest {
         assertThat(w.journalDirs).containsExactly(Path.of("/var/lib/ad-sphere/btcl"), Path.of("/var/lib/ad-sphere/link3"));
     }
 
+    /** A document that names no store: the line exactly as before the remote-fixes round (ad-sphere's ITs and the operators grep it). */
     @Test
     void theStartNamesEveryResourceItGot() {
         BootstrapRoad road = kit().bootstrapRoad().orElseThrow();
         assertThat(road.describe())
-            .contains("btcl: tree v0, doors [listen 10.10.188.2:7070 → btcl], ledger switch (embedded) on jdbc:postgresql://10.10.188.2:5434/routesphere schema btcl,"
+            .contains("btcl: tree v0, doors [listen 10.10.188.2:7070 → btcl], ledger switch on jdbc:postgresql://10.10.188.2:5434/routesphere schema btcl,"
                 + " CDR cdr_btcl on 10.10.188.2:9092, redis redis://10.10.188.2:6379, dir /var/lib/ad-sphere/btcl")
-            .contains("link3: tree v0, doors [listen 10.10.188.2:7071 → link3], ledger switch (embedded) on jdbc:postgresql://10.10.188.2:5434/routesphere schema link3,"
+            .contains("link3: tree v0, doors [listen 10.10.188.2:7071 → link3], ledger switch on jdbc:postgresql://10.10.188.2:5434/routesphere schema link3,"
                 + " CDR cdr_link3 on 10.10.188.2:9092, redis redis://10.10.188.2:6379, dir /var/lib/ad-sphere/link3");
     }
 
-    /** Remote-fixes item (c): the start line names the ledger's store — the window's start check reads it — and, remote, its server's address. */
+    /**
+     * Remote-fixes item (c): the start line names a REMOTE store and its server's address — the window's start check reads it; an embedded
+     * store, said or not, keeps the line it always had (the embedded path behaves exactly as before the round).
+     */
     @Test
-    void theStartLine_namesTheLedgersStore_andARemoteStoresAddress() {
-        w.source.serve(edited(rs -> rootBlock(rs, "btcl").put("ledger",
-            Map.of("kind", "switch", "store", "remote", "address", "10.10.188.2:7410", "deadline-ms", "1000", "token-var", "RECALL_DB_TOKEN"))));
+    void theStartLine_namesARemoteStoreAndItsAddress_andAnEmbeddedOneAsBefore() {
+        w.source.serve(edited(rs -> {
+            rootBlock(rs, "btcl").put("ledger", Map.of("kind", "switch", "store", "remote", "address", "10.10.188.2:7410", "deadline-ms", "1000",
+                "token-var", "RECALL_DB_TOKEN"));
+            rootBlock(rs, "link3").put("ledger", Map.of("kind", "switch", "store", "embedded"));
+        }));
         String line = kit().bootstrapRoad().orElseThrow().describe();
         assertThat(line).contains("btcl: tree v0, doors [listen 10.10.188.2:7070 → btcl], ledger switch (remote 10.10.188.2:7410) on jdbc:postgresql://10.10.188.2:5434/routesphere schema btcl,")
-            .contains("link3: tree v0, doors [listen 10.10.188.2:7071 → link3], ledger switch (embedded) on jdbc:postgresql://10.10.188.2:5434/routesphere schema link3,")
-            .doesNotContain("RECALL_DB_TOKEN");
+            .contains("link3: tree v0, doors [listen 10.10.188.2:7071 → link3], ledger switch on jdbc:postgresql://10.10.188.2:5434/routesphere schema link3,")
+            .doesNotContain("(embedded)").doesNotContain("RECALL_DB_TOKEN");
     }
 
     @Test

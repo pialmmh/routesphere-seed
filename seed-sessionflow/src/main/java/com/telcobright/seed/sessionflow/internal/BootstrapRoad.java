@@ -36,6 +36,8 @@ public final class BootstrapRoad implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(BootstrapRoad.class);
     static final String CDR = "cdr", DOORBELL = "config_event_loader";
+    /** {@code ledger.store}'s default ({@code SwitchLedgerMaker.EMBEDDED}): the MemLedger in this process. */
+    private static final String EMBEDDED_STORE = "embedded";
 
     private final BootstrapSource source;
     private final KitMakers makers;
@@ -350,14 +352,16 @@ public final class BootstrapRoad implements AutoCloseable {
     }
 
     /**
-     * Remote-fixes item (c) · where a switch ledger's MemLedger is, as its words say it — the start that says it succeeded, so it is the store
-     * that opened ({@code SwitchLedgerMaker.storeOf} reads the same word the same way): {@code (embedded)} when not said, {@code (remote <address>)}
-     * for its server, else {@code (<store>)}. Another kind's words are its own: nothing.
+     * Remote-fixes item (c) · where a switch ledger's MemLedger is when it is NOT in this process, as its words say it — the start that says
+     * it succeeded, so it is the store that opened ({@code SwitchLedgerMaker.storeOf} reads the same word the same way): {@code (remote
+     * <address>)} for its server, {@code (<store>)} for another source's word. The embedded store, said or not, adds nothing: its line is
+     * the one it always had, byte for byte (the embedded path behaves exactly as before the round). Another kind's words are its own.
      */
     private static String storeOf(RootResources.Ledger ledger) {
         if (!RootResources.Ledger.SWITCH.equals(ledger.kind())) return "";
         String said = ledger.word("store");
-        String store = said == null || said.isBlank() ? "embedded" : said.trim().toLowerCase(java.util.Locale.ROOT);
+        String store = said == null || said.isBlank() ? EMBEDDED_STORE : said.trim().toLowerCase(java.util.Locale.ROOT);
+        if (EMBEDDED_STORE.equals(store)) return "";
         return "remote".equals(store) ? " (remote " + String.valueOf(ledger.word("address")).trim() + ")" : " (" + store + ")";
     }
 }
