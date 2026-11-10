@@ -101,6 +101,12 @@
                 <artifactId>seed-switch-ledger</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- ARCH-0117: mem-ledger's wire and its client — RemoteMemLedger behind the switch ledger's maker (ledger.store: remote) -->
+            <dependency>
+                <groupId>com.telcobright</groupId>
+                <artifactId>seed-memledger-remote</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.telcobright</groupId>
                 <artifactId>seed-ledger-client</artifactId>

@@ -1,0 +1,113 @@
+// mem-ledger on the wire — ARCH-0117 (the owner 2026-11-09 17:4xZ: "refactor out the existing, working version of mem-ledger into a
+// separate service, that will act like a database server. apps shall use grpc … the same single api that accepts WalEntryBatch and be
+// transaction/atomic"). Design: routesphere docs/architecture/mem-ledger-as-a-database-server-2026-11-09.md §2.
+//
+// The surface is mem-ledger's own (f739824, com.telcobright.memledger.api.MemLedger): the eight methods the seed's engine calls, and
+// health(). No money rule is on this wire: the engine (reserve, settle, the locks, the reaper) stays in the application.
+//
+// Frozen since item 1 landed (a change is the architect's): the service name, the method names, the fields of ApplyRequest, WalEntry,
+// ApplyReply and HealthReply with their numbers, and Op's values.
+//
+// Meaning on the wire:
+//  - Apply is THE write: execCrud(WALEntryBatch). Every entry is checked before anything is written; the batch is ONE record of the
+//    WAL; all of it or none. A REFUSAL (a row the cache does not hold, one it already holds, a lock not free, a bad entry) is gRPC
+//    status OK with applied = 0, the ledger's words in message and a refusal_code — nothing changed. A FAULT (the ledger is reloading,
+//    its WAL would not append, it is stopped) is UNAVAILABLE or INTERNAL.
+//  - A batch is known by its transaction_id: the same id sent again answers already_applied = true and writes nothing twice (the
+//    client repeats a batch ONCE after a deadline, under the same id).
+//  - A row is entity_json: a JSON object of the row's fields by their Java names, as the registered entity class declares them; money
+//    is DECIMAL TEXT inside it (BigDecimal.toPlainString, its scale kept), never a float or a double; a date is ISO-8601 text; an
+//    absent field is null. Both sides decode it into the class registered under entity_name.
+//  - entity_id is the row's key as text (a number, a call's uuid, a product key); the server reads it as the key type of the class.
+//  - Reads answer what the cache holds now; the application is the ONE writer of its ledger, so what it read is what it will change.
+syntax = "proto3";
+
+package telcobright.memledger.v1;
+
+option java_package = "com.telcobright.seed.memledgerremote.wire";
+option java_multiple_files = true;
+option java_outer_classname = "MemLedgerProto";
+
+service MemLedger {
+  rpc Apply               (ApplyRequest)  returns (ApplyReply);        // execCrud(WALEntryBatch): all or nothing, one WAL record
+  rpc GetEntity           (EntityKey)     returns (EntityReply);       // getEntity(db, entity, id): the cache's row, or found = false
+  rpc GetAllEntities      (EntityTable)   returns (stream EntityRow);  // getAllEntities(db, entity): every row the cache holds
+  rpc CacheStatistics     (Nothing)       returns (StatisticsReply);   // getStats().getCacheStatistics()
+  rpc RegisteredDatabases (Nothing)       returns (DatabaseList);      // getRegisteredDatabases()
+  rpc ReloadNewRows       (ReloadRequest) returns (ReloadReply);       // reloadNewRows(): add-only, above each table's mark
+  rpc AddDatabase         (DatabaseName)  returns (AddDatabaseReply);  // addDatabase(schema): a tier created at run time
+  rpc Health              (Nothing)       returns (HealthReply);       // health() + getRegisteredDatabases()
+}
+
+// ── the write ───────────────────────────────────────────────────────────────
+
+message ApplyRequest {
+  string   transaction_id = 1;   // the batch's id; the WAL record's; a repeat under it is answered, never applied twice
+  repeated WalEntry entries = 2; // one row each; the same row twice in one batch is refused
+}
+
+message WalEntry {
+  string db_name     = 1;        // the tier's schema
+  string entity_name = 2;        // the name the entity is registered under (PackageAccount, PackageAccountReserve, …)
+  Op     op          = 3;
+  string entity_id   = 4;        // the row's key as text
+  string entity_json = 5;        // the post-image (INSERT, UPDATE); empty for DELETE
+}
+
+enum Op {
+  OP_UNSPECIFIED = 0;            // refused: a batch says what each entry does
+  INSERT = 1;
+  UPDATE = 2;
+  DELETE = 3;
+}
+
+message ApplyReply {
+  int32  applied         = 1;    // 0 (refused, nothing changed) or the number of entries (all of them)
+  string message         = 2;    // the ledger's words
+  string refusal_code    = 3;    // empty when applied; REFUSED otherwise
+  bool   already_applied = 4;    // this transaction_id was applied before: nothing was written again
+}
+
+// ── the reads ───────────────────────────────────────────────────────────────
+
+message EntityKey   { string db_name = 1; string entity_name = 2; string entity_id = 3; }
+message EntityReply { bool found = 1; string entity_json = 2; }
+
+message EntityTable { string db_name = 1; string entity_name = 2; }
+message EntityRow   { string entity_id = 1; string entity_json = 2; }
+
+message Nothing {}
+
+// The cache's statistics as mem-ledger gives them (a map of maps: cache_contents → schema → entity → count), as JSON.
+message StatisticsReply { string statistics_json = 1; }
+
+message DatabaseList { repeated string names = 1; }
+
+// ── the tiers and the reload ────────────────────────────────────────────────
+
+message ReloadRequest {}
+
+message ReloadReply {
+  int32    added   = 1;                    // entities merged into the cache (add-only)
+  int64    scanned = 2;                    // rows read
+  repeated ReloadFailure failures = 3;     // one per (tier, entity) that could not be read; empty = a complete reload
+  repeated string kept_not_read = 4;       // the entities loaded at the start only: kept as held, not read
+}
+
+message ReloadFailure { string schema = 1; string entity = 2; string reason = 3; }
+
+message DatabaseName { string name = 1; }
+
+message AddDatabaseReply { bool added = 1; string message = 2; }
+
+// ── health ──────────────────────────────────────────────────────────────────
+
+message HealthReply {
+  bool   ready   = 1;                      // initialized, serving, not stopped
+  int64  wal_lag = 2;                      // WAL records appended and not yet written to the database; -1 = not known
+  repeated Database databases = 3;         // every registered tier
+  string persistence = 4;                  // the write-behind: OK | DEGRADED | DEAD
+  string version     = 5;                  // the server's
+}
+
+message Database { string name = 1; bool loaded = 2; }
