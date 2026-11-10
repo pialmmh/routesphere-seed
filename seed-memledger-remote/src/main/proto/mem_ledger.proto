@@ -199,7 +199,9 @@ message LockedRow {
   string entity_json  = 3;
 }
 
-message UnlockRequest { string lock_id = 1; }
+// token: the holder's own (LockReply.token). A lock that is HELD is given back only to its token — a stranger's Unlock, or a late
+// Unlock of an earlier round under the same id, releases nothing (A-0147 A1). A request still WAITING has no token: its id withdraws it.
+message UnlockRequest { string lock_id = 1; string token = 2; }
 message UnlockReply   { bool released = 1; }   // false = nothing of that id was held or waiting (asked twice, a lease that ran out)
 
 // ── the reads ───────────────────────────────────────────────────────────────

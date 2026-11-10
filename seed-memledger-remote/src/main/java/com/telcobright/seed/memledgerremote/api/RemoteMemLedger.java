@@ -182,7 +182,7 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
 
     /** Road 2 · No write will come: the rows go back now. @return false = the server held nothing of that lock any more */
     public boolean unlock(Lease lease) {
-        return calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lease.lockId()).build())).getReleased();
+        return calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lease.lockId()).setToken(lease.token()).build())).getReleased();
     }
 
     // ── ARCH-0119 road 2 as the ENGINE asks it (LeasingLedger): the root's own words decide ──
@@ -216,7 +216,15 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
         };
     }
 
-    @Override public void release(LeasingLedger.Held held) { unlockQuietly(((HeldRows) held).lease.lockId()); }
+    @Override
+    public void release(LeasingLedger.Held held) {
+        Lease lease = ((HeldRows) held).lease;
+        try {
+            unlock(lease);                                                        // with the holder's token: only the holder gives its rows back
+        } catch (RuntimeException notNow) {
+            // the lease ends the lock within a second
+        }
+    }
 
     /** One unit's rows as the server holds them; a row decodes into its registered class, as a read does. */
     private final class HeldRows implements LeasingLedger.Held {
@@ -238,6 +246,7 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
         public <T> T row(String tier, String entity, Object id) { return (T) lease.row(classOf(entity), tier, entity, id); }
     }
 
+    /** After an answer that never arrived: no token is known, so this can only withdraw a request still WAITING; a lock the server granted ends with its lease. */
     private void unlockQuietly(String lockId) {
         try {
             calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lockId).build()));

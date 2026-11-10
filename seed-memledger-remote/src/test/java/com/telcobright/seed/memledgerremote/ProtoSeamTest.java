@@ -131,7 +131,7 @@ class ProtoSeamTest {
         assertThat(numbered(message("LockReply"))).containsExactly("1 granted", "2 refusal_code", "3 message", "4 token", "5 lease_ms", "6 rows");
         assertThat(numbered(message("LockedRow"))).containsExactly("1 key", "2 found", "3 entity_json");
         assertThat(numbered(message("ApplyLockedRequest"))).containsExactly("1 lock_id", "2 token", "3 batch");
-        assertThat(numbered(message("UnlockRequest"))).containsExactly("1 lock_id");
+        assertThat(numbered(message("UnlockRequest"))).containsExactly("1 lock_id", "2 token");
         assertThat(numbered(message("UnlockReply"))).containsExactly("1 released");
         assertThat(message("LockRequest").findFieldByName("rows").getMessageType().getFullName()).as("a row is named as GetEntity names it").isEqualTo("telcobright.memledger.v1.EntityKey");
         assertThat(message("ApplyLockedRequest").findFieldByName("batch").getMessageType().getFullName()).as("the batch is Apply's own").isEqualTo("telcobright.memledger.v1.ApplyRequest");
