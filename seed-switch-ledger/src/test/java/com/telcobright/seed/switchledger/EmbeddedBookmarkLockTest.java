@@ -1,6 +1,10 @@
 package com.telcobright.seed.switchledger;
 
+import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.PartnerType;
+import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
+import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.rtc.domainmodel.nonentity.Tenant;
 import com.telcobright.seed.sessionflow.api.Deployment;
 import com.telcobright.seed.sessionflow.api.RootResources;
 import com.telcobright.seed.sessionflow.dependencies.RoutesphereSettings;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import javax.sql.DataSource;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -91,6 +96,57 @@ class EmbeddedBookmarkLockTest {
 
         try (Connection recallDb = PgTiersLab.connect()) {
             assertThat(PgTiersLab.takeTheBookmarkLockAsRecallDb(recallDb, "btcl")).as("given back: the failed build holds nothing").isTrue();
+        }
+    }
+
+    /**
+     * The remote-fixes closing (the review of item (b)): mem-ledger's shutdown() waits 5 s for its WAL consumer and then returns even if the
+     * consumer is still inside a batch — the batch that moves the bookmark row. The lock is given back only once that consumer has ended:
+     * while it still writes, recall-db cannot take the row.
+     */
+    @Test
+    void aConsumerStillWritingAfterTheShutdown_keepsTheLockUntilItEnds() throws Exception {
+        try (Connection c = PgTiersLab.connect(); Statement s = c.createStatement()) {
+            s.execute("INSERT INTO btcl.packageaccount (id_packageaccount, balanceAfter, balanceBefore, id_PackagePurchase, lastAmount, name, uom)"
+                + " VALUES (11, 100, 100, 1, 0, 'cash', 'BDT')");
+        }
+        LedgerPort ledger = openEmbedded();
+        try (Connection blocker = PgTiersLab.connect()) {
+            blocker.setAutoCommit(false);
+            blocker.createStatement().execute("LOCK TABLE btcl.packageaccount IN ACCESS EXCLUSIVE MODE");
+            assertThat(ledger.reserve(levelOf(11), BigDecimal.ONE, "s-1#L0")).as("held in the cache; its WAL record waits for the consumer").isPresent();
+            PgTiersLab.await("the WAL consumer's batch waits on the locked table", () -> sessionsWaitingOnALock() > 0);
+
+            ((AutoCloseable) ledger).close();                                        // shutdown() waits 5 s, then returns: the consumer still runs
+
+            try (Connection recallDb = PgTiersLab.connect()) {
+                assertThat(PgTiersLab.takeTheBookmarkLockAsRecallDb(recallDb, "btcl")).as("kept while the consumer still writes the bookmark row").isFalse();
+            }
+            blocker.rollback();
+        }
+        PgTiersLab.await("given back once the consumer ended", () -> {
+            try (Connection recallDb = PgTiersLab.connect()) {
+                return PgTiersLab.takeTheBookmarkLockAsRecallDb(recallDb, "btcl");
+            }
+        });
+    }
+
+    private static LevelAdmission levelOf(long accountId) {
+        Partner partner = new Partner();
+        partner.setIdPartner(1);
+        PackageAccount account = new PackageAccount();
+        account.setId(accountId);
+        account.setUom("BDT");
+        LevelAdmission level = new LevelAdmission(0, new Tenant("btcl"), partner, account);
+        level.setRate(BigDecimal.ONE);
+        level.setReservedAmount(BigDecimal.ZERO);
+        return level;
+    }
+
+    private static int sessionsWaitingOnALock() throws SQLException {
+        try (Connection c = PgTiersLab.connect(); Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT count(*) FROM pg_stat_activity WHERE datname = '" + PgTiersLab.DATABASE + "' AND wait_event_type = 'Lock'")) {
+            return rs.next() ? rs.getInt(1) : 0;
         }
     }
 

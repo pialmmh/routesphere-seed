@@ -189,17 +189,49 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     /**
      * The MemLedger shut down, once (its own flag makes a second close nothing); the merges stopped first; what it held given back last —
-     * only after a shutdown that returned (one that throws may leave its WAL consumer writing the bookmark row: the process's end gives it back).
+     * only after a shutdown that returned (one that throws may leave its WAL consumer writing the bookmark row: the process's end gives it
+     * back), and only once its WAL consumer has ended ({@link #giveBackOnceItsConsumerEnded}).
      */
     @Override
     public void close() {
         merges.close();
         memLedger.shutdown();
+        giveBackOnceItsConsumerEnded(memLedger, heldForItsLife);
+    }
+
+    /**
+     * What a MemLedger held for its life (the embedded store's bookmark lock), given back once the ledger is down AND its WAL consumer — the
+     * writer of the bookmark row — has ended: at once when it has; else said as an ERROR and given back by a keeper the moment that consumer
+     * ends (the process's end gives it back too). mem-ledger's shutdown returns after 5 s even while its consumer is inside a batch.
+     */
+    public static void giveBackOnceItsConsumerEnded(MemLedger memLedger, AutoCloseable heldForItsLife) {
+        if (heldForItsLife == null) return;
+        Optional<Thread> consumer = LedgerConsumer.stillRunning(memLedger);
+        if (consumer.isEmpty()) {
+            release(heldForItsLife);
+            return;
+        }
+        log.error("the MemLedger's WAL consumer ({}) still writes after its shutdown returned: what the ledger held — its bookmark lock — is given back only"
+            + " when that consumer ends (until then no other ledger, recall-db included, takes the bookmark row)", consumer.get().getName());
+        Thread.ofPlatform().daemon().name("bookmark-lock-keeper").start(() -> releaseAfter(consumer.get(), heldForItsLife));
+    }
+
+    private static void releaseAfter(Thread consumer, AutoCloseable heldForItsLife) {
+        boolean interrupted = false;
+        while (consumer.isAlive()) {
+            try {
+                consumer.join();
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        log.info("the MemLedger's WAL consumer ({}) ended: what the ledger held is given back", consumer.getName());
         release(heldForItsLife);
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
     /** What a MemLedger held for its life, given back once it is down; a failure is said, never thrown (the shutdown is done). */
-    public static void release(AutoCloseable heldForItsLife) {
+    private static void release(AutoCloseable heldForItsLife) {
         if (heldForItsLife == null) return;
         try {
             heldForItsLife.close();

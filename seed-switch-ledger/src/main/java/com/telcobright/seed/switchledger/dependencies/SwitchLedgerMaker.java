@@ -141,7 +141,7 @@ public final class SwitchLedgerMaker implements LedgerMaker {
                 ledgerDb == null ? null : LedgerDb.of(ledgerDb), opened.heldForItsLife());
         } catch (Throwable failed) {
             memLedger.shutdown();
-            OwnedMemLedgerPort.release(opened.heldForItsLife());
+            OwnedMemLedgerPort.giveBackOnceItsConsumerEnded(memLedger, opened.heldForItsLife());
             throw failed;
         }
     }

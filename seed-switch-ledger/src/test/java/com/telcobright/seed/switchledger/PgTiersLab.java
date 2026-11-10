@@ -67,6 +67,19 @@ public final class PgTiersLab {
         }
     }
 
+    /** A condition the lab waits for (at most 20 s, every 100 ms); not met = the test fails, naming it. */
+    public static void await(String what, Condition condition) throws Exception {
+        long until = System.nanoTime() + 20_000_000_000L;
+        while (!condition.met()) {
+            if (System.nanoTime() > until) throw new AssertionError("not within 20 s: " + what);
+            Thread.sleep(100);
+        }
+    }
+
+    /** What the lab waits for. */
+    @FunctionalInterface
+    public interface Condition { boolean met() throws Exception; }
+
     /**
      * recall-db's bookmark lock, taken exactly as recall-db takes it (master 5534e69, {@code InstanceLock.take}/{@code tryLock}):
      * {@code SELECT pg_try_advisory_lock(hashtext('recall-db-bookmark:' || <first schema>))} on {@code session}. True = taken.
