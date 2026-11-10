@@ -66,6 +66,28 @@ public final class RowJson {
     /** A key as the wire carries it; none = empty text. */
     public static String keyText(Object key) { return key == null ? "" : String.valueOf(key); }
 
+    /**
+     * ARCH-0118 S2 · How a row the cache holds differs from the SAME row as a client read it ({@code asRead}: its JSON, as
+     * {@link #textOf} writes a row): null = the same; else words naming the FIRST field that differs, in the class's order. A decimal is
+     * compared by its value ({@code compareTo}: 10 = 10.000000), every other field by {@code equals}. A field one side has and the other
+     * lacks, or a value that is not its field's type, is no difference but an {@link IllegalArgumentException} naming it: the two sides
+     * hold different classes, and a ledger does not guess. ONE helper: the server checks a batch's expectations with it, and a row's own
+     * round trip is the same by it (so one client alone never reads a stale row of its own).
+     */
+    public static String differenceFrom(Object held, String asRead) {
+        if (held == null) throw new IllegalArgumentException("no row held to compare");
+        Class<?> type = held.getClass();
+        JsonNode read = parsed(type, asRead);
+        Map<String, Field> fields = fieldsOf(type);
+        requireTheSameFields(type, fields, read);
+        for (Field f : fields.values()) {
+            Object was = valueOf(f, read.get(f.getName()));
+            Object is = valueIn(held, f);
+            if (!sameValue(is, was)) return f.getName() + " is " + said(is) + ", the batch read " + said(was);
+        }
+        return null;
+    }
+
     // ── out ─────────────────────────────────────────────────────────────────
 
     private static void put(ObjectNode node, Field f, Object value) {
@@ -113,6 +135,24 @@ public final class RowJson {
         }
         throw new IllegalArgumentException(whatOf(f) + " is a " + type.getSimpleName() + ": " + node + " is not one");
     }
+
+    // ── a row as held vs as read ────────────────────────────────────────────
+
+    private static void requireTheSameFields(Class<?> type, Map<String, Field> fields, JsonNode read) {
+        for (Map.Entry<String, JsonNode> named : read.properties()) {
+            if (!fields.containsKey(named.getKey())) throw new IllegalArgumentException(type.getSimpleName() + " has no field '" + named.getKey() + "' (its fields: " + fields.keySet() + ")");
+        }
+        for (String name : fields.keySet()) {
+            if (!read.has(name)) throw new IllegalArgumentException("the row as read names no '" + name + "' of " + type.getSimpleName() + ": a field one side lacks is not compared");
+        }
+    }
+
+    private static boolean sameValue(Object is, Object was) {
+        if (is instanceof BigDecimal a && was instanceof BigDecimal b) return a.compareTo(b) == 0;
+        return java.util.Objects.equals(is, was);
+    }
+
+    private static String said(Object value) { return value instanceof BigDecimal d ? d.toPlainString() : String.valueOf(value); }
 
     private static Object fromText(Class<?> type, String text) {
         if (type == String.class) return text;

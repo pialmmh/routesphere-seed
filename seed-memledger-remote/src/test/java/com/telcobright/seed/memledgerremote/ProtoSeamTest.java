@@ -2,12 +2,14 @@ package com.telcobright.seed.memledgerremote;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.telcobright.seed.memledgerremote.api.Capabilities;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
 import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
 import com.telcobright.seed.memledgerremote.wire.HealthReply;
 import com.telcobright.seed.memledgerremote.wire.MemLedgerGrpc;
 import com.telcobright.seed.memledgerremote.wire.MemLedgerProto;
 import com.telcobright.seed.memledgerremote.wire.Op;
+import com.telcobright.seed.memledgerremote.wire.ReloadReply;
 import com.telcobright.seed.memledgerremote.wire.WalEntry;
 import io.grpc.MethodDescriptor;
 import io.grpc.ServiceDescriptor;
@@ -22,6 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * own surface: {@code Apply} = {@code execCrud(WALEntryBatch)}, the only write), the fields of {@code ApplyRequest} and {@code WalEntry}
  * with their numbers, the three operations a batch may carry (f739824 accepts exactly INSERT, UPDATE, DELETE), the answer's four fields,
  * and no float or double anywhere (a row's money travels inside {@code entity_json} as decimal text).
+ *
+ * <p>ARCH-0118 item 1 — two writers on one instance, ADDITIVE in both directions (every old number unchanged): the rows a batch read
+ * travel with it ({@code ApplyRequest.expects = 3}, one {@code Expectation} per row), the reload says the ghosts the server took out
+ * ({@code ReloadReply.ghosts_taken_out = 5}), Health says what the server does ({@code HealthReply.capabilities = 6}).
  */
 class ProtoSeamTest {
 
@@ -44,7 +50,7 @@ class ProtoSeamTest {
 
     @Test
     void theBatchAndItsEntriesKeepTheirFieldNumbers() {
-        assertThat(numbered(ApplyRequest.getDescriptor())).containsExactly("1 transaction_id", "2 entries");
+        assertThat(numbered(ApplyRequest.getDescriptor())).containsExactly("1 transaction_id", "2 entries", "3 expects");
         assertThat(numbered(WalEntry.getDescriptor())).containsExactly("1 db_name", "2 entity_name", "3 op", "4 entity_id", "5 entity_json");
         assertThat(WalEntry.getDescriptor().findFieldByName("entity_id").getType()).as("an id is text: a number, a call's uuid, a product key").isEqualTo(FieldDescriptor.Type.STRING);
         assertThat(WalEntry.getDescriptor().findFieldByName("entity_json").getType()).isEqualTo(FieldDescriptor.Type.STRING);
@@ -60,8 +66,32 @@ class ProtoSeamTest {
     @Test
     void theAnswersKeepTheirFieldNumbers() {
         assertThat(numbered(ApplyReply.getDescriptor())).containsExactly("1 applied", "2 message", "3 refusal_code", "4 already_applied");
-        assertThat(numbered(HealthReply.getDescriptor())).containsExactly("1 ready", "2 wal_lag", "3 databases", "4 persistence", "5 version");
+        assertThat(numbered(HealthReply.getDescriptor())).containsExactly("1 ready", "2 wal_lag", "3 databases", "4 persistence", "5 version", "6 capabilities");
+        assertThat(numbered(ReloadReply.getDescriptor())).containsExactly("1 added", "2 scanned", "3 failures", "4 kept_not_read", "5 ghosts_taken_out");
         assertThat(numbered(MemLedgerProto.getDescriptor().findMessageTypeByName("Database"))).containsExactly("1 name", "2 loaded");
+    }
+
+    /** ARCH-0118 · A row as the client READ it travels with the batch that changes what it read; {@code present = false} = it saw none. */
+    @Test
+    void theRowsABatchReadTravelWithIt_oneExpectationPerRow() {
+        Descriptor expectation = MemLedgerProto.getDescriptor().findMessageTypeByName("Expectation");
+        assertThat(expectation).as("the message Expectation").isNotNull();
+        assertThat(numbered(expectation)).containsExactly("1 db_name", "2 entity_name", "3 entity_id", "4 present", "5 entity_json");
+        assertThat(expectation.findFieldByName("present").getType()).isEqualTo(FieldDescriptor.Type.BOOL);
+        assertThat(expectation.findFieldByName("entity_json").getType()).as("the row as JSON of its fields, as WalEntry's").isEqualTo(FieldDescriptor.Type.STRING);
+        FieldDescriptor expects = ApplyRequest.getDescriptor().findFieldByName("expects");
+        assertThat(expects.isRepeated()).isTrue();
+        assertThat(expects.getMessageType().getFullName()).isEqualTo("telcobright.memledger.v1.Expectation");
+    }
+
+    /** ARCH-0118 · What the server does, said in Health: a word per capability; the reload's ghosts as a count. */
+    @Test
+    void healthSaysTheServersCapabilities_asWords_andTheReloadCountsTheGhostsItTookOut() {
+        FieldDescriptor capabilities = HealthReply.getDescriptor().findFieldByName("capabilities");
+        assertThat(capabilities.isRepeated()).isTrue();
+        assertThat(capabilities.getType()).isEqualTo(FieldDescriptor.Type.STRING);
+        assertThat(ReloadReply.getDescriptor().findFieldByName("ghosts_taken_out").getType()).isEqualTo(FieldDescriptor.Type.INT32);
+        assertThat(List.of(Capabilities.GHOSTS, Capabilities.EXPECT)).as("the words both sides send and read").containsExactly("ghosts", "expect");
     }
 
     @Test

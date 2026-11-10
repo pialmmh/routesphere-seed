@@ -15,8 +15,9 @@ import java.util.List;
  * Words: {@code address} (host:port, required), {@code deadline-ms} (2000 unless said), {@code token-var} (required: the NAME of the
  * environment variable holding the bearer — read ONCE here, handed to the client, never logged; an empty variable refuses the start
  * naming the variable, never a value), {@code start-wait-ms} (30000 unless said; 0 = one try): how long the start waits for the server's
- * FIRST answer — a server just started may not serve yet ({@link StartWait}). A tier of the root's tree the server does not hold yet is
- * added at the start; a server that does not answer within the wait refuses the start in words.
+ * FIRST answer — a server just started may not serve yet ({@link StartWait}). Once it answered, the server is asked what it does
+ * (Health's capabilities, ARCH-0118: {@code ghosts}, {@code expect}; none = an older server, said in the log). A tier of the root's tree
+ * the server does not hold yet is added at the start; a server that does not answer within the wait refuses the start in words.
  */
 public final class RemoteMemLedgerSource implements MemLedgerSource {
 
@@ -33,16 +34,33 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
         RemoteLedgerSettings settings = settingsOf(request);
         String bearer = bearerOf(request, settings.tokenVar());
         long startWaitMs = startWaitMsOf(request);
-        RemoteMemLedger ledger = RemoteMemLedger.connect(settings, bearer, request.entities());
+        RemoteMemLedger ledger = connected(request, settings, bearer);
         try {
             List<String> held = theServersFirstAnswer(ledger, startWaitMs);
+            ledger.whatTheServerDoes();
             addTheTiersTheServerLacks(ledger, request, held);
             log.info("mem-ledger client: the ledger of root {} is the server at {} (deadline {} ms), tiers {}", request.root(), settings.address(), settings.deadlineMs(), request.tiers());
             return ledger;
         } catch (RuntimeException e) {
             ledger.shutdown();
-            throw new IllegalStateException("the root '" + request.root() + "': its ledger does not start — " + e.getMessage(), e);
+            throw doesNotStart(request, e);
         }
+    }
+
+    /**
+     * The client — nothing is sent yet: the server's first answer is waited for ({@link #theServersFirstAnswer}), and only then is the
+     * server asked what it does (ARCH-0118, {@link RemoteMemLedger#whatTheServerDoes()}): a server that does not answer refuses the start.
+     */
+    private static RemoteMemLedger connected(Request request, RemoteLedgerSettings settings, String bearer) {
+        try {
+            return RemoteMemLedger.connect(settings, bearer, request.entities());
+        } catch (RuntimeException e) {
+            throw doesNotStart(request, e);
+        }
+    }
+
+    private static IllegalStateException doesNotStart(Request request, RuntimeException e) {
+        return new IllegalStateException("the root '" + request.root() + "': its ledger does not start — " + e.getMessage(), e);
     }
 
     /** The tiers the server holds — its FIRST answer, waited for up to start-wait-ms (recall-db's unit says "started" before it serves). */

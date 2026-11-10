@@ -14,6 +14,7 @@ import com.telcobright.memledger.api.response.EntityResponse;
 import com.telcobright.seed.memledgerremote.dependencies.RemoteLedgerSettings;
 import com.telcobright.seed.memledgerremote.internal.BearerHeader;
 import com.telcobright.seed.memledgerremote.internal.Calls;
+import com.telcobright.seed.memledgerremote.internal.ServerCapabilities;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
 import com.telcobright.seed.memledgerremote.wire.Database;
 import com.telcobright.seed.memledgerremote.wire.DatabaseName;
@@ -27,6 +28,8 @@ import com.telcobright.seed.memledgerremote.wire.ReloadFailure;
 import com.telcobright.seed.memledgerremote.wire.ReloadReply;
 import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.switchledger.spi.AnswersWithin;
+import com.telcobright.seed.switchledger.spi.ExpectingLedger;
+import com.telcobright.seed.switchledger.spi.GhostFreeReloads;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptors;
 import io.grpc.ManagedChannel;
@@ -37,6 +40,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -47,8 +51,16 @@ import java.util.concurrent.TimeUnit;
  * engine never changes a cached row in place. A batch is {@code Apply}: refused = an answer ({@code EntityResponse.error} with the
  * ledger's words, nothing changed); a server that does not answer = a {@link RemoteLedgerFault}. {@link #shutdown()} ends this
  * client's use of the server, never the server.
+ *
+ * <p>ARCH-0118 · Two applications on one instance: what the server does is asked at the start, once the server answered its first
+ * call (Health's capabilities; a lab's {@link #over} asks at once), and asked again after the channel's connection changed — a server
+ * restarted into another version on the same address is followed ({@link ServerCapabilities}). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
+ * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. A server that checks the rows a
+ * batch read ({@code expect}) is an {@link ExpectingLedger}: a unit's batch carries each row it read as {@code RowJson.textOf} writes it,
+ * and a row the other application moved meanwhile is a STALE refusal (the engine's LedgerFault in the server's words). An older server
+ * (no capabilities) keeps today's client-side ghost rule and is sent no rows as read, said once in the log.
  */
-public final class RemoteMemLedger implements MemLedger, AnswersWithin {
+public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads, ExpectingLedger {
 
     /** A whole table may come back in one stream's messages; a batch of many rows in one: room for both. */
     public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
@@ -59,25 +71,43 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
     private final Calls calls;
     private final RemoteLedgerSettings settings;
     private final Map<String, Class<?>> entities;
+    private final ServerCapabilities capabilities;
     private volatile boolean shutdown;
 
-    private RemoteMemLedger(ManagedChannel channel, Channel withBearer, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities) {
+    private RemoteMemLedger(ManagedChannel channel, Calls calls, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities, ServerCapabilities capabilities) {
         this.channel = channel;
-        this.calls = new Calls(withBearer, settings);
+        this.calls = calls;
         this.settings = settings;
         this.entities = Map.copyOf(entities);
+        this.capabilities = capabilities;
     }
 
-    /** A client of the server at {@code settings.address()}, plaintext on the private mesh; {@code entities} = the classes rows decode into, by name. */
+    /**
+     * A client of the server at {@code settings.address()}, plaintext on the private mesh; {@code entities} = the classes rows decode into,
+     * by name. Nothing is sent here: a server just started may not serve yet, so the start WAITS for its first answer (remote-fixes item
+     * (d), {@code RemoteMemLedgerSource}) and asks the server's capabilities after it ({@link #whatTheServerDoes()}); outside a start they
+     * are asked at their first need — and again after the channel changed.
+     */
     public static RemoteMemLedger connect(RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
         ManagedChannel channel = ManagedChannelBuilder.forTarget(settings.address()).usePlaintext().maxInboundMessageSize(MAX_INBOUND_MESSAGE_BYTES).build();
-        return over(channel, settings, bearer, entities);
+        try {
+            return clientOver(channel, settings, bearer, entities, false);
+        } catch (RuntimeException e) {
+            channel.shutdownNow();
+            throw e;
+        }
     }
 
-    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. */
+    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. The server's capabilities are asked here, and again after the channel changed. */
     public static RemoteMemLedger over(ManagedChannel channel, RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
+        return clientOver(channel, settings, bearer, entities, true);
+    }
+
+    private static RemoteMemLedger clientOver(ManagedChannel channel, RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities, boolean askNow) {
         Channel withBearer = bearer == null ? channel : ClientInterceptors.intercept(channel, new BearerHeader(bearer));
-        return new RemoteMemLedger(channel, withBearer, settings, entities);
+        Calls calls = new Calls(withBearer, settings);
+        ServerCapabilities capabilities = askNow ? ServerCapabilities.askedOf(channel, calls, settings.address()) : ServerCapabilities.followedOn(channel, calls, settings.address());
+        return new RemoteMemLedger(channel, calls, settings, entities, capabilities);
     }
 
     public RemoteLedgerSettings settings() { return settings; }
@@ -86,6 +116,15 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
 
     /** The channel tries to connect again NOW, not after its own backoff (the start's wait: the server may have just come up). */
     public void reconnectNow() { channel.resetConnectBackoff(); }
+
+    /** What the server of this connection says it does (Health's capabilities) — the start asks it once the server answered its first call. */
+    public Set<String> whatTheServerDoes() { return capabilities.now(); }
+
+    /** S1 · The server's reload takes out its own ghosts, under a gate no write passes: the engine must not take any out. */
+    @Override public boolean takesOutGhosts() { return capabilities.now().contains(Capabilities.GHOSTS); }
+
+    /** S2 · The server checks the rows a batch read, under the batch's row locks. */
+    @Override public boolean checksExpectations() { return capabilities.now().contains(Capabilities.EXPECT); }
 
     // ── the eight methods the engine calls ──────────────────────────────────
 
@@ -114,8 +153,13 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
 
     /** THE write: the batch whole or not at all; a refusal is the answer the embedded ledger gives (not success, its words). */
     @Override
-    public EntityResponse execCrud(WALEntryBatch batch) {
-        ApplyReply reply = calls.apply(WireBatch.requestOf(batch));
+    public EntityResponse execCrud(WALEntryBatch batch) { return answerOf(calls.apply(WireBatch.requestOf(batch))); }
+
+    /** S2 · THE write with the rows its unit read: one not as read = STALE, an error answer in the server's words, nothing changed. */
+    @Override
+    public EntityResponse execCrud(WALEntryBatch batch, List<AsRead> asRead) { return answerOf(calls.apply(WireExpectations.requestOf(batch, asRead))); }
+
+    private static EntityResponse answerOf(ApplyReply reply) {
         return reply.getApplied() > 0 ? EntityResponse.success(null, reply.getMessage()) : EntityResponse.error(reply.getMessage());
     }
 
@@ -133,12 +177,13 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
         return List.copyOf(calls.call("RegisteredDatabases", s -> s.registeredDatabases(Nothing.getDefaultInstance())).getNamesList());
     }
 
+    /** The rows merged, less the ghosts the server took out again at once (0 from an older server). */
     @Override
     public ReloadResult reloadNewRows() {
         ReloadReply reply = calls.call("ReloadNewRows", s -> s.reloadNewRows(ReloadRequest.getDefaultInstance()));
         List<ReloadResult.Failure> failures = new ArrayList<>();
         for (ReloadFailure f : reply.getFailuresList()) failures.add(new ReloadResult.Failure(f.getSchema(), f.getEntity(), new IllegalStateException(f.getReason())));
-        return new ReloadResult(reply.getAdded(), reply.getScanned(), failures, reply.getKeptNotReadList());
+        return new ReloadResult(reply.getAdded() - reply.getGhostsTakenOut(), reply.getScanned(), failures, reply.getKeptNotReadList());
     }
 
     @Override

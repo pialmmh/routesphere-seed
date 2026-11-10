@@ -52,6 +52,22 @@ class OrphanReaperTest {
         LedgerLab.await("the write-behind", () -> lab.dbReserveRows("res_2") == 2 && lab.dbBalance("res_2", 11).compareTo(new BigDecimal("90")) == 0);
     }
 
+    /**
+     * ARCH-0118 S3 · Two applications write through one ledger: each one's reaper gives back only the orphans held under its own prefix
+     * ({@code ledger.reserve-prefix}); another application's — or a key with no application's word — is left to its own reaper.
+     */
+    @Test
+    void aReaperWithItsApplicationsPrefix_givesBackOnlyItsOwnOrphans_andLeavesAnotherApplicationsAlone() {
+        lab.reserveRow("res_2", "ad:1#L0", 11, 1, "OTH_ea", "3", at(120)).reserveRow("res_2", "wifi:1#L0", 11, 1, "OTH_ea", "4", at(120)).start();
+        OrphanReaper adSpheres = SwitchLedgers.reaper(lab.ledger(), settings.withReservePrefix("ad:"), clock);
+
+        assertThat(adSpheres.reap("res_2")).as("one orphan is ad-sphere's").isEqualTo(1);
+        assertThat(lab.cachedRow("res_2", "ad:1#L0")).as("its own: given back").isNull();
+        assertThat(lab.cachedRow("res_2", "wifi:1#L0")).as("wifi-sphere's: left to its own reaper").isNotNull();
+        assertThat(lab.cachedRow("res_2", "old-1#L0")).as("a key with no application's word: not ad-sphere's").isNotNull();
+        assertThat(lab.cachedBalance("res_2", 11)).isEqualByComparingTo("73");
+    }
+
     @Test
     void theYoungRowBecomesAnOrphanWhenItAges_pastTheMaxAge() {
         lab.start();

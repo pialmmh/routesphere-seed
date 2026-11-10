@@ -20,12 +20,16 @@ import com.telcobright.seed.memledgerremote.wire.EntityTable;
 import com.telcobright.seed.memledgerremote.wire.HealthReply;
 import com.telcobright.seed.memledgerremote.wire.MemLedgerGrpc;
 import com.telcobright.seed.memledgerremote.wire.Nothing;
+import com.telcobright.seed.memledgerremote.wire.ReloadReply;
+import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.memledgerremote.wire.StatisticsReply;
+import com.telcobright.memledger.api.ReloadResult;
 import com.telcobright.seed.switchledger.internal.LedgerEntities;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.channel.ChannelOption;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
@@ -43,32 +47,47 @@ import java.util.concurrent.TimeUnit;
  * wire in front of a REAL MemLedger (the switch ledger's lab) on a loopback grpc-netty-shaded server (127.0.0.1, an ephemeral port),
  * behind the bearer guard with a token minted for this run. It can be told to behave badly: {@link #faultEveryWrite}, or to answer a
  * write only after a wait ({@link #stallTheFirstTryOfEachBatch}, {@link #stallEveryWrite}) — what a client must survive.
+ *
+ * <p>It is an OLDER server (ARCH-0118): its Health says no capabilities, its reload is mem-ledger's own (no ghost taken out), and it
+ * reads no rows as read — it only notes how many each write carried ({@link #rowsAsReadSeen}). Told what to say, its Health says a
+ * newer server's words WITHOUT doing their rules ({@code ServerSwapTest}: what is asserted there is what the client does).
  */
 final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCloseable {
 
     final String token;
     final List<String> writesSeen = new CopyOnWriteArrayList<>();
+    /** ARCH-0118 · How many rows as read ({@code expects}) each write carried, in the order seen. */
+    final List<Integer> rowsAsReadSeen = new CopyOnWriteArrayList<>();
     private final MemLedger ledger;
+    /** What its Health says it does: nothing unless told (an older server). */
+    private final List<String> says;
     private final Server server;
     private final Set<String> applied = ConcurrentHashMap.newKeySet();
     private final Set<String> triedOnce = ConcurrentHashMap.newKeySet();
     private volatile boolean faultWrites;
     private volatile long stallFirstMs, stallEveryMs;
 
-    StubServer(MemLedger ledger) { this(ledger, 0, UUID.randomUUID().toString()); }
+    StubServer(MemLedger ledger) { this(ledger, 0, UUID.randomUUID().toString(), List.of()); }
 
-    /** On {@code port} (0 = any) with the bearer {@code token}: a server that starts AFTER its client was told both. */
-    StubServer(MemLedger ledger, int port, String token) {
+    /** On {@code port} (0 = any) with the bearer {@code token}: a server that starts AFTER its client was told both (an older server). */
+    StubServer(MemLedger ledger, int port, String token) { this(ledger, port, token, List.of()); }
+
+    /** On {@code port} (0 = any free one; a port just let go is taken again), taking {@code token}; its Health says {@code says}. */
+    StubServer(MemLedger ledger, int port, String token, List<String> says) {
         this.ledger = ledger;
         this.token = token;
+        this.says = List.copyOf(says);
         try {
-            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", port)).addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
+            server = NettyServerBuilder.forAddress(new InetSocketAddress("127.0.0.1", port)).withOption(ChannelOption.SO_REUSEADDR, true)
+                .addService(ServerInterceptors.intercept(this, new BearerGuard(token))).build().start();
         } catch (IOException e) {
             throw new IllegalStateException("the stub server did not start", e);
         }
     }
 
     String address() { return "127.0.0.1:" + server.getPort(); }
+
+    int port() { return server.getPort(); }
 
     /** Every write answers UNAVAILABLE and changes nothing (a WAL that would not append). */
     void faultEveryWrite() { faultWrites = true; }
@@ -82,6 +101,7 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     @Override
     public void apply(ApplyRequest request, StreamObserver<ApplyReply> out) {
         writesSeen.add(request.getTransactionId());
+        rowsAsReadSeen.add(request.getExpectsCount());
         if (faultWrites) { out.onError(Status.UNAVAILABLE.withDescription("Batch failed, nothing changed: the stub's WAL would not append").asRuntimeException()); return; }
         if (stallEveryMs > 0) { pause(stallEveryMs); out.onError(Status.UNAVAILABLE.withDescription("stalled").asRuntimeException()); return; }
         boolean firstTry = triedOnce.add(request.getTransactionId());
@@ -139,9 +159,18 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
         }
     }
 
+    /** An older server's reload: mem-ledger's own, add-only — no ghost taken out, none counted. */
+    @Override
+    public void reloadNewRows(ReloadRequest request, StreamObserver<ReloadReply> out) {
+        ReloadResult read = ledger.reloadNewRows();
+        out.onNext(ReloadReply.newBuilder().setAdded(read.added()).setScanned(read.scanned()).addAllKeptNotRead(read.keptNotRead()).build());
+        out.onCompleted();
+    }
+
+    /** An older server's Health: no capabilities — unless told what to say. */
     @Override
     public void health(Nothing request, StreamObserver<HealthReply> out) {
-        HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub");
+        HealthReply.Builder reply = HealthReply.newBuilder().setReady(true).setWalLag(0).setPersistence("OK").setVersion("stub").addAllCapabilities(says);
         for (String tier : ledger.getRegisteredDatabases()) reply.addDatabases(Database.newBuilder().setName(tier).setLoaded(true));
         out.onNext(reply.build());
         out.onCompleted();

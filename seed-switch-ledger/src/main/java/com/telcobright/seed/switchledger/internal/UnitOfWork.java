@@ -6,6 +6,8 @@ import com.telcobright.core.wal.WALEntryBatch;
 import com.telcobright.memledger.api.MemLedger;
 import com.telcobright.memledger.api.response.EntityResponse;
 import com.telcobright.seed.sessionflow.spi.LedgerPort.LedgerFault;
+import com.telcobright.seed.switchledger.spi.ExpectingLedger;
+import com.telcobright.seed.switchledger.spi.ExpectingLedger.AsRead;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -27,6 +29,13 @@ import java.util.UUID;
  *
  * <p>The images staged are NEW objects (a copy of the cached row with its change): the cached row is never changed in place before the
  * WAL has the record (design §3, A3). Not thread-safe: one unit belongs to one money operation, under the seed's account locks.
+ *
+ * <p>ARCH-0118 S2 · The unit remembers, per row, the FIRST row it read FROM THE LEDGER ({@link #read}; never one read back from its own
+ * staged rows) — or that there was none. Over a ledger that checks them ({@link ExpectingLedger}: a recall-db two applications write
+ * through) the commit sends them with the batch: one that is not what the unit read refuses the whole batch STALE, nothing written —
+ * today's {@link LedgerFault} in the ledger's words, no retry here. Over any other ledger the commit is exactly the one
+ * {@code execCrud(batch)} it always was. Whole-table reads ({@link #rowsAsLeft}) are NOT remembered: what a rule checked over a whole
+ * table (a row that must not exist, a sum) is not guarded against the other writer.
  */
 public final class UnitOfWork {
 
@@ -53,21 +62,29 @@ public final class UnitOfWork {
 
     private final MemLedger ledger;
     private final Map<RowKey, Staged> staged = new LinkedHashMap<>();
+    /** ARCH-0118 S2 · The first row read from the ledger per key (row null = none there), in the order first read. */
+    private final Map<RowKey, AsRead> firstRead = new LinkedHashMap<>();
     private boolean committed;
 
     public UnitOfWork(MemLedger ledger) { this.ledger = ledger; }
 
     // ── reads: the unit first ───────────────────────────────────────────────
 
-    /** The row as this unit will leave it: a row staged here (null when the unit deletes it), else the ledger's cached row. */
+    /** The row as this unit will leave it: a row staged here (null when the unit deletes it), else the ledger's cached row — remembered as read. */
     @SuppressWarnings("unchecked")
     public <T> T read(String tier, String entity, Object id) {
-        Staged row = staged.get(keyOf(tier, entity, id));
+        RowKey key = keyOf(tier, entity, id);
+        Staged row = staged.get(key);
         if (row != null) return row.op == Op.DELETE ? null : (T) row.image;
-        return Books.guarded("read " + entity + " " + id + " of " + tier, () -> ledger.getEntity(tier, entity, id));
+        T cached = Books.guarded("read " + entity + " " + id + " of " + tier, () -> ledger.getEntity(tier, entity, id));
+        firstRead.putIfAbsent(key, new AsRead(tier, entity, id, cached));
+        return cached;
     }
 
-    /** C1 · Every row of {@code entity} in {@code tier} as this unit will leave it: the cached rows, the unit's own moves over them. */
+    /**
+     * C1 · Every row of {@code entity} in {@code tier} as this unit will leave it: the cached rows, the unit's own moves over them. A
+     * whole-table read: its rows are NOT remembered as read (ARCH-0118 — only a row read by its key travels with the batch).
+     */
     public List<Object> rowsAsLeft(String tier, String entity) {
         Map<String, Object> rows = new LinkedHashMap<>();
         Map<?, ?> cached = Books.guarded("list " + entity + " of " + tier, () -> ledger.<Object, CacheableEntity<Object, ?>>getAllEntities(tier, entity));
@@ -150,11 +167,17 @@ public final class UnitOfWork {
         committed = true;
         if (staged.isEmpty()) return;
         WALEntryBatch record = asOneRecord();
-        EntityResponse answer = Books.guarded(what, () -> ledger.execCrud(record));
+        EntityResponse answer = Books.guarded(what, () -> written(record));
         if (answer == null || !answer.isSuccess()) {
             throw new LedgerFault("the ledger refused to " + what + " (" + staged.size() + " row(s) in " + tiers() + "), nothing changed: "
                 + (answer == null ? "no answer" : answer.getMessage()));
         }
+    }
+
+    /** ARCH-0118 S2 · With the rows as read when the ledger checks them; else the one {@code execCrud(batch)}, as always. */
+    private EntityResponse written(WALEntryBatch record) {
+        if (ledger instanceof ExpectingLedger expecting && expecting.checksExpectations()) return expecting.execCrud(record, List.copyOf(firstRead.values()));
+        return ledger.execCrud(record);
     }
 
     private WALEntryBatch asOneRecord() {
