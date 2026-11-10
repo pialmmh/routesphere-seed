@@ -20,6 +20,19 @@
 //    absent field is null. Both sides decode it into the class registered under entity_name.
 //  - entity_id is the row's key as text (a number, a call's uuid, a product key); the server reads it as the key type of the class.
 //  - Reads answer what the cache holds now; the application is the ONE writer of its ledger, so what it read is what it will change.
+//
+// ARCH-0118 (the owner 2026-11-10: "same cached tables … shared used through the same instance by both ad-sphere and wifi-sphere") —
+// TWO writers on one instance, additive in both directions (every number above unchanged; an old client and an old server ignore what
+// they do not know):
+//  - expects (ApplyRequest field 3): the rows the batch's unit READ, each as the client read it (present = false: it saw none). The
+//    server checks them under the rows' locks against what its cache holds; one that differs refuses the WHOLE batch with
+//    refusal_code STALE and words naming the row and the first field that differs — nothing changed. An old client sends none.
+//  - ghosts_taken_out (ReloadReply field 5): the reserve rows the server's own reload brought back and took out at once (a reload is
+//    add-only; a settled reserve whose row the write-behind has not deleted yet is a ghost). Taken under a server-wide gate no write
+//    passes, so another application's new reserve is never one.
+//  - capabilities (HealthReply field 6): what the server does, a word each — "ghosts" (it takes the ghosts out itself: the client must
+//    not), "expect" (it checks expects). A server that says neither is an older one: its client keeps the client-side ghost rule and
+//    sends no expects — one writer per instance.
 syntax = "proto3";
 
 package telcobright.memledger.v1;
@@ -44,6 +57,17 @@ service MemLedger {
 message ApplyRequest {
   string   transaction_id = 1;   // the batch's id; the WAL record's; a repeat under it is answered, never applied twice
   repeated WalEntry entries = 2; // one row each; the same row twice in one batch is refused
+  repeated Expectation expects = 3; // ARCH-0118: the rows the batch read, as read; any one that differs now = STALE, nothing written
+}
+
+// ARCH-0118 · One row as the client READ it before deciding the batch: compared field by field with what the cache holds under the
+// batch's row locks (a decimal by its value, so 10 and 10.000000 are the same; every other field by equality).
+message Expectation {
+  string db_name     = 1;        // the tier's schema
+  string entity_name = 2;        // the name the entity is registered under
+  string entity_id   = 3;        // the row's key as text
+  bool   present     = 4;        // false = the client saw NO such row (an INSERT's premise)
+  string entity_json = 5;        // the row as read (present = true), a JSON object of its fields as in WalEntry; empty when absent
 }
 
 message WalEntry {
@@ -64,7 +88,7 @@ enum Op {
 message ApplyReply {
   int32  applied         = 1;    // 0 (refused, nothing changed) or the number of entries (all of them)
   string message         = 2;    // the ledger's words
-  string refusal_code    = 3;    // empty when applied; REFUSED otherwise
+  string refusal_code    = 3;    // empty when applied; REFUSED otherwise — STALE (ARCH-0118) when a row the batch read is not what it read
   bool   already_applied = 4;    // this transaction_id was applied before: nothing was written again
 }
 
@@ -92,6 +116,7 @@ message ReloadReply {
   int64    scanned = 2;                    // rows read
   repeated ReloadFailure failures = 3;     // one per (tier, entity) that could not be read; empty = a complete reload
   repeated string kept_not_read = 4;       // the entities loaded at the start only: kept as held, not read
+  int32    ghosts_taken_out = 5;           // ARCH-0118: of added, the reserve rows brought back that the server took out again at once
 }
 
 message ReloadFailure { string schema = 1; string entity = 2; string reason = 3; }
@@ -108,6 +133,7 @@ message HealthReply {
   repeated Database databases = 3;         // every registered tier
   string persistence = 4;                  // the write-behind: OK | DEGRADED | DEAD
   string version     = 5;                  // the server's
+  repeated string capabilities = 6;        // ARCH-0118: "ghosts", "expect" — none = an older server (one writer per instance)
 }
 
 message Database { string name = 1; bool loaded = 2; }
