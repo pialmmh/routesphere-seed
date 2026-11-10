@@ -14,6 +14,7 @@ import com.telcobright.memledger.api.response.EntityResponse;
 import com.telcobright.seed.memledgerremote.dependencies.RemoteLedgerSettings;
 import com.telcobright.seed.memledgerremote.internal.BearerHeader;
 import com.telcobright.seed.memledgerremote.internal.Calls;
+import com.telcobright.seed.memledgerremote.internal.ServerCapabilities;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
 import com.telcobright.seed.memledgerremote.wire.Database;
 import com.telcobright.seed.memledgerremote.wire.DatabaseName;
@@ -27,6 +28,7 @@ import com.telcobright.seed.memledgerremote.wire.ReloadFailure;
 import com.telcobright.seed.memledgerremote.wire.ReloadReply;
 import com.telcobright.seed.memledgerremote.wire.ReloadRequest;
 import com.telcobright.seed.switchledger.spi.AnswersWithin;
+import com.telcobright.seed.switchledger.spi.GhostFreeReloads;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptors;
 import io.grpc.ManagedChannel;
@@ -37,6 +39,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -47,8 +50,13 @@ import java.util.concurrent.TimeUnit;
  * engine never changes a cached row in place. A batch is {@code Apply}: refused = an answer ({@code EntityResponse.error} with the
  * ledger's words, nothing changed); a server that does not answer = a {@link RemoteLedgerFault}. {@link #shutdown()} ends this
  * client's use of the server, never the server.
+ *
+ * <p>ARCH-0118 · Two applications on one instance: what the server does is asked ONCE when the client connects (Health's
+ * capabilities). A server that takes out the ghosts of its own reload ({@code ghosts}) is a {@link GhostFreeReloads}: the engine's merge
+ * then takes none out itself, and a reload answers {@code added} less the ghosts the server took out. An older server (no capabilities)
+ * keeps today's client-side rule, said once in the log.
  */
-public final class RemoteMemLedger implements MemLedger, AnswersWithin {
+public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFreeReloads {
 
     /** A whole table may come back in one stream's messages; a batch of many rows in one: room for both. */
     public static final int MAX_INBOUND_MESSAGE_BYTES = 32 * 1024 * 1024;
@@ -59,30 +67,41 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
     private final Calls calls;
     private final RemoteLedgerSettings settings;
     private final Map<String, Class<?>> entities;
+    private final Set<String> capabilities;
     private volatile boolean shutdown;
 
-    private RemoteMemLedger(ManagedChannel channel, Channel withBearer, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities) {
+    private RemoteMemLedger(ManagedChannel channel, Calls calls, RemoteLedgerSettings settings, Map<String, ? extends Class<?>> entities, Set<String> capabilities) {
         this.channel = channel;
-        this.calls = new Calls(withBearer, settings);
+        this.calls = calls;
         this.settings = settings;
         this.entities = Map.copyOf(entities);
+        this.capabilities = capabilities;
     }
 
     /** A client of the server at {@code settings.address()}, plaintext on the private mesh; {@code entities} = the classes rows decode into, by name. */
     public static RemoteMemLedger connect(RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
         ManagedChannel channel = ManagedChannelBuilder.forTarget(settings.address()).usePlaintext().maxInboundMessageSize(MAX_INBOUND_MESSAGE_BYTES).build();
-        return over(channel, settings, bearer, entities);
+        try {
+            return over(channel, settings, bearer, entities);
+        } catch (RuntimeException e) {
+            channel.shutdownNow();
+            throw e;
+        }
     }
 
-    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. */
+    /** A client over a channel made elsewhere (a lab's loopback); {@code bearer} null = no header. The server's capabilities are asked here, once. */
     public static RemoteMemLedger over(ManagedChannel channel, RemoteLedgerSettings settings, String bearer, Map<String, ? extends Class<?>> entities) {
         Channel withBearer = bearer == null ? channel : ClientInterceptors.intercept(channel, new BearerHeader(bearer));
-        return new RemoteMemLedger(channel, withBearer, settings, entities);
+        Calls calls = new Calls(withBearer, settings);
+        return new RemoteMemLedger(channel, calls, settings, entities, ServerCapabilities.askedOf(calls, settings.address()));
     }
 
     public RemoteLedgerSettings settings() { return settings; }
 
     @Override public long slowestAnswerMs() { return settings.deadlineMs(); }
+
+    /** S1 · The server's reload takes out its own ghosts, under a gate no write passes: the engine must not take any out. */
+    @Override public boolean takesOutGhosts() { return capabilities.contains(Capabilities.GHOSTS); }
 
     // ── the eight methods the engine calls ──────────────────────────────────
 
@@ -130,12 +149,13 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin {
         return List.copyOf(calls.call("RegisteredDatabases", s -> s.registeredDatabases(Nothing.getDefaultInstance())).getNamesList());
     }
 
+    /** The rows merged, less the ghosts the server took out again at once (0 from an older server). */
     @Override
     public ReloadResult reloadNewRows() {
         ReloadReply reply = calls.call("ReloadNewRows", s -> s.reloadNewRows(ReloadRequest.getDefaultInstance()));
         List<ReloadResult.Failure> failures = new ArrayList<>();
         for (ReloadFailure f : reply.getFailuresList()) failures.add(new ReloadResult.Failure(f.getSchema(), f.getEntity(), new IllegalStateException(f.getReason())));
-        return new ReloadResult(reply.getAdded(), reply.getScanned(), failures, reply.getKeptNotReadList());
+        return new ReloadResult(reply.getAdded() - reply.getGhostsTakenOut(), reply.getScanned(), failures, reply.getKeptNotReadList());
     }
 
     @Override

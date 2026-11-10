@@ -28,15 +28,28 @@ public final class RemoteMemLedgerSource implements MemLedgerSource {
     public MemLedger open(Request request) {
         RemoteLedgerSettings settings = settingsOf(request);
         String bearer = bearerOf(request, settings.tokenVar());
-        RemoteMemLedger ledger = RemoteMemLedger.connect(settings, bearer, request.entities());
+        RemoteMemLedger ledger = connected(request, settings, bearer);
         try {
             addTheTiersTheServerLacks(ledger, request);
             log.info("mem-ledger client: the ledger of root {} is the server at {} (deadline {} ms), tiers {}", request.root(), settings.address(), settings.deadlineMs(), request.tiers());
             return ledger;
         } catch (RuntimeException e) {
             ledger.shutdown();
-            throw new IllegalStateException("the root '" + request.root() + "': its ledger does not start — " + e.getMessage(), e);
+            throw doesNotStart(request, e);
         }
+    }
+
+    /** The client, which asks the server what it does at once (ARCH-0118): a server that does not answer refuses the start too. */
+    private static RemoteMemLedger connected(Request request, RemoteLedgerSettings settings, String bearer) {
+        try {
+            return RemoteMemLedger.connect(settings, bearer, request.entities());
+        } catch (RuntimeException e) {
+            throw doesNotStart(request, e);
+        }
+    }
+
+    private static IllegalStateException doesNotStart(Request request, RuntimeException e) {
+        return new IllegalStateException("the root '" + request.root() + "': its ledger does not start — " + e.getMessage(), e);
     }
 
     private static void addTheTiersTheServerLacks(RemoteMemLedger ledger, Request request) {
