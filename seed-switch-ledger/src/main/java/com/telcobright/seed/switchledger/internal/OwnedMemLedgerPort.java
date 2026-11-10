@@ -42,6 +42,8 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     private final CoalescedMerges merges;
     /** L2b item 3 · The root's ledger DB (its tables, its signals); null = the two tables, every tree's reload merges (before L2b). */
     private final LedgerDb ledgerDb;
+    /** What the MemLedger holds for its life (the embedded store's bookmark lock), given back after its shutdown; null = nothing. */
+    private final AutoCloseable heldForItsLife;
 
     /**
      * @param tiers  the tier schemas the MemLedger was built over
@@ -62,6 +64,13 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
      * longer re-reads every cached table of every tier).
      */
     public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader, long mergeSpacingMs, LedgerDb ledgerDb) {
+        this(port, memLedger, tiers, loader, mergeSpacingMs, ledgerDb, null);
+    }
+
+    /** Item (b) · The same, owning what the MemLedger holds for its life (the embedded store's bookmark lock): given back after its shutdown. */
+    public OwnedMemLedgerPort(MemLedgerPort port, MemLedger memLedger, Collection<String> tiers, Predicate<String> loader, long mergeSpacingMs, LedgerDb ledgerDb,
+                              AutoCloseable heldForItsLife) {
+        this.heldForItsLife = heldForItsLife;
         this.ledgerDb = ledgerDb;
         this.port = port;
         this.memLedger = memLedger;
@@ -178,11 +187,25 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
     /** The merges of the root's new rows run so far (the operations' view; a test's). */
     public long mergesRun() { return merges.runs(); }
 
-    /** The MemLedger shut down, once (its own flag makes a second close nothing); the merges stopped first. */
+    /**
+     * The MemLedger shut down, once (its own flag makes a second close nothing); the merges stopped first; what it held given back last —
+     * only after a shutdown that returned (one that throws may leave its WAL consumer writing the bookmark row: the process's end gives it back).
+     */
     @Override
     public void close() {
         merges.close();
         memLedger.shutdown();
+        release(heldForItsLife);
+    }
+
+    /** What a MemLedger held for its life, given back once it is down; a failure is said, never thrown (the shutdown is done). */
+    public static void release(AutoCloseable heldForItsLife) {
+        if (heldForItsLife == null) return;
+        try {
+            heldForItsLife.close();
+        } catch (Exception e) {
+            log.warn("what the switch ledger held for its life was not given back cleanly: {}", e.toString());
+        }
     }
 
     private void mergeTheNewRowsAlone() {

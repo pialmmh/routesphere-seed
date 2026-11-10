@@ -14,6 +14,7 @@ import com.telcobright.seed.switchledger.api.LedgerAccount;
 import com.telcobright.seed.switchledger.api.LedgerDb;
 import com.telcobright.seed.switchledger.internal.Books;
 import com.telcobright.seed.switchledger.internal.AddTierLive;
+import com.telcobright.seed.switchledger.internal.BookmarkLock;
 import com.telcobright.seed.switchledger.internal.DriverDataSource;
 import com.telcobright.seed.switchledger.internal.LedgerEntities;
 import com.telcobright.seed.switchledger.internal.MemLedgerPort;
@@ -81,19 +82,39 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         return ownedPortOver(opened, root, context, tiers, columns, ledgerDb);
     }
 
-    /** The root's MemLedger and the entities it must hold exactly (null = the two, and the charges' references when said). */
-    private record Opened(MemLedger memLedger, Set<String> configured) {}
+    /**
+     * The root's MemLedger, the entities it must hold exactly (null = the two, and the charges' references when said), and what it holds for
+     * its life — the embedded store's bookmark lock, given back after its shutdown (null: nothing, the remote store's server holds its own).
+     */
+    private record Opened(MemLedger memLedger, Set<String> configured, AutoCloseable heldForItsLife) {}
 
-    /** The embedded store (the default): a MemLedger in this process over the root's switch database, its WAL and queue in the root's directory. */
+    /**
+     * The embedded store (the default): a MemLedger in this process over the root's switch database, its WAL and queue in the root's directory
+     * — opened only under its bookmark row's lock ({@link BookmarkLock}: recall-db's own, on PostgreSQL), taken BEFORE the MemLedger replays
+     * its WAL or moves the row.
+     */
     private static Opened openEmbedded(RootResources root, javax.sql.DataSource dataSource, Set<String> tiers, LedgerDbSettings ledgerDb) {
-        var builder = MemLedger.builder()
-            .dataSource(dataSource)
-            .databases(tiers.toArray(String[]::new))
-            .replicationMode(ReplicationConfig.Mode.STANDALONE);    // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
-        Set<String> configured = ledgerDb == null ? null : LedgerDb.register(builder, ledgerDb);
-        if (ledgerDb == null) registerTheTwo(builder, root);
-        return new Opened(builder.build(), configured);
+        BookmarkLock bookmark = BookmarkLock.take(dataSource, bookmarkSchemaOf(tiers));
+        try {
+            var builder = MemLedger.builder()
+                .dataSource(dataSource)
+                .databases(tiers.toArray(String[]::new))
+                .replicationMode(ReplicationConfig.Mode.STANDALONE);    // P1-H: ONE writer per root — a second process or mode = two writers of the same money (README)
+            Set<String> configured = ledgerDb == null ? null : LedgerDb.register(builder, ledgerDb);
+            if (ledgerDb == null) registerTheTwo(builder, root);
+            return new Opened(builder.build(), configured, bookmark);
+        } catch (RuntimeException e) {
+            bookmark.close();
+            throw e;
+        }
     }
+
+    /**
+     * The schema of the ledger's bookmark row: the FIRST of its databases (mem-ledger f739824 tracks its WAL consumer there,
+     * {@code MemLedgerImpl.java:111}) — the root's own, as {@link #tierSchemasOf} puts it first and as recall-db's start list puts it first
+     * ({@code PrimeContextTiers.schemas}, {@code ServerWiring.firstOf} → {@code InstanceLock.take}).
+     */
+    private static String bookmarkSchemaOf(Set<String> tiers) { return tiers.iterator().next(); }
 
     /**
      * ARCH-0117 · {@code ledger.store: remote} (any word but {@code embedded}): the MemLedger is elsewhere — the root's mem-ledger server —
@@ -105,17 +126,19 @@ public final class SwitchLedgerMaker implements LedgerMaker {
         MemLedgerSource source = sourceOf(storeOf(root), root);
         Map<String, Class<? extends CacheableEntity<?, ?>>> entities = entitiesByNameOf(root, ledgerDb);
         MemLedger memLedger = source.open(new MemLedgerSource.Request(root.root(), root.ledger()::word, entities, tiers, context.environment()));
-        return new Opened(memLedger, ledgerDb == null ? null : entities.keySet());
+        return new Opened(memLedger, ledgerDb == null ? null : entities.keySet(), null);
     }
 
-    /** The engine over the MemLedger, owning it: a build that fails closes what was opened. */
+    /** The engine over the MemLedger, owning it (and what it holds for its life): a build that fails closes what was opened. */
     private LedgerPort ownedPortOver(Opened opened, RootResources root, Context context, Set<String> tiers, TierColumns columns, LedgerDbSettings ledgerDb) {
         MemLedger memLedger = opened.memLedger();
         try {
             MemLedgerPort port = (MemLedgerPort) SwitchLedgers.over(memLedger, SwitchLedgerSettings.standard(), context.clock(), opened.configured()).port();
-            return new OwnedMemLedgerPort(port, memLedger, tiers, checkedFirst(columns, AddTierLive.of(memLedger)), mergeSpacingMsOf(root), ledgerDb == null ? null : LedgerDb.of(ledgerDb));
+            return new OwnedMemLedgerPort(port, memLedger, tiers, checkedFirst(columns, AddTierLive.of(memLedger)), mergeSpacingMsOf(root),
+                ledgerDb == null ? null : LedgerDb.of(ledgerDb), opened.heldForItsLife());
         } catch (RuntimeException e) {
             memLedger.shutdown();
+            OwnedMemLedgerPort.release(opened.heldForItsLife());
             throw e;
         }
     }

@@ -98,6 +98,14 @@
             <version>${h2.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- the embedded store's bookmark lock on a throwaway PostgreSQL (PgTiersLab; skipped when none listens) — the driver for the tests
+             only (seed-prepaid's version) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.7</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
