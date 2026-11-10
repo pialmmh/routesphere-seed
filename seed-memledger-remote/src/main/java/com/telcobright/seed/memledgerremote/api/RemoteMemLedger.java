@@ -15,7 +15,12 @@ import com.telcobright.seed.memledgerremote.dependencies.RemoteLedgerSettings;
 import com.telcobright.seed.memledgerremote.internal.BearerHeader;
 import com.telcobright.seed.memledgerremote.internal.Calls;
 import com.telcobright.seed.memledgerremote.internal.ServerCapabilities;
+import com.telcobright.seed.memledgerremote.wire.ApplyLockedRequest;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
+import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
+import com.telcobright.seed.memledgerremote.wire.LockReply;
+import com.telcobright.seed.memledgerremote.wire.LockRequest;
+import com.telcobright.seed.memledgerremote.wire.UnlockRequest;
 import com.telcobright.seed.memledgerremote.wire.Database;
 import com.telcobright.seed.memledgerremote.wire.DatabaseName;
 import com.telcobright.seed.memledgerremote.wire.EntityKey;
@@ -125,6 +130,71 @@ public final class RemoteMemLedger implements MemLedger, AnswersWithin, GhostFre
 
     /** S2 · The server checks the rows a batch read, under the batch's row locks. */
     @Override public boolean checksExpectations() { return capabilities.now().contains(Capabilities.EXPECT); }
+
+    // ── ARCH-0119: the two roads ────────────────────────────────────────────
+
+    /** Road 1 · The server computes a PATCHed row itself: one call, no lock on the wire. */
+    public boolean servesAtomic() { return capabilities.now().contains(Capabilities.PATCH); }
+
+    /** Road 2 · The server leases rows between a read and its write. */
+    public boolean servesLeases() { return capabilities.now().contains(Capabilities.LEASE); }
+
+    /**
+     * Road 1 · ONE atomic batch: the server reads, changes, checks and writes. Sent once more under the same id when its deadline
+     * passes — the server answers a repeat, also after its restart, and never applies it twice.
+     */
+    public AtomicAnswer apply(Atomic batch) {
+        requireTheServerServes(servesAtomic(), "road 1 (the capability word '" + Capabilities.PATCH + "')");
+        return AtomicAnswer.of(calls.apply(batch.request()));
+    }
+
+    /**
+     * Road 2 · Lock every row named — all of them or none — and read them as the server holds them.
+     *
+     * @param leaseMs   how long the rows may be held; 0 = the server's default; the server gives 1000 ms at most
+     * @param maxWaitMs how long to wait in the rows' queues; 0 = do not queue
+     * @throws LedgerBusy the rows are busy (a full queue refuses at once): nothing is held
+     */
+    public Lease readForUpdate(List<Lease.Row> rows, int leaseMs, int maxWaitMs) {
+        requireTheServerServes(servesLeases(), "road 2 (the capability word '" + Capabilities.LEASE + "')");
+        String lockId = java.util.UUID.randomUUID().toString();
+        LockRequest.Builder request = LockRequest.newBuilder().setLockId(lockId).setLeaseMs(leaseMs).setMaxWaitMs(maxWaitMs).setClient(settings.address());
+        for (Lease.Row row : rows) request.addRows(EntityKey.newBuilder().setDbName(orEmpty(row.tier())).setEntityName(orEmpty(row.entity())).setEntityId(RowJson.keyText(row.id())));
+        LockReply reply;
+        try {
+            reply = calls.callWaiting("ReadForUpdate", maxWaitMs, s -> s.readForUpdate(request.build()));
+        } catch (RuntimeException noAnswer) {
+            unlockQuietly(lockId);                                                // the server may have given the rows to an answer that never arrived
+            throw noAnswer;
+        }
+        if (!reply.getGranted()) throw new LedgerBusy(reply.getRefusalCode(), reply.getMessage());
+        return new Lease(lockId, reply.getToken(), reply.getLeaseMs(), reply.getRowsList());
+    }
+
+    /** Road 2 · The write under a lock; the lock ends with the answer, whatever the answer is. */
+    public AtomicAnswer apply(Lease lease, ApplyRequest batch) {
+        return AtomicAnswer.of(calls.applyLocked(ApplyLockedRequest.newBuilder().setLockId(lease.lockId()).setToken(lease.token()).setBatch(batch).build()));
+    }
+
+    /** Road 2 · The write under a lock, as the engine builds a batch: whole rows, and the rows it read. */
+    public AtomicAnswer apply(Lease lease, WALEntryBatch batch, List<AsRead> asRead) { return apply(lease, WireExpectations.requestOf(batch, asRead == null ? List.of() : asRead)); }
+
+    /** Road 2 · No write will come: the rows go back now. @return false = the server held nothing of that lock any more */
+    public boolean unlock(Lease lease) {
+        return calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lease.lockId()).build())).getReleased();
+    }
+
+    private void unlockQuietly(String lockId) {
+        try {
+            calls.call("Unlock", s -> s.unlock(UnlockRequest.newBuilder().setLockId(lockId).build()));
+        } catch (RuntimeException notNow) {
+            // the lease ends the lock within a second
+        }
+    }
+
+    private void requireTheServerServes(boolean serves, String what) {
+        if (!serves) throw new IllegalStateException("the mem-ledger server at " + settings.address() + " does not serve " + what + ": it says " + capabilities.now());
+    }
 
     // ── the eight methods the engine calls ──────────────────────────────────
 

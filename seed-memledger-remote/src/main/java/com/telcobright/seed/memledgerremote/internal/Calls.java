@@ -2,6 +2,7 @@ package com.telcobright.seed.memledgerremote.internal;
 
 import com.telcobright.seed.memledgerremote.api.RemoteLedgerFault;
 import com.telcobright.seed.memledgerremote.dependencies.RemoteLedgerSettings;
+import com.telcobright.seed.memledgerremote.wire.ApplyLockedRequest;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
 import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
 import com.telcobright.seed.memledgerremote.wire.MemLedgerGrpc;
@@ -56,6 +57,31 @@ public final class Calls {
             return withinTheDeadline().apply(batch);
         } catch (StatusRuntimeException second) {
             throw unknownOutcome(batch.getTransactionId(), second);
+        }
+    }
+
+    /** ARCH-0119 road 2 · The write under a lock: as {@link #apply}, once more under the same id when the first try's deadline passed. */
+    public ApplyReply applyLocked(ApplyLockedRequest locked) {
+        String id = locked.getBatch().getTransactionId();
+        try {
+            return withinTheDeadline().applyLocked(locked);
+        } catch (StatusRuntimeException first) {
+            if (first.getStatus().getCode() != Status.Code.DEADLINE_EXCEEDED) throw faultOf(first, "ApplyLocked");
+            log.warn("mem-ledger client: {} did not answer ApplyLocked of batch {} in {} ms — sent once more under the same id", settings.address(), id, settings.deadlineMs());
+        }
+        try {
+            return withinTheDeadline().applyLocked(locked);
+        } catch (StatusRuntimeException second) {
+            throw unknownOutcome(id, second);
+        }
+    }
+
+    /** ARCH-0119 road 2 · A call that may WAIT on the server (a lock's queue): its deadline is the client's own plus that wait. */
+    public <T> T callWaiting(String what, long waitMs, Function<MemLedgerBlockingStub, T> verb) {
+        try {
+            return verb.apply(blocking.withDeadlineAfter(settings.deadlineMs() + Math.max(0, waitMs), TimeUnit.MILLISECONDS));
+        } catch (StatusRuntimeException e) {
+            throw faultOf(e, what);
         }
     }
 
