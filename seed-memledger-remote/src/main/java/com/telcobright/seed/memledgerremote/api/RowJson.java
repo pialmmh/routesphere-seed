@@ -71,6 +71,8 @@ public final class RowJson {
      * the square of its length: one of a million digits kept a worker busy for 41.8 s (routesphere's gate of the first-line guard,
      * 2026-11-10) — one megabyte of request from any holder of a bearer. The widest column of the prepaid model, numeric(20,6), needs 22
      * characters, and an exponent form is short by nature. ONE rule for every number read from text: a decimal, a whole number, a key.
+     * And ONE unit: CHARACTERS, for the text that arrives ({@link #requireShort}) and for the plain text a decimal is written back as
+     * ({@link #requirePlainShort}) — so a row this reader took is always written as a text this reader takes.
      */
     public static final int NUMBER_TEXT_MAX = 64;
 
@@ -84,22 +86,34 @@ public final class RowJson {
     }
 
     /**
-     * A decimal's PLAIN form — {@code BigDecimal.toPlainString}, as every row is written back: an answer, a read, a digest, a refusal's
-     * own echo — is at most {@link #NUMBER_TEXT_MAX} digits. A short text can name a number that is not: {@code 1E+2147483647} is 13
-     * characters and its plain form is two thousand million digits. stream-tester proved what it does once it is a row (wifi A-0153,
-     * 2026-11-11, PostgreSQL and the real jar): every read of the account fails for memory, the database silently holds 0.000000 for it,
-     * and the next start never comes up. So such a number never becomes a row. The digits are counted from the number's FORM, in a
-     * long — no arithmetic is done on it and its text is never built ({@link #plainDigitsOf}). A zero is counted like any other number:
-     * {@code 0E-2147483647} is zero, and its plain form is as long (routesphere's measure, 2026-11-11).
+     * A decimal's PLAIN text — {@code BigDecimal.toPlainString}, as every row is written back: an answer, a read, a digest, a refusal's
+     * own echo — is at most {@link #NUMBER_TEXT_MAX} CHARACTERS: its digits, its point and its sign. A short text can name a number
+     * that is not: {@code 1E+2147483647} is 13 characters and its plain text is two thousand million. stream-tester proved what it does
+     * once it is a row (wifi A-0153, 2026-11-11, PostgreSQL and the real jar): every read of the account fails for memory, the database
+     * silently holds 0.000000 for it, and the next start never comes up. So such a number never becomes a row. The length is counted
+     * from the number's FORM, in a long — no arithmetic is done on it and its text is never built ({@link #plainLengthOf}). A zero is
+     * counted like any other number: {@code 0E-2147483647} is zero, and its plain text is as long (routesphere's measure, 2026-11-11).
+     *
+     * <p>Characters, not digits (stream-tester's A-0154 F1, 2026-11-11): the first form of this bound counted the DIGITS while the
+     * reader's bound counts the CHARACTERS of a text. {@code 1E-63} has 64 digits, was taken, and is written as 65 characters
+     * ({@code 0.000…1}) — every reader then refused the row it was given, and the account could not be read by any client.
      */
     public static BigDecimal requirePlainShort(BigDecimal number, String what) {
         if (number == null) return null;
-        long digits = plainDigitsOf(number);
-        if (digits > NUMBER_TEXT_MAX) {
-            throw new IllegalArgumentException(what + " is a number whose plain form has " + digits + " digits (" + cut(number.toString()) + "): a number is "
+        long length = plainLengthOf(number);
+        if (length > NUMBER_TEXT_MAX) {
+            throw new IllegalArgumentException(what + " is a number whose plain text has " + length + " characters (" + cut(number.toString()) + "): a number's text is "
                 + NUMBER_TEXT_MAX + " at most");
         }
         return number;
+    }
+
+    /**
+     * How long {@code number.toPlainString()} would be, WITHOUT building it: its digits ({@link #plainDigitsOf}), a point when it has
+     * decimals, a sign when it is below zero. {@code -12.5} is 5, {@code 1E+3} (1000) is 4, {@code 0E-5} (0.00000) is 7.
+     */
+    public static long plainLengthOf(BigDecimal number) {
+        return plainDigitsOf(number) + (number.scale() > 0 ? 1 : 0) + (number.signum() < 0 ? 1 : 0);
     }
 
     /**
