@@ -20,8 +20,11 @@ public final class WireExpectations {
     /** One row as the batch read it: there (with its JSON) or not. */
     public record Expected(String tier, String entity, Object id, boolean present, String json) {
 
-        /** The row in words: {@code res_2.PackageAccount id=11}. */
-        public String named() { return tier + "." + entity + " id=" + id; }
+        /**
+         * The row in words: {@code res_2.PackageAccount id=11}. A key is said by its first 80 characters and its length, like every text
+         * of a client in a refusal (stream-tester's A-0157 F2c: a STALE refusal said a 1 000-character key whole).
+         */
+        public String named() { return tier + "." + entity + " id=" + RowJson.cut(String.valueOf(id)); }
     }
 
     private WireExpectations() {}
@@ -56,7 +59,7 @@ public final class WireExpectations {
     }
 
     private static Expected expectedOf(Expectation wire, Function<String, Class<?>> registered, String where) {
-        String row = wire.getDbName() + "." + wire.getEntityName() + " id=" + wire.getEntityId();
+        String row = wire.getDbName() + "." + wire.getEntityName() + " id=" + RowJson.cut(wire.getEntityId());
         Class<?> type = registered.apply(wire.getEntityName());
         if (type == null) throw new WireBatch.Unreadable(where + " (" + row + ") names an entity this ledger does not register");
         if (wire.getPresent() && wire.getEntityJson().isEmpty()) throw new WireBatch.Unreadable(where + " (" + row + ") says the row was there and carries none");

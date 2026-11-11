@@ -5,7 +5,9 @@ import com.telcobright.core.wal.WALEntryBatch;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccountReserve;
 import com.telcobright.seed.memledgerremote.api.RowJson;
 import com.telcobright.seed.memledgerremote.api.WireBatch;
+import com.telcobright.seed.memledgerremote.api.WireExpectations;
 import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
+import com.telcobright.seed.memledgerremote.wire.Expectation;
 import com.telcobright.seed.memledgerremote.wire.Op;
 import com.telcobright.seed.switchledger.api.LedgerAccount;
 import com.telcobright.seed.switchledger.internal.Books;
@@ -294,6 +296,21 @@ class RowJsonTest {
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LedgerAccount has no field 'colour'");
         assertThatThrownBy(() -> RowJson.differenceFrom(account(11, "10"), asRead.replace("\"creditLimit\":null,", "")))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("the row as read names no 'creditLimit' of LedgerAccount");
+    }
+
+    @Test
+    void aRowReadIsNamedByTheStartOfALongKey_neverTheWholeKey() {
+        String key = "k".repeat(1_000), said = "id=" + "k".repeat(80) + "… (1000 characters)";
+        assertThat(new WireExpectations.Expected("res_2", Books.RESERVE, key, false, null).named())
+            .as("stream-tester's A-0157 F2c: a STALE refusal names its row with this, and a text key of 1 000 characters came back whole (mutant E1: the name says "
+                + "the whole key)").isEqualTo("res_2." + Books.RESERVE + " " + said);
+        assertThat(new WireExpectations.Expected("res_2", Books.ACCOUNT, 11L, true, "{}").named()).as("a key of ours is said as it is").isEqualTo("res_2." + Books.ACCOUNT + " id=11");
+
+        ApplyRequest unreadable = ApplyRequest.newBuilder().setTransactionId("E-1")
+            .addExpects(Expectation.newBuilder().setDbName("res_2").setEntityName(Books.RESERVE).setEntityId(key).setPresent(true)).build();
+        assertThatThrownBy(() -> WireExpectations.expectedOf(unreadable, KNOWN)).isInstanceOf(WireBatch.Unreadable.class)
+            .as("… and an expectation that cannot be read names its row the same way (mutant E2: that road says the whole key)")
+            .hasMessageContaining("(res_2." + Books.RESERVE + " " + said + ") says the row was there and carries none");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
