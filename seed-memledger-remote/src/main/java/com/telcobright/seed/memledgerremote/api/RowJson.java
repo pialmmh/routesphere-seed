@@ -56,11 +56,40 @@ public final class RowJson {
     public static Object keyOf(Class<?> type, String text) {
         Field key = keyField(type);
         if (text == null || text.isEmpty()) return null;
+        if (key.getType() != String.class) requireShort(text.trim(), "the key of a " + type.getSimpleName());
         try {
             return fromText(key.getType(), text);
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException("'" + text + "' is no key of " + type.getSimpleName() + " (its " + key.getName() + " is a " + key.getType().getSimpleName() + ")");
+            throw new IllegalArgumentException("'" + cut(text) + "' is no key of " + type.getSimpleName() + " (its " + key.getName() + " is a " + key.getType().getSimpleName() + ")");
         }
+    }
+
+    // ── a number's text has a bound ─────────────────────────────────────────
+
+    /**
+     * A number's TEXT on the wire is at most this long, and a longer one is refused BEFORE it is parsed. Parsing a decimal's text costs
+     * the square of its length: one of a million digits kept a worker busy for 41.8 s (routesphere's gate of the first-line guard,
+     * 2026-11-10) — one megabyte of request from any holder of a bearer. The widest column of the prepaid model, numeric(20,6), needs 22
+     * characters, and an exponent form is short by nature. ONE rule for every number read from text: a decimal, a whole number, a key.
+     */
+    public static final int NUMBER_TEXT_MAX = 64;
+
+    /** The decimal a text holds ({@link NumberFormatException} when it holds none); a text longer than {@link #NUMBER_TEXT_MAX} is refused unparsed. */
+    public static BigDecimal decimalOf(String text, String what) {
+        requireShort(text, what);
+        return new BigDecimal(text);
+    }
+
+    /** Refused in words, and the text is not read: the refusal says its length, never the text. */
+    public static void requireShort(String text, String what) {
+        if (text != null && text.length() > NUMBER_TEXT_MAX) {
+            throw new IllegalArgumentException(what + " is a number of " + text.length() + " characters: a number's text is " + NUMBER_TEXT_MAX + " at most (it was not read)");
+        }
+    }
+
+    /** A value as a refusal says it: never a megabyte of it in an answer and a log line. */
+    private static String cut(String text) {
+        return text.length() <= 80 ? text : text.substring(0, 80) + "… (" + text.length() + " characters)";
     }
 
     /** A key as the wire carries it; none = empty text. */
@@ -123,7 +152,8 @@ public final class RowJson {
         }
         try {
             if (type == String.class && node.isTextual()) return node.textValue();
-            if (type == BigDecimal.class && node.isTextual()) return new BigDecimal(node.textValue());
+            if (type == BigDecimal.class && node.isTextual()) return decimalOf(node.textValue(), whatOf(f));
+            if (node.isNumber()) requireShort(node.asText(), whatOf(f));           // the same bound for a number written as a JSON number
             if (type == BigDecimal.class && node.isNumber()) return node.decimalValue();
             if ((type == Long.class || type == long.class) && node.isIntegralNumber()) return node.bigIntegerValue().longValueExact();
             if ((type == Integer.class || type == int.class) && node.isIntegralNumber()) return node.bigIntegerValue().intValueExact();
@@ -131,9 +161,9 @@ public final class RowJson {
             if (type == LocalDateTime.class && node.isTextual()) return LocalDateTime.parse(node.textValue());
             if (type == LocalDate.class && node.isTextual()) return LocalDate.parse(node.textValue());
         } catch (ArithmeticException | NumberFormatException | java.time.format.DateTimeParseException e) {
-            throw new IllegalArgumentException(whatOf(f) + " is a " + type.getSimpleName() + ": " + node + " is not one");
+            throw new IllegalArgumentException(whatOf(f) + " is a " + type.getSimpleName() + ": " + cut(node.toString()) + " is not one");
         }
-        throw new IllegalArgumentException(whatOf(f) + " is a " + type.getSimpleName() + ": " + node + " is not one");
+        throw new IllegalArgumentException(whatOf(f) + " is a " + type.getSimpleName() + ": " + cut(node.toString()) + " is not one");
     }
 
     // ── a row as held vs as read ────────────────────────────────────────────

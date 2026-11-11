@@ -54,6 +54,43 @@ class RowJsonTest {
     }
 
     @Test
+    void aNumbersTextHasABound_andALongerOneIsRefusedBeforeItIsRead() {
+        String at = "1." + "2".repeat(RowJson.NUMBER_TEXT_MAX - 2), over = at + "2";
+        assertThat(at).hasSize(64);
+        LedgerAccount taken = RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + at + "\"}");
+        assertThat(taken.getBalanceAfter()).as("a decimal of exactly %s characters is TAKEN (mutant N2: one character too strict)", RowJson.NUMBER_TEXT_MAX).isEqualByComparingTo(at);
+
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + over + "\"}"))
+            .as("routesphere's gate: a decimal's text is parsed at the cost of its length's SQUARE — a million digits took 41.8 s of a worker (mutant N1: no bound)")
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("PackageAccount.balanceAfter is a number of 65 characters: a number's text is 64 at most (it was not read)");
+
+        String noNumber = "x".repeat(2_000);
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + noNumber + "\"}"))
+            .as("the length is judged BEFORE the parse: a long text that is no number is refused for its LENGTH, not by the parser (mutant N3: the text is parsed first), "
+                + "and the refusal never carries the text")
+            .hasMessageContaining("is a number of 2000 characters").hasMessageNotContaining("xxxxxxxx");
+
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":" + "9".repeat(65) + "}"))
+            .as("the same bound for a number written as a JSON number (mutant N4: only a quoted number is bounded)").hasMessageContaining("is a number of 65 characters");
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"idpackagePurchase\":" + "9".repeat(65) + "}"))
+            .as("… and for a whole-number field").hasMessageContaining("PackageAccount.idpackagePurchase is a number of 65 characters");
+        assertThatThrownBy(() -> RowJson.keyOf(LedgerAccount.class, "9".repeat(65)))
+            .as("… and for a row's key read from its text (mutant N5: a key has no bound)").hasMessageContaining("the key of a LedgerAccount is a number of 65 characters");
+        assertThat(RowJson.keyOf(PackageAccountReserve.class, "c".repeat(300))).as("a TEXT key is a text, not a number: any length").isEqualTo("c".repeat(300));
+
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + "1O".repeat(30) + "\"}"))
+            .as("a short text that is no number is refused as before, by the parser").hasMessageContaining("is not one");
+        assertThatThrownBy(() -> RowJson.keyOf(LedgerAccount.class, "k".repeat(60)))
+            .hasMessageContaining("is no key of LedgerAccount");
+
+        assertThatThrownBy(() -> RowJson.rowOf(com.telcobright.seed.switchledger.api.LedgerPurchase.class, "{\"expireDate\":\"" + "z".repeat(2_000) + "\"}"))
+            .as("a refusal says a long value SHORT: never a megabyte of it in an answer and a log line (mutant N6: the value is echoed whole)")
+            .hasMessageContaining("is not one").hasMessageContaining("characters)")
+            .satisfies(refusal -> assertThat(refusal.getMessage().length()).isLessThan(300));
+    }
+
+    @Test
     void aFieldTheClassDoesNotHave_orAValueThatIsNotItsType_isRefusedNamingBoth() {
         assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"id\":11,\"colour\":\"red\"}"))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LedgerAccount has no field 'colour'");
