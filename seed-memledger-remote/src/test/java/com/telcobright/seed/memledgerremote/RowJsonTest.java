@@ -274,6 +274,17 @@ class RowJsonTest {
         moved.setBalanceAfter(new BigDecimal("7.000000"));
 
         assertThat(RowJson.differenceFrom(moved, RowJson.textOf(account(11, "10.000000")))).isEqualTo("balanceAfter is 7.000000, the batch read 10.000000");
+
+        LedgerAccount held = account(11, "10.000000"), asTheBatchReadIt = account(11, "10.000000");
+        asTheBatchReadIt.setName("n".repeat(1_000_000));
+        String stale = RowJson.differenceFrom(held, RowJson.textOf(asTheBatchReadIt));
+        assertThat(stale).as("stream-tester's A-0156 F2b: the row a batch READ is the client's text, and a megabyte name in it came back whole in the STALE "
+            + "refusal (1 000 130 characters). It is said by its first 80 characters and its length (mutant D1: a value is said whole)")
+            .isEqualTo("name is " + held.getName() + ", the batch read " + "n".repeat(80) + "… (1000000 characters)");
+        asTheBatchReadIt.setName(held.getName());
+        held.setName("h".repeat(300));
+        assertThat(RowJson.differenceFrom(held, RowJson.textOf(asTheBatchReadIt))).as("the HELD side is cut the same way")
+            .isEqualTo("name is " + "h".repeat(80) + "… (300 characters), the batch read " + asTheBatchReadIt.getName());
     }
 
     @Test

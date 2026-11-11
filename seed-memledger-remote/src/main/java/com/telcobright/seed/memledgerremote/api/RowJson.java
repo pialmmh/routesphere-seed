@@ -228,7 +228,11 @@ public final class RowJson {
         return java.util.Objects.equals(is, was);
     }
 
-    private static String said(Object value) { return value instanceof BigDecimal d ? d.toPlainString() : String.valueOf(value); }
+    /**
+     * A value as a difference says it: its first 80 characters and its length. The row a batch READ is the client's text: a megabyte
+     * name there came back whole in the STALE refusal (stream-tester's A-0156 F2b).
+     */
+    private static String said(Object value) { return cut(value instanceof BigDecimal d ? d.toPlainString() : String.valueOf(value)); }
 
     private static Object fromText(Class<?> type, String text) {
         if (type == String.class) return text;
