@@ -91,6 +91,43 @@ class RowJsonTest {
     }
 
     @Test
+    void aShortTextThatNamesAVastNumber_neverBecomesARow() {
+        for (String vast : List.of("1E+2147483647", "12E+2147483646", "-1E+2147483647", "1E+1000000", "1E-1000000", "1E+64", "0E-2147483647", "0E-64")) {
+            assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + vast + "\"}"))
+                .as("stream-tester's A-0153: %s is a short text, and as a row its plain form is written on every read — the account's reads failed for memory, "
+                    + "PostgreSQL silently held 0.000000 and the next start never came up (mutant V1: only the TEXT has a bound)", vast)
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("PackageAccount.balanceAfter is a number whose plain form has ")
+                .hasMessageContaining("a number is 64 at most")
+                .satisfies(refusal -> assertThat(refusal.getMessage().length()).as("the refusal itself is short").isLessThan(300));
+        }
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"1E+2147483647\"}"))
+            .as("the digits are counted in a LONG (mutant V3: in an int the count overflows to nothing and the number is taken)")
+            .hasMessageContaining("plain form has 2147483648 digits (1E+2147483647)");
+
+        assertThat(RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"1E+63\"}").getBalanceAfter())
+            .as("64 digits exactly are TAKEN (mutant V2: one digit too strict)").isEqualByComparingTo(new BigDecimal("1E+63"));
+        assertThat(RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"" + "9".repeat(57) + ".999999\"}").getBalanceAfter().precision())
+            .as("a text of exactly 64 characters with 63 digits: taken").isEqualTo(63);
+        assertThat(RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"0E+1000000\"}").getBalanceAfter().toPlainString())
+            .as("a zero with an exponent ABOVE zero is the one digit 0 (mutant V4: such a zero is counted as its exponent's zeros)").isEqualTo("0");
+        assertThat(RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"0E-63\"}").getBalanceAfter().signum())
+            .as("a zero of 64 digits (0.000…0) is taken; 0E-64 and 0E-2147483647 above are not (mutant V6: every zero is taken — routesphere's measure: the "
+                + "plain form of 0E-2147483647 is too large to build)").isZero();
+        for (String[] counted : new String[][] {{"1E+3", "4"}, {"0.001", "4"}, {"0E-5", "6"}, {"0E+5", "1"}, {"12.5", "3"}, {"-12.5", "3"}, {"100", "3"}, {"0", "1"}}) {
+            BigDecimal number = new BigDecimal(counted[0]);
+            assertThat(RowJson.plainDigitsOf(number)).as("the digits of %s, counted without building its text", counted[0])
+                .isEqualTo(Long.parseLong(counted[1])).isEqualTo(number.toPlainString().chars().filter(Character::isDigit).count());
+        }
+        assertThat(RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":\"12345678901234.123456\"}").getBalanceAfter())
+            .as("the widest money the prepaid model holds").isEqualByComparingTo("12345678901234.123456");
+
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"balanceAfter\":1E+100}"))
+            .as("the same for a number written as a JSON number: 1E+100 is a finite number to the JSON reader, 101 digits as a row (mutant V5: only a quoted "
+                + "number is judged)")
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("whose plain form has 101 digits");
+    }
+
+    @Test
     void aFieldTheClassDoesNotHave_orAValueThatIsNotItsType_isRefusedNamingBoth() {
         assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"id\":11,\"colour\":\"red\"}"))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LedgerAccount has no field 'colour'");

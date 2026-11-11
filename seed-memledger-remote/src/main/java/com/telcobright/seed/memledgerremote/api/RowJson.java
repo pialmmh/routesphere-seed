@@ -74,10 +74,42 @@ public final class RowJson {
      */
     public static final int NUMBER_TEXT_MAX = 64;
 
-    /** The decimal a text holds ({@link NumberFormatException} when it holds none); a text longer than {@link #NUMBER_TEXT_MAX} is refused unparsed. */
+    /**
+     * The decimal a text holds ({@link NumberFormatException} when it holds none); a text longer than {@link #NUMBER_TEXT_MAX} is refused
+     * unparsed, and a decimal whose PLAIN form would be longer is refused too ({@link #requirePlainShort}).
+     */
     public static BigDecimal decimalOf(String text, String what) {
         requireShort(text, what);
-        return new BigDecimal(text);
+        return requirePlainShort(new BigDecimal(text), what);
+    }
+
+    /**
+     * A decimal's PLAIN form — {@code BigDecimal.toPlainString}, as every row is written back: an answer, a read, a digest, a refusal's
+     * own echo — is at most {@link #NUMBER_TEXT_MAX} digits. A short text can name a number that is not: {@code 1E+2147483647} is 13
+     * characters and its plain form is two thousand million digits. stream-tester proved what it does once it is a row (wifi A-0153,
+     * 2026-11-11, PostgreSQL and the real jar): every read of the account fails for memory, the database silently holds 0.000000 for it,
+     * and the next start never comes up. So such a number never becomes a row. The digits are counted from the number's FORM, in a
+     * long — no arithmetic is done on it and its text is never built ({@link #plainDigitsOf}). A zero is counted like any other number:
+     * {@code 0E-2147483647} is zero, and its plain form is as long (routesphere's measure, 2026-11-11).
+     */
+    public static BigDecimal requirePlainShort(BigDecimal number, String what) {
+        if (number == null) return null;
+        long digits = plainDigitsOf(number);
+        if (digits > NUMBER_TEXT_MAX) {
+            throw new IllegalArgumentException(what + " is a number whose plain form has " + digits + " digits (" + cut(number.toString()) + "): a number is "
+                + NUMBER_TEXT_MAX + " at most");
+        }
+        return number;
+    }
+
+    /**
+     * How many digits {@code number.toPlainString()} would hold, WITHOUT building it: 1000 for {@code 1E+3} is 4, {@code 0.001} is 4,
+     * {@code 0E-5} (0.00000) is 6, {@code 0E+5} (0) is 1.
+     */
+    public static long plainDigitsOf(BigDecimal number) {
+        long precision = number.precision(), scale = number.scale();
+        if (number.signum() == 0) return 1 + Math.max(scale, 0);
+        return scale <= 0 ? precision - scale : Math.max(precision - scale, 1) + scale;
     }
 
     /** Refused in words, and the text is not read: the refusal says its length, never the text. */
@@ -154,7 +186,7 @@ public final class RowJson {
             if (type == String.class && node.isTextual()) return node.textValue();
             if (type == BigDecimal.class && node.isTextual()) return decimalOf(node.textValue(), whatOf(f));
             if (node.isNumber()) requireShort(node.asText(), whatOf(f));           // the same bound for a number written as a JSON number
-            if (type == BigDecimal.class && node.isNumber()) return node.decimalValue();
+            if (type == BigDecimal.class && node.isNumber()) return requirePlainShort(node.decimalValue(), whatOf(f));
             if ((type == Long.class || type == long.class) && node.isIntegralNumber()) return node.bigIntegerValue().longValueExact();
             if ((type == Integer.class || type == int.class) && node.isIntegralNumber()) return node.bigIntegerValue().intValueExact();
             if ((type == Boolean.class || type == boolean.class) && node.isBoolean()) return node.booleanValue();
