@@ -89,7 +89,7 @@ public final class WireBatch {
             entry.setEntityId(RowJson.keyOf(type, wire.getEntityId()));
             if (wire.getOp() != Op.DELETE && !wire.getEntityJson().isEmpty()) entry.setEntityData(RowJson.rowOf(type, wire.getEntityJson()));
         } catch (IllegalArgumentException e) {
-            throw new Unreadable(where + " (" + wire.getDbName() + "." + wire.getEntityName() + " id=" + wire.getEntityId() + "): " + e.getMessage());
+            throw new Unreadable(where + " (" + wire.getDbName() + "." + wire.getEntityName() + " id=" + RowJson.cut(wire.getEntityId()) + "): " + e.getMessage());   // A-0154 F2: never a megabyte key whole
         }
         return entry;
     }
