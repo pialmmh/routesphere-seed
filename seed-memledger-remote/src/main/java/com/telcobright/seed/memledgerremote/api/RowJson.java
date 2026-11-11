@@ -46,7 +46,7 @@ public final class RowJson {
         Map<String, Field> fields = fieldsOf(type);
         for (Map.Entry<String, JsonNode> named : node.properties()) {
             Field f = fields.get(named.getKey());
-            if (f == null) throw new IllegalArgumentException(type.getSimpleName() + " has no field '" + named.getKey() + "' (its fields: " + fields.keySet() + ")");
+            if (f == null) throw new IllegalArgumentException(type.getSimpleName() + " has no field '" + cut(named.getKey()) + "' (its fields: " + fields.keySet() + ")");
             set(row, f, valueOf(f, named.getValue()));
         }
         return row;
@@ -133,8 +133,8 @@ public final class RowJson {
         }
     }
 
-    /** A value as a refusal says it: never a megabyte of it in an answer and a log line. */
-    private static String cut(String text) {
+    /** A value, a key or a name as a refusal says it: never a megabyte of it in an answer and a log line. */
+    static String cut(String text) {
         return text.length() <= 80 ? text : text.substring(0, 80) + "… (" + text.length() + " characters)";
     }
 
@@ -216,7 +216,7 @@ public final class RowJson {
 
     private static void requireTheSameFields(Class<?> type, Map<String, Field> fields, JsonNode read) {
         for (Map.Entry<String, JsonNode> named : read.properties()) {
-            if (!fields.containsKey(named.getKey())) throw new IllegalArgumentException(type.getSimpleName() + " has no field '" + named.getKey() + "' (its fields: " + fields.keySet() + ")");
+            if (!fields.containsKey(named.getKey())) throw new IllegalArgumentException(type.getSimpleName() + " has no field '" + cut(named.getKey()) + "' (its fields: " + fields.keySet() + ")");
         }
         for (String name : fields.keySet()) {
             if (!read.has(name)) throw new IllegalArgumentException("the row as read names no '" + name + "' of " + type.getSimpleName() + ": a field one side lacks is not compared");

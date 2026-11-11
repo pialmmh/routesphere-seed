@@ -237,6 +237,19 @@ class RowJsonTest {
             .hasMessageStartingWith("Batch refused, nothing changed: entry 2 of 3 (res_2.PackageAccountReserve id=c-1#L0)");
         assertThat(WireBatch.batchOf(wire.toBuilder().setEntries(0, wire.getEntries(0).toBuilder().setOp(Op.OP_UNSPECIFIED)).build(), KNOWN).getEntries().get(0).getOperationType())
             .as("an operation the wire does not know is mem-ledger's to refuse").isNull();
+
+        String megabyte = "k".repeat(1_000_000);
+        ApplyRequest aLongKey = wire.toBuilder().setEntries(1, wire.getEntries(1).toBuilder().setEntityId(megabyte).setEntityJson("{\"reserveUnit\":")).build();
+        assertThatThrownBy(() -> WireBatch.batchOf(aLongKey, KNOWN)).isInstanceOf(WireBatch.Unreadable.class)
+            .as("stream-tester's A-0154 F2: a refusal names the row by the START of its key and the key's length (mutant S1: the key is said whole)")
+            .hasMessageContaining("(res_2.PackageAccountReserve id=" + "k".repeat(80) + "… (1000000 characters))")
+            .satisfies(refusal -> assertThat(refusal.getMessage().length()).as("never the client's megabyte back").isLessThan(700));
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"" + "k".repeat(40_000) + "\":1}"))
+            .as("… and a field's NAME the class does not have, of 40 000 characters — the JSON reader itself refuses a name past 50 000 (mutant S2: the name is said whole)")
+            .hasMessageContaining("LedgerAccount has no field '" + "k".repeat(80) + "… (40000 characters)'")
+            .satisfies(refusal -> assertThat(refusal.getMessage().length()).isLessThan(1500));
+        assertThatThrownBy(() -> RowJson.rowOf(LedgerAccount.class, "{\"" + megabyte + "\":1}")).as("a megabyte name: refused by the JSON reader, in its own short words")
+            .hasMessageContaining("cannot be read").satisfies(refusal -> assertThat(refusal.getMessage().length()).isLessThan(700));
     }
 
     // ── ARCH-0118 S2: a row as held vs the same row as read ─────────────────
