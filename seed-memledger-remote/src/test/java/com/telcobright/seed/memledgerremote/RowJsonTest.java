@@ -289,6 +289,42 @@ class RowJsonTest {
             .isEqualTo("name is " + "h".repeat(80) + "… (300 characters), the batch read " + asTheBatchReadIt.getName());
     }
 
+    /**
+     * ONE coder for every text the wire's own words say back (2026-11-11). A VALUE may hold any character — a name in Bangla holds joiners —
+     * so it is never refused for one; but a refusal that SAYS it wrote it raw: a STALE refusal carried a client's newline into the server's
+     * answer and its log line ("\nrecall-db: FORGED …"), and a field name inside a row's JSON (outside the server's names door) did the same.
+     * A control character, a line separator and a FORMAT character (a right-to-left override, a zero-width space) are said as their code.
+     * Mutants: K1 only C0 controls are coded · K2 the coder asks a char, not a code point · K3 a stale value is said raw · K4 a field's
+     * name is said raw · K5 the cut can end on half a character.
+     */
+    @Test
+    void aTextTheWireSaysBack_neverCarriesARawControlOrFormatCharacter() {
+        String forged = "ab\nrecall-db: FORGED" + (char) 0x202E + "x" + (char) 0x85 + new String(Character.toChars(0xE0001));
+        LedgerAccount held = account(11, "10.000000"), asTheBatchReadIt = account(11, "10.000000");
+        asTheBatchReadIt.setName(forged);
+
+        String stale = RowJson.differenceFrom(held, RowJson.textOf(asTheBatchReadIt));
+        assertThat(stale).isEqualTo("name is " + held.getName() + ", the batch read ab\\u000arecall-db: FORGED\\u202ex\\u0085\\U000e0001");
+        held.setName(forged);
+        asTheBatchReadIt.setName("plain");
+        assertThat(RowJson.differenceFrom(held, RowJson.textOf(asTheBatchReadIt))).as("the HELD side is coded the same way")
+            .isEqualTo("name is ab\\u000arecall-db: FORGED\\u202ex\\u0085\\U000e0001, the batch read plain");
+
+        String asRead = RowJson.textOf(account(11, "10"));
+        assertThatThrownBy(() -> RowJson.differenceFrom(account(11, "10"), asRead.replace("{", "{\"col\\nour" + (char) 0x200B + "\":\"red\",")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LedgerAccount has no field 'col\\u000aour\\u200b'");
+        assertThatThrownBy(() -> RowJson.keyOf(LedgerAccount.class, "1\n2"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("'1\\u000a2' is no key of LedgerAccount");
+
+        assertThat(RowJson.cut("plain words, 10.5 and #L0")).as("an ordinary text is said as it is").isEqualTo("plain words, 10.5 and #L0");
+        assertThat(RowJson.breaksALine('\n') && RowJson.breaksALine(0x85) && RowJson.breaksALine(0x2028) && RowJson.breaksALine(0x202E) && RowJson.breaksALine(0xE0001)).isTrue();
+        assertThat(RowJson.breaksALine('a') || RowJson.breaksALine(' ') || RowJson.breaksALine(0x0995)).as("a letter, a space, a Bangla letter").isFalse();
+        String pair = new String(Character.toChars(0x1F600));
+        assertThat(RowJson.shown("x".repeat(79) + pair + "tail", 80)).as("a cut never ends on half a character").isEqualTo("x".repeat(79) + "… (85 characters)");
+        assertThat(RowJson.shown("x".repeat(78) + pair + "tail", 80)).isEqualTo("x".repeat(78) + pair + "… (84 characters)");
+        assertThat(RowJson.shown(null, 80)).isEmpty();
+    }
+
     @Test
     void aFieldOneSideLacks_isRefusedInWords_neverAGuess() {
         String asRead = RowJson.textOf(account(11, "10"));

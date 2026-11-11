@@ -133,9 +133,46 @@ public final class RowJson {
         }
     }
 
-    /** A value, a key or a name as a refusal says it: never a megabyte of it in an answer and a log line. */
-    static String cut(String text) {
-        return text.length() <= 80 ? text : text.substring(0, 80) + "… (" + text.length() + " characters)";
+    /**
+     * A value, a key or a name as a refusal says it: its first 80 characters and its length — never a megabyte of it in an answer and a
+     * log line — and a character that breaks a line as its code, never raw ({@link #shown}).
+     */
+    public static String cut(String text) { return shown(text, 80); }
+
+    /**
+     * A character that is never said raw in a refusal or a log line: a C0 or C1 control (U+0000–001F, U+007F–009F: a newline, NUL, ESC,
+     * NEL …), a line or a paragraph separator (U+2028, U+2029), or a Unicode FORMAT character (a right-to-left override U+202E, a
+     * zero-width space U+200B, a byte-order mark U+FEFF, a tag U+E0001 …): a reader of a log breaks a line on the first two kinds, and can
+     * be made to show a line in another order or to hide a part of it by the third. Asked of a CODE POINT: a character above U+FFFF is two
+     * chars. ONE rule for the wire's own words and the server's (recall-db's names door asks it too).
+     */
+    public static boolean breaksALine(int codePoint) {
+        return Character.isISOControl(codePoint) || codePoint == 0x2028 || codePoint == 0x2029 || Character.getType(codePoint) == Character.FORMAT;
+    }
+
+    /**
+     * The first {@code max} characters of a text, and its length when it is longer; a character that {@link #breaksALine breaks a line}
+     * as its code ({@code \u000a}; above U+FFFF {@code \U000e0001}), never raw. A cut never ends on half a character. A VALUE may hold
+     * such a character (a name written in Bangla holds joiners), so nothing is refused here: only what is SAID is coded. null = empty.
+     */
+    public static String shown(String text, int max) {
+        if (text == null) return "";
+        boolean whole = text.length() <= max;
+        int end = whole ? text.length() : max;
+        if (!whole && end > 0 && Character.isHighSurrogate(text.charAt(end - 1))) end--;
+        StringBuilder coded = null;
+        for (int i = 0; i < end; ) {
+            int c = text.codePointAt(i);
+            if (breaksALine(c)) {
+                if (coded == null) coded = new StringBuilder(text.substring(0, i));
+                coded.append(String.format(c <= 0xFFFF ? "\\u%04x" : "\\U%08x", c));
+            } else if (coded != null) {
+                coded.appendCodePoint(c);
+            }
+            i += Character.charCount(c);
+        }
+        String said = coded == null ? text.substring(0, end) : coded.toString();
+        return whole ? said : said + "… (" + text.length() + " characters)";
     }
 
     /** A key as the wire carries it; none = empty text. */

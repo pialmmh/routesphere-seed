@@ -1,6 +1,7 @@
 package com.telcobright.seed.memledgerremote.internal;
 
 import com.telcobright.seed.memledgerremote.api.RemoteLedgerFault;
+import com.telcobright.seed.memledgerremote.api.RowJson;
 import com.telcobright.seed.memledgerremote.dependencies.RemoteLedgerSettings;
 import com.telcobright.seed.memledgerremote.wire.ApplyLockedRequest;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
@@ -115,18 +116,7 @@ public final class Calls {
      * A server's words as a fault carries them on: its first {@link #SERVER_WORDS_MAX} characters and its length, and a control or a
      * format character as its code — the server may quote a client's text, and a fault's message is written into the caller's log.
      */
-    static String said(String words) {
-        StringBuilder out = new StringBuilder();
-        int shown = 0, i = 0;
-        while (i < words.length() && shown < SERVER_WORDS_MAX) {
-            int c = words.codePointAt(i);
-            if (Character.isISOControl(c) || c == 0x2028 || c == 0x2029 || Character.getType(c) == Character.FORMAT) out.append(String.format(c <= 0xFFFF ? "\\u%04x" : "\\U%08x", c));
-            else out.appendCodePoint(c);
-            i += Character.charCount(c);
-            shown++;
-        }
-        return i < words.length() ? out + "… (" + words.length() + " characters)" : out.toString();
-    }
+    static String said(String words) { return RowJson.shown(words, SERVER_WORDS_MAX); }
 
     private MemLedgerBlockingStub withinTheDeadline() { return blocking.withDeadlineAfter(settings.deadlineMs(), TimeUnit.MILLISECONDS); }
 
