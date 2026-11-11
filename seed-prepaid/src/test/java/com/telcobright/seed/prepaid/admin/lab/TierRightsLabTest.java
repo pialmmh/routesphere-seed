@@ -26,8 +26,11 @@ class TierRightsLabTest {
 
     private final PostgresPurchaseLab lab = new PostgresPurchaseLab();
 
+    /** No lab here: both tests were skipped, nothing was made — and close() would ask the absent PostgreSQL to drop the lab's database. */
     @AfterEach
-    void nothingIsLeft() throws Exception { lab.close(); }
+    void nothingIsLeft() throws Exception {
+        if (lab.absentBecause() == null) lab.close();
+    }
 
     @Test
     void aRightTheLedgersLoginLacks_refusesItsStart_inWords_andGivenItStarts() throws Exception {
