@@ -164,6 +164,37 @@ class RemoteStoreTest {
         assertThat(t.getMessage()).contains("UNKNOWN outcome: batch " + server.writesSeen.get(0) + " sent twice, no answer within 400 ms — reconcile by this transaction id");
     }
 
+    /**
+     * routesphere's reviewer, 2026-11-11: a server of ours that ANSWERS "its outcome is UNKNOWN" (a DEADLINE_EXCEEDED with words, at once)
+     * says what to do — and the client dropped the words of every DEADLINE_EXCEEDED. They reach the caller: bounded, and with no raw
+     * control or format character (the server may quote a client's text; the fault's message goes into the caller's log).
+     * Mutants: U1 the words dropped as before · U2 the words said whole and raw · U3 any deadline's text taken for the server's words
+     * (then {@link #aSecondDeadline_saysTheOutcomeIsUnknown_andTheTransactionIdToReconcileBy} is red).
+     */
+    @Test
+    void aServerThatAnswersUnknown_isSaidWithItsOwnWords_boundedAndWithNoRawControlCharacter() throws Exception {
+        port = made(remoteWords(400));
+        String servers = "batch {id}: its outcome is UNKNOWN — the append timed out. Its caller is told the ledger did not answer; this batch is never handed "
+            + "to the ledger again by this server (a second apply could roll a newer write back): read its rows";
+        server.answerEveryWriteAsUnknown(servers);
+
+        Throwable t = catchThrowable(() -> port.reserve(tier(11L), new BigDecimal("10"), "k-1#L0"));
+
+        assertThat(t).isInstanceOf(LedgerFault.class);
+        assertThat(server.writesSeen).as("sent twice under one id, never a third time").hasSize(2);
+        String id = server.writesSeen.get(0);
+        assertThat(t.getMessage()).contains("UNKNOWN outcome: batch " + id + " sent twice, and the server answered that it does not know — reconcile by this transaction id. "
+            + "The server's words: " + servers.replace("{id}", id));
+
+        server.answerEveryWriteAsUnknown("batch {id}: its outcome is UNKNOWN — key 'a\nFORGED line' and " + (char) 0x202E + "reversed " + "x".repeat(4_000));   // gRPC itself refuses a description above about 8 KB (the call fails INTERNAL): a server keeps its words short
+        Throwable long_ = catchThrowable(() -> port.reserve(tier(11L), new BigDecimal("10"), "k-2#L0"));
+
+        assertThat(long_).isInstanceOf(LedgerFault.class);
+        assertThat(long_.getMessage()).contains("its outcome is UNKNOWN — key 'a\\u000aFORGED line' and \\u202ereversed xxx").contains("… (4108 characters)");   // the length is from a run: an id of ours is always 41 characters
+        assertThat(long_.getMessage().length()).as("a server's long words are cut: their first 600 characters and their length").isLessThan(1_100);
+        assertThat(long_.getMessage().codePoints().noneMatch(c -> Character.isISOControl(c) || Character.getType(c) == Character.FORMAT)).as("no raw control or format character").isTrue();
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private Map<String, Object> remoteWords(long deadlineMs) {

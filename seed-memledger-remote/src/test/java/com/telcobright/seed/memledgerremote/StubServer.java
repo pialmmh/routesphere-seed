@@ -70,6 +70,7 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     private final AtomicInteger healthFailuresLeft = new AtomicInteger();
     private volatile boolean faultWrites;
     private volatile long stallFirstMs, stallEveryMs;
+    private volatile String unknownWords;
 
     StubServer(MemLedger ledger) { this(ledger, 0, UUID.randomUUID().toString(), List.of()); }
 
@@ -102,6 +103,9 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
     /** Every write waits {@code ms} and then fails: nothing is ever applied. */
     void stallEveryWrite(long ms) { stallEveryMs = ms; }
 
+    /** Every write is answered at once as a server of ours answers a batch of UNKNOWN outcome: DEADLINE_EXCEEDED with these words ({id} = the batch's id). */
+    void answerEveryWriteAsUnknown(String words) { unknownWords = words; }
+
     /** Its Health answers UNAVAILABLE the next {@code tries} times: a server that answers its first call, but not Health yet. */
     void failHealthFor(int tries) { healthFailuresLeft.set(tries); }
 
@@ -110,6 +114,7 @@ final class StubServer extends MemLedgerGrpc.MemLedgerImplBase implements AutoCl
         writesSeen.add(request.getTransactionId());
         rowsAsReadSeen.add(request.getExpectsCount());
         if (faultWrites) { out.onError(Status.UNAVAILABLE.withDescription("Batch failed, nothing changed: the stub's WAL would not append").asRuntimeException()); return; }
+        if (unknownWords != null) { out.onError(Status.DEADLINE_EXCEEDED.withDescription(unknownWords.replace("{id}", request.getTransactionId())).asRuntimeException()); return; }
         if (stallEveryMs > 0) { pause(stallEveryMs); out.onError(Status.UNAVAILABLE.withDescription("stalled").asRuntimeException()); return; }
         boolean firstTry = triedOnce.add(request.getTransactionId());
         ApplyReply reply = applied.contains(request.getTransactionId()) ? ApplyReply.newBuilder().setApplied(request.getEntriesCount()).setAlreadyApplied(true).build() : applyNow(request);
