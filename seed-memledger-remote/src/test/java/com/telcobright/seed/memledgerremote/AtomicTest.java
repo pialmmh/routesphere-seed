@@ -3,6 +3,7 @@ package com.telcobright.seed.memledgerremote;
 import com.telcobright.seed.memledgerremote.api.Atomic;
 import com.telcobright.seed.memledgerremote.api.AtomicAnswer;
 import com.telcobright.seed.memledgerremote.api.AtomicAnswer.Outcome;
+import com.telcobright.seed.memledgerremote.api.WireBatch;
 import com.telcobright.seed.memledgerremote.wire.ApplyReply;
 import com.telcobright.seed.memledgerremote.wire.ApplyRequest;
 import com.telcobright.seed.memledgerremote.wire.ChangeKind;
@@ -28,6 +29,8 @@ class AtomicTest {
         assertThat(outcomeOf(0, "GUARD")).as("a guard that did not hold is a DECISION (mutant K1)").isEqualTo(Outcome.GUARD);
         assertThat(outcomeOf(0, "QUEUE_FULL")).as("a full queue is BUSY: try again or give the house answer (mutant K3)").isEqualTo(Outcome.BUSY);
         assertThat(outcomeOf(0, "NOT_FREE_IN_TIME")).isEqualTo(Outcome.BUSY);
+        assertThat(outcomeOf(0, "IN_DOUBT")).as("a row whose last write is not settled yet is BUSY — try again — never a money refusal").isEqualTo(Outcome.BUSY);
+        assertThat(WireBatch.IN_DOUBT).as("the word the server sends is the word the client reads").isEqualTo("IN_DOUBT");
         assertThat(outcomeOf(0, "STALE")).isEqualTo(Outcome.STALE);
         assertThat(outcomeOf(0, "LOCK_LOST")).as("a lost lock means read again (mutant K2)").isEqualTo(Outcome.LOCK_LOST);
         assertThat(outcomeOf(0, "NOT_COVERED")).isEqualTo(Outcome.NOT_COVERED);

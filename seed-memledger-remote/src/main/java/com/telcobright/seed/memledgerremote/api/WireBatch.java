@@ -23,6 +23,14 @@ public final class WireBatch {
     /** The words mem-ledger starts every refusal of a batch with (f739824 {@code MemLedgerImpl.REFUSED}). */
     public static final String REFUSED = "Batch refused, nothing changed: ";
 
+    /**
+     * The refusal code of a row IN DOUBT (2026-11-13): the row's last write answered UNKNOWN and is not settled yet, so the server
+     * neither reads the row for a write nor writes it — a row read now would be the row as it was before a record that may still
+     * land. Nothing is wrong with the request and nothing changed: BUSY, never a money refusal. The words stay the ledger's own
+     * ("… outcome of txn T unknown — retry after it settles"), so a caller that reads the words reads what it always read.
+     */
+    public static final String IN_DOUBT = "IN_DOUBT";
+
     private WireBatch() {}
 
     /** A batch that could not be read off the wire: refused before mem-ledger sees it, nothing changed. */

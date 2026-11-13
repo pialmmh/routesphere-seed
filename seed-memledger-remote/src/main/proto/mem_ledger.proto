@@ -164,6 +164,10 @@ message ApplyReply {
   string failed_row_json = 7;    // ARCH-0119 road 1, refusal_code GUARD: that entry's row as the cache holds it (unchanged); empty = none
 }
 // refusal_code since ARCH-0119: GUARD (road 1: a guard did not hold) · LOCK_LOST, NOT_COVERED (road 2) — each = nothing changed.
+// refusal_code IN_DOUBT (2026-11-13, every road): a row the batch names was written by a batch whose outcome is UNKNOWN and is not
+// settled yet. The server does not read that row for a write and does not write it: nothing changed, BUSY — try again. The message
+// keeps the ledger's words ("… outcome of txn T unknown — retry after it settles"). A READ of such a row (GetEntity, a list of its
+// entity) is UNAVAILABLE with the same words: a row in doubt is not readable.
 
 // ARCH-0119 · One PATCHed row after the batch.
 message RowResult {
@@ -186,7 +190,7 @@ message LockRequest {
 
 message LockReply {
   bool   granted      = 1;
-  string refusal_code = 2;       // empty when granted; QUEUE_FULL | NOT_FREE_IN_TIME | TOO_MANY_ROWS | REFUSED
+  string refusal_code = 2;       // empty when granted; QUEUE_FULL | NOT_FREE_IN_TIME | IN_DOUBT (a row asked is in doubt) | TOO_MANY_ROWS | REFUSED
   string message      = 3;       // the server's words
   string token        = 4;       // names this lock for its write (ApplyLockedRequest.token)
   int32  lease_ms     = 5;       // the lease given, from the grant, on the server's clock

@@ -16,7 +16,10 @@ public record AtomicAnswer(Outcome outcome, int applied, boolean alreadyApplied,
         APPLIED,
         /** Road 1: a guard did not hold, or a row to change is not there ({@link #failedEntry}, {@link #failedRow}). A decision, not a fault. */
         GUARD,
-        /** A row's queue is full, or its rows were not free in time: nothing wrong with the batch — try again, or give the house answer. Never a money refusal. */
+        /**
+         * A row's queue is full, its rows were not free in time, or a row is in doubt ({@link WireBatch#IN_DOUBT}: its last write is not
+         * settled yet): nothing wrong with the batch — try again, or give the house answer. Never a money refusal.
+         */
         BUSY,
         /** A row the batch read is not what it read: read again and decide again. */
         STALE,
@@ -43,7 +46,7 @@ public record AtomicAnswer(Outcome outcome, int applied, boolean alreadyApplied,
     public static AtomicAnswer of(ApplyReply reply) {
         Outcome outcome = reply.getApplied() > 0 ? Outcome.APPLIED : switch (reply.getRefusalCode()) {
             case "GUARD" -> Outcome.GUARD;
-            case "QUEUE_FULL", "NOT_FREE_IN_TIME" -> Outcome.BUSY;
+            case "QUEUE_FULL", "NOT_FREE_IN_TIME", WireBatch.IN_DOUBT -> Outcome.BUSY;
             case "STALE" -> Outcome.STALE;
             case "LOCK_LOST" -> Outcome.LOCK_LOST;
             case "NOT_COVERED" -> Outcome.NOT_COVERED;
