@@ -32,6 +32,11 @@ public final class CallPrepaid {
         return builder(kit, rates).payableAccounts(narrowing).build(kit);
     }
 
+    /** S5b · The same, the tiers the lane does not charge named too ({@code chargesTier}). */
+    public static Prepaid<CallContext> of(RoutesphereKit kit, CallRates rates, Prepaid.PayableAccounts<CallContext> narrowing, Prepaid.TierCharge<CallContext> charges) {
+        return builder(kit, rates).payableAccounts(narrowing).chargesTier(charges).build(kit);
+    }
+
     private static Prepaid.Builder<CallContext> builder(RoutesphereKit kit, CallRates rates) {
         return Prepaid.<CallContext>builder("call")
             .admission(Admission.HOLD_WINDOW)

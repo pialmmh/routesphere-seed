@@ -173,6 +173,21 @@ final class Purchases {
     /** New rows merged, a tier added, an account moved: the index of every tier made again on its next ask. */
     void forgetTheIndex() { accountsByPartner.forget(); }
 
+    /**
+     * I266 · An account a lane named for {@code partner}: true when the cache holds it AND its purchase. When it is this partner's (its
+     * purchase's partner) and the kept index lacks it — a purchase another client wrote after the index was made — it joins the index now
+     * (the index is not made again: on the wire that is two whole-table reads). False = the account or its purchase is not held.
+     */
+    boolean heldFor(String db, long partner, long accountId) {
+        PackageAccount live = books.liveAccount(db, accountId);
+        LedgerPurchase purchase = live == null || live.getIdpackagePurchase() == null ? null : books.livePurchase(db, live.getIdpackagePurchase());
+        if (purchase == null) return false;
+        if (purchase.getIdPartner() != null && purchase.getIdPartner() == partner && !indexOf(db).getOrDefault(partner, List.of()).contains(accountId)) {
+            indexTheNewAccounts(db, partner, List.of(accountId));
+        }
+        return true;
+    }
+
     /** The tier's partner → accounts index; a read the ledger does not answer is a LedgerFault naming the tier and the table. */
     private Map<Long, List<Long>> indexOf(String db) { return accountsByPartner.of(db, this::indexFromTheCache); }
 

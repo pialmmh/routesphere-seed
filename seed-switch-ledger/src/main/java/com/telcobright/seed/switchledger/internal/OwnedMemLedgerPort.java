@@ -103,6 +103,36 @@ public final class OwnedMemLedgerPort implements LedgerPort, LiveBalance, AutoCl
 
     @Override public Optional<List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return shared(() -> port.accountsOf(buyer)); }
 
+    /**
+     * I266 · An account a lane named that the cache may not hold yet (the BSS's purchase, written by another client after the partner's
+     * first admission made its index): held → {@link NewRows#KNOWN}, nothing merged ({@link MemLedgerPort#mergeIfUnknown}). Not held → the
+     * rows written since the last look merged ONCE under the write gate (the tree reload's merge, ghosts taken out with no money move
+     * meanwhile — any ledger), then asked again. A merge that ran meanwhile for another ask is not run twice: held after the gate = KNOWN.
+     * Never under this thread's own read of the gate (a read is never upgraded: the write would wait forever) — refused in words.
+     */
+    @Override
+    public NewRows mergeIfUnknown(LevelAdmission tier, long accountId) {
+        if (!port.looksUpNamedAccounts(tier)) return NewRows.NOTHING_NEW;
+        NewRows known = shared(() -> port.knownOrNull(tier, accountId));
+        if (known != null) return known;
+        if (gate.getReadHoldCount() > 0) throw new LedgerFault("the switch ledger was asked to merge new rows for account " + accountId + " of "
+            + tier.getDbName() + " under its own read gate (a unit or a read in progress on this thread): a merge never runs there");
+        return mergedUnderTheGate(tier, accountId);
+    }
+
+    /** I266 · The merges run for an account a lane named that the cache did not hold (the operations' view; a test's). */
+    public long mergesForNamedAccounts() { return port.mergesForNamedAccounts(); }
+
+    private NewRows mergedUnderTheGate(LevelAdmission tier, long accountId) {
+        gate.writeLock().lock();
+        try {
+            NewRows meanwhile = port.knownOrNull(tier, accountId);          // another ask's merge brought it while this one waited for the gate
+            return meanwhile != null ? meanwhile : port.mergedFor(tier, accountId, memLedger);
+        } finally {
+            gate.writeLock().unlock();
+        }
+    }
+
     @Override public Optional<List<Purchase>> purchasesOf(LevelAdmission buyer) { return shared(() -> port.purchasesOf(buyer)); }
     /** §15 · The tier's catalog by key, under the gate like every read (a reload replaces the snapshot behind it). */
     @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return shared(() -> port.catalogOf(tier)); }

@@ -42,6 +42,18 @@ final class PayableNarrowing {
         return List.copyOf(narrowed);
     }
 
+    /** I266 · The ids {@code named} holds that {@code fundable} lacks — each once, in {@code named}'s order, no null id. */
+    static List<Long> unlisted(List<PackageAccount> fundable, List<PackageAccount> named) {
+        if (named == null || named.isEmpty()) return List.of();
+        Map<Long, PackageAccount> listed = byId(fundable);
+        Set<Long> missing = new java.util.LinkedHashSet<>();
+        for (PackageAccount account : named) {
+            Long id = account == null ? null : account.getId();
+            if (id != null && !listed.containsKey(id)) missing.add(id);
+        }
+        return List.copyOf(missing);
+    }
+
     private static Map<Long, PackageAccount> byId(List<PackageAccount> fundable) {
         Map<Long, PackageAccount> byId = new HashMap<>();
         for (PackageAccount account : fundable) if (account != null && account.getId() != null) byId.putIfAbsent(account.getId(), account);

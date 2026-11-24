@@ -46,12 +46,20 @@ public final class CallLane {
      * @param mnp the ported numbers the switch learns at the answer: dialed → terminating
      */
     public static RoutesphereFlow<CallContext> onTheBase(RoutesphereKit kit, CallRates rates, Map<String, String> mnp, Clock clock) {
+        return onTheBase(kit, rates, mnp, clock, partnerId -> false);
+    }
+
+    /**
+     * S5b · The same lane, the tiers of {@code freeAt}'s partners rated {@code TierRate.free()} by its {@code rateAtLevel} — today's road for
+     * a tier the lane's answers do not charge (the WiFi leaves the reseller out this way).
+     */
+    public static RoutesphereFlow<CallContext> onTheBase(RoutesphereKit kit, CallRates rates, Map<String, String> mnp, Clock clock, java.util.function.IntPredicate freeAt) {
         return RoutesphereApp.<CallContext>builder("CallSupervisor")
             .serviceGroup(0)
             .identifyRootLevelTenant((facts, find) -> find.byIngress(facts.ingress()))
             .identifyPartner((call, candidate, find) -> find.byPartnerId(call, ((CallFacts) call.facts).partnerId()))
             .buildTask(CallLane::taskOf)
-            .rateAtLevel((call, tier, partner) -> firstMinute(rates, clock, call, tier, partner))
+            .rateAtLevel((call, tier, partner) -> freeAt.test(partner.getIdPartner()) ? TierRate.free() : firstMinute(rates, clock, call, tier, partner))
             .applyRootRules(CallLane::digitFilter)
             .route(call -> RoutePlan.one(new ParityWire.Hop("carrier-a")))
             .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL)

@@ -54,6 +54,8 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
     private final Purchases purchases;
     private final CatalogIndex catalog;
     private final LedgerCrud crud;
+    /** I266 · The merges run for an account a lane named that the cache did not hold. */
+    private final java.util.concurrent.atomic.AtomicLong namedAccountMerges = new java.util.concurrent.atomic.AtomicLong();
 
     public MemLedgerPort(Books books, AccountLocks locks) {
         this.books = books;
@@ -152,6 +154,56 @@ public final class MemLedgerPort implements LedgerPort, LiveBalance {
 
     /** New rows were merged into the cache (a reload, a tier added): the partner → accounts index is made again on its next ask. */
     public void newRowsMerged() { forgetTheIndexes(); }
+
+    // ── I266 · an account a lane named that the cache may not hold yet (the BSS's purchase, written by another client) ──
+
+    /**
+     * Held (the account and its purchase) → {@link NewRows#KNOWN}, nothing merged (this partner's account joins the partner index when it
+     * lacked it). Not held → ONE merge of the rows written since the last look — here only over a ledger that takes out its own ghosts (a
+     * recall-db: the merge is add-only, no gate needed); over any other the merge needs the gate the bootstrap road's port holds
+     * ({@link OwnedMemLedgerPort}), so this bare port answers {@link NewRows#NOTHING_NEW}. A ledger that keeps no purchases: nothing new (the
+     * walk's list is the tree's).
+     */
+    @Override
+    public NewRows mergeIfUnknown(LevelAdmission tier, long accountId) {
+        if (!looksUpNamedAccounts(tier)) return NewRows.NOTHING_NEW;
+        NewRows known = knownOrNull(tier, accountId);
+        if (known != null) return known;
+        if (!NewRowsOfATier.takesOutItsOwnGhosts(books.ledger())) return NewRows.NOTHING_NEW;
+        return mergedFor(tier, accountId, books.ledger());
+    }
+
+    /** The merges run for an account a lane named that the cache did not hold (the operations' view; a test's). */
+    public long mergesForNamedAccounts() { return namedAccountMerges.get(); }
+
+    /** A tier whose partner's accounts this ledger lists (it keeps purchases): a named account is looked up. */
+    boolean looksUpNamedAccounts(LevelAdmission tier) { return tier != null && tier.getDbName() != null && books.keepsPurchases(); }
+
+    /** KNOWN when the account and its purchase are held (this partner's joins the partner index); null = not held. */
+    NewRows knownOrNull(LevelAdmission tier, long accountId) {
+        return purchases.heldFor(tier.getDbName(), tier.getPartnerId(), accountId) ? NewRows.KNOWN : null;
+    }
+
+    /**
+     * ONE merge of the rows written since the last look (the caller holds the gate when this ledger's ghosts are taken out here), the
+     * indexes made again, then the account asked again. Not found after a reload that read only part of the rows = the store's failure,
+     * never "not found". Any failure = a fault on the wire.
+     */
+    NewRows mergedFor(LevelAdmission tier, long accountId, com.telcobright.memledger.api.MemLedger memLedger) {
+        try {
+            NewRowsOfATier.Merged merged = NewRowsOfATier.mergeRead(memLedger);
+            newRowsMerged();
+            namedAccountMerges.incrementAndGet();
+            boolean held = knownOrNull(tier, accountId) != null;
+            if (!held && !merged.complete()) throw new IllegalStateException("the reload read only part of the rows: " + merged.failures());
+            return new NewRows(held, true);
+        } catch (LedgerFault fault) {
+            throw fault.onTheWire() ? fault : LedgerFault.ofALedgerOnTheWire(fault.getMessage(), fault);
+        } catch (RuntimeException e) {
+            throw LedgerFault.ofALedgerOnTheWire("the switch ledger could not merge the rows written since its last look (account " + accountId + " of "
+                + tier.getDbName() + "): " + e.getMessage(), e);
+        }
+    }
 
     private static Credited creditedOf(Credit.Credited done) { return new Credited(done.accountId(), done.before(), done.after(), done.purchaseId()); }
 

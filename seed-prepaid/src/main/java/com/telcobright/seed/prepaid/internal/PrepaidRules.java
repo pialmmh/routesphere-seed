@@ -22,25 +22,35 @@ import java.util.function.Function;
  * @param itemRate       §15 · the cost on a matched item; null = the rate rule prices the item's account
  * @param serviceGroup   §15.3 · the request's revenue stream; null = no narrowing by group
  * @param payableAccounts S5 · the lane's narrowing of the rule's accounts for THIS request; null = no narrowing
+ * @param tierCharge     S5b · does THIS tier charge this request; null = every tier charges
  */
 public record PrepaidRules<C extends RoutesphereContext>(String name, Admission admission, Duration window, Duration firstRenewal,
                                                          Prepaid.RateRule<C> rate, Function<C, Final> finalRule, AccountRule accounts,
                                                          Prepaid.NoBalanceCause<C> noBalanceCause, Function<C, String> reference,
                                                          Function<C, Set<String>> units, Function<C, List<String>> productKeys,
                                                          Prepaid.ItemRate<C> itemRate, Function<C, Integer> serviceGroup,
-                                                         Prepaid.PayableAccounts<C> payableAccounts) {
+                                                         Prepaid.PayableAccounts<C> payableAccounts, Prepaid.TierCharge<C> tierCharge) {
 
-    /** The rules of before §15: no product keys, no item rate, no group, no narrowing. */
+    /** The rules of before §15: no product keys, no item rate, no group, no narrowing, every tier charges. */
     public PrepaidRules(String name, Admission admission, Duration window, Duration firstRenewal, Prepaid.RateRule<C> rate, Function<C, Final> finalRule,
                         AccountRule accounts, Prepaid.NoBalanceCause<C> noBalanceCause, Function<C, String> reference, Function<C, Set<String>> units) {
-        this(name, admission, window, firstRenewal, rate, finalRule, accounts, noBalanceCause, reference, units, null, null, null, null);
+        this(name, admission, window, firstRenewal, rate, finalRule, accounts, noBalanceCause, reference, units, null, null, null, null, null);
     }
 
-    /** The rules of before S5 (§15's shape): no narrowing. */
+    /** The rules of before S5 (§15's shape): no narrowing, every tier charges. */
     public PrepaidRules(String name, Admission admission, Duration window, Duration firstRenewal, Prepaid.RateRule<C> rate, Function<C, Final> finalRule,
                         AccountRule accounts, Prepaid.NoBalanceCause<C> noBalanceCause, Function<C, String> reference, Function<C, Set<String>> units,
                         Function<C, List<String>> productKeys, Prepaid.ItemRate<C> itemRate, Function<C, Integer> serviceGroup) {
-        this(name, admission, window, firstRenewal, rate, finalRule, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup, null);
+        this(name, admission, window, firstRenewal, rate, finalRule, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup, null, null);
+    }
+
+    /** The rules of S5 (before S5b): every tier charges. */
+    public PrepaidRules(String name, Admission admission, Duration window, Duration firstRenewal, Prepaid.RateRule<C> rate, Function<C, Final> finalRule,
+                        AccountRule accounts, Prepaid.NoBalanceCause<C> noBalanceCause, Function<C, String> reference, Function<C, Set<String>> units,
+                        Function<C, List<String>> productKeys, Prepaid.ItemRate<C> itemRate, Function<C, Integer> serviceGroup,
+                        Prepaid.PayableAccounts<C> payableAccounts) {
+        this(name, admission, window, firstRenewal, rate, finalRule, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup,
+            payableAccounts, null);
     }
 
     /** §15 · Does this lane relate package accounts to their items by product key? */
@@ -48,6 +58,9 @@ public record PrepaidRules<C extends RoutesphereContext>(String name, Admission 
 
     /** S5 · Does this lane narrow the rule's accounts for each request? */
     public boolean narrowsAccounts() { return payableAccounts != null; }
+
+    /** S5b · May this lane say a tier is not charged (the free road)? */
+    public boolean exemptsTiers() { return tierCharge != null; }
 
     public boolean windowed() { return admission == Admission.HOLD_WINDOW; }
 

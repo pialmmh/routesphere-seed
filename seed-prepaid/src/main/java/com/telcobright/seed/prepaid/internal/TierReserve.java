@@ -57,6 +57,18 @@ final class TierReserve<C extends RoutesphereContext> {
         } catch (LedgerPort.LedgerFault fault) {
             return Verdict.reject(ledgerFault(ctx, tier.levelIndex(), tier.dbName(), partner.getIdPartner(), fault));
         }
+        return reserveAt(ctx, tier, partner, rate);
+    }
+
+    /**
+     * S5b (X1) · A tier the lane does not charge for THIS request: the free road the lane's answers take for a tier rated
+     * {@link TierRate#free()} — walked and recorded at zero, nothing held. Its zero reserve records no debit reference, so no window renews
+     * it and the end settles nothing for it.
+     */
+    Verdict free(C ctx, Tier tier, Partner partner) { return reserveAt(ctx, tier, partner, TierRate.free()); }
+
+    /** The tier at its rate: taken as the application's own step left it, else planned and held (a zero rate holds nothing). */
+    private Verdict reserveAt(C ctx, Tier tier, Partner partner, TierRate rate) {
         if (rate == null) return Verdict.reject(SessionCause.UNRATED);
         if (rate.held() != null) return takeHeld(ctx, rate.held(), tier.levelIndex());
         LevelAdmission level = levelOf(tier.tenant(), partner, tier.levelIndex(), rate);

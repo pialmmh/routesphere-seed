@@ -83,6 +83,15 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     @FunctionalInterface
     public interface PayableAccounts<C> { List<PackageAccount> narrow(C ctx, PayingTier tier, List<PackageAccount> fundable); }
 
+    /**
+     * S5b (X1; the WiFi architect's ruling 2026-11-24) · (ctx, tier) → does THIS tier charge this request? false = "not charged here": the
+     * tier takes the free road the lane's answers take for a tier rated free — walked and recorded at zero, nothing held, never refused for
+     * want of an account, {@link PayableAccounts} not asked for it; its renewals hold nothing and the end settles nothing. The WiFi: only the
+     * tier that owns the purchase charges. A separate answer from {@link PayableAccounts}: one answer, one meaning.
+     */
+    @FunctionalInterface
+    public interface TierCharge<C> { boolean charges(C ctx, PayingTier tier); }
+
     private final RoutesphereKit kit;
     private final PrepaidRules<C> rules;
 
@@ -144,6 +153,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         private ItemRate<C> itemRate;
         private Function<C, Integer> serviceGroup;
         private PayableAccounts<C> payableAccounts;
+        private TierCharge<C> tierCharge;
         private boolean sealed;
 
         private Builder(String name) {
@@ -217,6 +227,11 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
          * narrowing, the walk of every lane before S5.
          */
         public Builder<C> payableAccounts(PayableAccounts<C> v) { open(); this.payableAccounts = Objects.requireNonNull(v, "payableAccounts"); return this; }
+        /**
+         * S5b · Does THIS tier charge this request ({@link TierCharge})? false = the free road: walked and recorded at zero, nothing held.
+         * Not given: every tier charges (the walk of every lane before S5b).
+         */
+        public Builder<C> chargesTier(TierCharge<C> v) { open(); this.tierCharge = Objects.requireNonNull(v, "chargesTier"); return this; }
 
         /** The lane's Prepaid on this kit — refused in words when a required part is missing or disagrees with the kit's cadence. */
         public Prepaid<C> build(RoutesphereKit kit) {
@@ -226,7 +241,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             sealed = true;
             Function<C, Final> end = finalize != null ? finalize : ctx -> Final.nothing();     // a charge-now lane: the charge stands
             return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup,
-                payableAccounts));
+                payableAccounts, tierCharge));
         }
 
         private void refuseAMissingPart() {

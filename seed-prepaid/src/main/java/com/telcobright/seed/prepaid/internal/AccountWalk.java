@@ -48,10 +48,13 @@ final class AccountWalk<C extends RoutesphereContext> {
 
     private final LaneAnswers<C> flow;
     private final PrepaidRules<C> rules;
+    /** I266 · The engine's one memory of the ids a merge did not find (the lane's). */
+    private final NewlyWrittenAccounts newlyWritten;
 
-    AccountWalk(LaneAnswers<C> flow, PrepaidRules<C> rules) {
+    AccountWalk(LaneAnswers<C> flow, PrepaidRules<C> rules, NewlyWrittenAccounts newlyWritten) {
         this.flow = flow;
         this.rules = rules;
+        this.newlyWritten = newlyWritten;
     }
 
     /**
@@ -137,16 +140,25 @@ final class AccountWalk<C extends RoutesphereContext> {
      * it caches purchases, else the tree's; the best matching active package of the lane's units for THIS request first, then cash.
      */
     private List<PackageAccount> fundable(C ctx, PayingTier tier, LocalDateTime now) {
-        Optional<List<PackageAccount>> ledgers = flow.kit().ledger().accountsOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
-        List<PackageAccount> catalog = ledgers.orElseGet(() -> PackageMatch.accountsOf(tier.partner(), tier.tenant().getContext()));
-        List<PackageAccount> payable = PackageMatch.payable(catalog, rules.units().apply(ctx), rules.accounts(), now);
-        return rules.narrowsAccounts() ? narrowed(ctx, tier, payable) : payable;
+        List<PackageAccount> payable = payableByTheRule(ctx, tier, now);
+        return rules.narrowsAccounts() ? narrowed(ctx, tier, payable, now) : payable;
     }
 
-    /** S5 · The lane's narrowing of the rule's list, as a named step: only the accounts the list holds survive ({@link PayableNarrowing}). */
-    private List<PackageAccount> narrowed(C ctx, PayingTier tier, List<PackageAccount> payable) {
+    private List<PackageAccount> payableByTheRule(C ctx, PayingTier tier, LocalDateTime now) {
+        Optional<List<PackageAccount>> ledgers = flow.kit().ledger().accountsOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
+        List<PackageAccount> catalog = ledgers.orElseGet(() -> PackageMatch.accountsOf(tier.partner(), tier.tenant().getContext()));
+        return PackageMatch.payable(catalog, rules.units().apply(ctx), rules.accounts(), now);
+    }
+
+    /**
+     * S5 · The lane's narrowing of the rule's list, as a named step: only the accounts the list holds survive ({@link PayableNarrowing}).
+     * I266 · An id the lane named that the list lacks may be a purchase written since the ledger last looked: asked of the ledger (one merge at
+     * most, {@link NewlyWrittenAccounts}) and, when it holds it now, the rule's list built again — the lane is not asked twice.
+     */
+    private List<PackageAccount> narrowed(C ctx, PayingTier tier, List<PackageAccount> payable, LocalDateTime now) {
         List<PackageAccount> named = flow.step(ctx, "PAYABLE_ACCOUNTS", () -> rules.payableAccounts().narrow(ctx, tier, List.copyOf(payable)));
-        return PayableNarrowing.within(rules.name(), payable, named);
+        List<PackageAccount> listed = newlyWritten.buildTheListAgain(flow, ctx, tier, PayableNarrowing.unlisted(payable, named)) ? payableByTheRule(ctx, tier, now) : payable;
+        return PayableNarrowing.within(rules.name(), listed, named);
     }
 
     /** One account's rate for ONE unit — §15: a matched item priced by the lane's {@code itemRate} where it gives one; the key is the CDR's matched prefix. */

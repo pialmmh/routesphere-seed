@@ -2,6 +2,7 @@ package com.telcobright.seed.prepaid.internal;
 
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.seed.prepaid.api.PayingTier;
 import com.telcobright.seed.sessionflow.api.LaneAnswers;
 import com.telcobright.seed.sessionflow.api.RoutesphereContext;
 import com.telcobright.seed.sessionflow.api.SessionCause;
@@ -34,6 +35,8 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
     private final LaneAnswers<C> flow;
     /** The lane's Prepaid rules; null = the lane's answers alone (the moved steps, exactly as they were). */
     private final PrepaidRules<C> rules;
+    /** I266 · The lane's one memory of the account ids a merge did not find (not merged again for 60 s). */
+    private final NewlyWrittenAccounts newlyWritten = new NewlyWrittenAccounts();
 
     public PrepaidEngine(LaneAnswers<C> flow) { this(flow, null); }
 
@@ -48,7 +51,15 @@ public final class PrepaidEngine<C extends RoutesphereContext> implements MoneyE
     @Override
     public Verdict planReserve(C ctx, Tier tier, Partner partner) {
         if (rules == null || flow.isFree(ctx, ctx.candidateBeingAdmitted())) return TierReserve.of(flow).rateAndReserve(ctx, tier, partner);
-        return new AccountWalk<>(flow, rules).planReserve(ctx, tier, partner);
+        if (notChargedHere(ctx, tier, partner)) return TierReserve.of(flow).free(ctx, tier, partner);
+        return new AccountWalk<>(flow, rules, newlyWritten).planReserve(ctx, tier, partner);
+    }
+
+    /** S5b (X1) · The lane says THIS tier is not charged for this request (a named step); not given = every tier charges. */
+    private boolean notChargedHere(C ctx, Tier tier, Partner partner) {
+        if (!rules.exemptsTiers()) return false;
+        PayingTier paying = new PayingTier(tier, partner);
+        return !flow.step(ctx, "CHARGES_TIER", () -> rules.tierCharge().charges(ctx, paying));
     }
 
     /**

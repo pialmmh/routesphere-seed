@@ -32,14 +32,25 @@ final class NewRowsOfATier {
     private NewRowsOfATier() {}
 
     /** @return the rows merged, the ghost reserves not counted */
-    static int merge(MemLedger memLedger) {
-        if (takesOutItsOwnGhosts(memLedger)) return reloaded(memLedger).added();
+    static int merge(MemLedger memLedger) { return mergeRead(memLedger).rows(); }
+
+    /** I266 · What one merge came to: the rows merged (ghosts not counted) and whether the reload read every table ({@code failures} when not). */
+    record Merged(int rows, boolean complete, String failures) {}
+
+    /** I266 · The same merge, saying whether its reload was whole — a partial one still merged its part, its ghosts taken out. */
+    static Merged mergeRead(MemLedger memLedger) {
+        if (takesOutItsOwnGhosts(memLedger)) return mergedOf(reloaded(memLedger), 0);
         Map<String, Set<Object>> reservesBefore = reservesOf(memLedger);
         ReloadResult read = reloaded(memLedger);
-        return read.added() - takeOutTheGhosts(memLedger, reservesBefore);
+        return mergedOf(read, takeOutTheGhosts(memLedger, reservesBefore));
     }
 
-    private static boolean takesOutItsOwnGhosts(MemLedger memLedger) {
+    private static Merged mergedOf(ReloadResult read, int ghosts) {
+        return new Merged(read.added() - ghosts, read.isComplete(), read.isComplete() ? null : String.valueOf(read.failures()));
+    }
+
+    /** A ledger whose own reload takes out its ghosts: its merge is add-only, safe without the port's gate (I266 on the bare port). */
+    static boolean takesOutItsOwnGhosts(MemLedger memLedger) {
         return memLedger instanceof GhostFreeReloads ghostFree && ghostFree.takesOutGhosts();
     }
 

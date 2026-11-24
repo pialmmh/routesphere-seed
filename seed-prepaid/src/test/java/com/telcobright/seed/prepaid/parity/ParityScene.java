@@ -92,6 +92,14 @@ public final class ParityScene implements AutoCloseable {
      */
     public enum Lane { ON_THE_BASE, ON_A_SUBCLASS_PREPAID, ON_PREPAID }
 
+    /**
+     * I266 · The switch ledger's road the kit is handed. BARE: {@code SwitchLedgers.over}'s port, as a host that runs its own MemLedger hands
+     * it (every row before I266). BARE_GHOST_FREE: the same over a ledger that takes out its own ghosts — the shape of wifi-sphere's shared
+     * recall-db road (the lab's embedded ledger says so here: these rows leave no ghost behind). GATED: the bootstrap road's port, the bare
+     * one behind its gate ({@code OwnedMemLedgerPort}).
+     */
+    public enum LedgerRoad { BARE, BARE_GHOST_FREE, GATED }
+
     private ParityScene(Map<String, String> balances, RoutesphereSettings settings, boolean withEngine, Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes) {
         this(balances, null, settings, withEngine, lanes, null);
     }
@@ -105,6 +113,11 @@ public final class ParityScene implements AutoCloseable {
     /** §15 · The same, the catalog and the products cached too; {@code catalog} lays down packages, items, products and the accounts' items before the start. */
     private ParityScene(Map<String, String> balances, Map<Long, String> purchaseExpiries, RoutesphereSettings settings, boolean withEngine,
                         Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes, java.util.function.Consumer<LedgerLab> catalog) {
+        this(balances, purchaseExpiries, settings, withEngine, lanes, catalog, LedgerRoad.BARE);
+    }
+
+    private ParityScene(Map<String, String> balances, Map<Long, String> purchaseExpiries, RoutesphereSettings settings, boolean withEngine,
+                        Function<RoutesphereKit, RoutesphereFlow<CallContext>> lanes, java.util.function.Consumer<LedgerLab> catalog, LedgerRoad road) {
         fundTheLab(balances);
         if (purchaseExpiries != null) buyEveryAccountsPurchase(purchaseExpiries);
         if (catalog != null) {
@@ -113,10 +126,10 @@ public final class ParityScene implements AutoCloseable {
             lab.asLedgerDb(List.of("packageaccount", "packageaccountreserve", "packagepurchase", "catalog", "product", "servicegroup"), List.of("packageaccountreserve"), 5_000);
         }
         lab.start();
-        this.ledger = SwitchLedgers.over(lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null : catalog != null
+        this.ledger = SwitchLedgers.over(road == LedgerRoad.BARE_GHOST_FREE ? ghostFree(lab.ledger()) : lab.ledger(), LEDGER_SETTINGS, clock, purchaseExpiries == null ? null : catalog != null
             ? java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase", "Package", "PackageItem", "Product", "ServiceGroup")
             : java.util.Set.of("PackageAccount", "PackageAccountReserve", "PackagePurchase"));
-        this.recorder = new RecordingPort(ledger.port(), this::ctxOrNull);
+        this.recorder = new RecordingPort(road == LedgerRoad.GATED ? behindTheGate(ledger.port(), lab) : ledger.port(), this::ctxOrNull);
         this.kit = RoutesphereKit.builder().tenants(TenantLookup.of(root)).identification(List.of(new IdentificationRule("esl", "10.0.0.1:8021", "btcl")))
             .ledger(recorder).cdr(cdrs).zone(DHAKA).clock(clock).settings(settings).build();
         this.flow = lanes.apply(kit);
@@ -135,6 +148,31 @@ public final class ParityScene implements AutoCloseable {
     public static ParityScene openOnTheLedgersPurchases(Map<String, String> balances, Map<Long, String> expiries,
                                                         Function<RoutesphereKit, RoutesphereFlow<CallContext>> lane) {
         return new ParityScene(balances, expiries, handlerSettings(), false, lane);
+    }
+
+    /** I266 · The same scene on the switch ledger's road of the test's choice ({@link LedgerRoad}). */
+    public static ParityScene openOnTheLedgersPurchases(Map<String, String> balances, Map<Long, String> expiries, LedgerRoad road,
+                                                        Function<RoutesphereKit, RoutesphereFlow<CallContext>> lane) {
+        return new ParityScene(balances, expiries, handlerSettings(), false, lane, null, road);
+    }
+
+    /** I266 · The lab's MemLedger saying it takes out its own ghosts (as a recall-db whose Health says {@code ghosts}); every call its own. */
+    private static com.telcobright.memledger.api.MemLedger ghostFree(com.telcobright.memledger.api.MemLedger real) {
+        return (com.telcobright.memledger.api.MemLedger) java.lang.reflect.Proxy.newProxyInstance(ParityScene.class.getClassLoader(),
+            new Class<?>[] {com.telcobright.memledger.api.MemLedger.class, com.telcobright.seed.switchledger.spi.GhostFreeReloads.class}, (proxy, method, args) -> {
+                if (method.getName().equals("takesOutGhosts") && method.getParameterCount() == 0) return true;
+                try {
+                    return method.invoke(real, args);
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+    }
+
+    /** I266 · The bootstrap road's port: the bare port behind its gate, over the lab's two schemas. */
+    private static LedgerPort behindTheGate(LedgerPort bare, LedgerLab lab) {
+        return new com.telcobright.seed.switchledger.internal.OwnedMemLedgerPort((com.telcobright.seed.switchledger.internal.MemLedgerPort) bare, lab.ledger(),
+            List.of("btcl", "res_2"), tierDb -> true);
     }
 
     /**
@@ -389,6 +427,22 @@ public final class ParityScene implements AutoCloseable {
         /** L2b item 4: the purchase road and the ledger's accounts. */
         @Override public Purchased purchase(LevelAdmission buyer, Offer offer, String reference, Ids ids) { note("purchase", reference); return real.purchase(buyer, offer, reference, ids); }
         @Override public Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return real.accountsOf(buyer); }
+
+        /** I266 · The merges the real ledger ran for an account a lane named (counted here, said in {@link #seen}). */
+        public final java.util.concurrent.atomic.AtomicInteger merges = new java.util.concurrent.atomic.AtomicInteger();
+        /** I266 (b) · Non-null: the store cannot be read — every merge throws this. */
+        public volatile RuntimeException mergeFails;
+
+        /** I266 · The real ledger merges (a wrapper that kept the SPI's default would answer "nothing new"). */
+        @Override public NewRows mergeIfUnknown(LevelAdmission tier, long accountId) {
+            if (mergeFails != null) throw mergeFails;
+            NewRows looked = real.mergeIfUnknown(tier, accountId);
+            if (looked.merged()) {
+                merges.incrementAndGet();
+                seen.add("merge " + tier.getDbName() + "#" + accountId + " held=" + looked.held() + " thread=" + Thread.currentThread().getName());
+            }
+            return looked;
+        }
         /** §15 · the catalog read passes through like every read (a wrapper that inherited the SPI's default would walk by unit). */
         @Override public Optional<ItemCatalog> catalogOf(LevelAdmission tier) { return real.catalogOf(tier); }
 

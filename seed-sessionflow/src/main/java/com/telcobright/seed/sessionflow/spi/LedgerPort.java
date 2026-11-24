@@ -148,6 +148,28 @@ public interface LedgerPort {
     default Optional<java.util.List<com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount>> accountsOf(LevelAdmission buyer) { return Optional.empty(); }
 
     /**
+     * I266 · Is the account {@code accountId} that a lane named for the tier (its schema: {@code tier.getDbName()}) in THIS ledger's cache?
+     * A ledger that caches rows other clients write (the switch ledger: the BSS's purchases) and does not hold it merges the rows written
+     * since its last look, once (the same merge as a tree's reload, {@link #treeReloaded}), and answers whether it holds the account now. A
+     * Prepaid walk asks it for an id the lane named that the rule's list lacks, OUTSIDE the walk's unit: the merge holds the ledger's gate
+     * alone, so it is never asked under a unit. A store that cannot be read = {@link LedgerFault}. A ledger that wraps another passes it on.
+     * Default: {@link NewRows#NOTHING_NEW} — a ledger that holds every row it will ever see (the embedded store, the testkit's, orchestrix's
+     * roads) has nothing to merge.
+     */
+    default NewRows mergeIfUnknown(LevelAdmission tier, long accountId) { return NewRows.NOTHING_NEW; }
+
+    /**
+     * I266 · What {@link #mergeIfUnknown} saw. {@code held}: the account is in the ledger's cache NOW. {@code merged}: THIS ask merged the
+     * rows written since the ledger's last look (false when the cache held the account already, or when another ask's merge brought it).
+     */
+    record NewRows(boolean held, boolean merged) {
+        /** The cache holds the account and this ask merged nothing. */
+        public static final NewRows KNOWN = new NewRows(true, false);
+        /** A ledger that merges nothing: the account is not held, nothing was merged. */
+        public static final NewRows NOTHING_NEW = new NewRows(false, false);
+    }
+
+    /**
      * L3 · The buyer's purchases (its partner, its tier) as THIS ledger holds them, oldest first — read from the ledger's cached purchases
      * (the officer's purchase list; never prime-context's tree). Empty = this ledger cannot say (it caches no purchases).
      */
