@@ -112,6 +112,7 @@ final class AccountWalk<C extends RoutesphereContext> {
     /** The accounts the rule lets pay, unexpired at the session's clock: the lane's units' packages, then cash — §15: each package account with its item. */
     private Candidates accountsToTry(C ctx, PayingTier tier) {
         List<PackageAccount> payable = fundable(ctx, tier, LocalDateTime.now(flow.kit().clock()));
+        if (rules.narrowsAccounts() && payable.isEmpty()) return new Candidates(List.of(), Map.of(), null);   // S5: the lane left none → its no-balance cause
         if (!rules.matchesItems()) return new Candidates(payable, Map.of(), null);
         Optional<LedgerPort.ItemCatalog> catalog = flow.kit().ledger().catalogOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
         if (catalog.isEmpty()) return walkedByUnit(tier, payable);
@@ -138,7 +139,14 @@ final class AccountWalk<C extends RoutesphereContext> {
     private List<PackageAccount> fundable(C ctx, PayingTier tier, LocalDateTime now) {
         Optional<List<PackageAccount>> ledgers = flow.kit().ledger().accountsOf(new LevelAdmission(tier.levelIndex(), tier.tenant(), tier.partner(), null));
         List<PackageAccount> catalog = ledgers.orElseGet(() -> PackageMatch.accountsOf(tier.partner(), tier.tenant().getContext()));
-        return PackageMatch.payable(catalog, rules.units().apply(ctx), rules.accounts(), now);
+        List<PackageAccount> payable = PackageMatch.payable(catalog, rules.units().apply(ctx), rules.accounts(), now);
+        return rules.narrowsAccounts() ? narrowed(ctx, tier, payable) : payable;
+    }
+
+    /** S5 · The lane's narrowing of the rule's list, as a named step: only the accounts the list holds survive ({@link PayableNarrowing}). */
+    private List<PackageAccount> narrowed(C ctx, PayingTier tier, List<PackageAccount> payable) {
+        List<PackageAccount> named = flow.step(ctx, "PAYABLE_ACCOUNTS", () -> rules.payableAccounts().narrow(ctx, tier, List.copyOf(payable)));
+        return PayableNarrowing.within(rules.name(), payable, named);
     }
 
     /** One account's rate for ONE unit — §15: a matched item priced by the lane's {@code itemRate} where it gives one; the key is the CDR's matched prefix. */

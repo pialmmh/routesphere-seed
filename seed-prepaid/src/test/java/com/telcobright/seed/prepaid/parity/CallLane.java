@@ -3,6 +3,7 @@ package com.telcobright.seed.prepaid.parity;
 import com.telcobright.rtc.domainmodel.LevelAdmission;
 import com.telcobright.rtc.domainmodel.mysqlentity.PackageAccount;
 import com.telcobright.rtc.domainmodel.mysqlentity.Partner;
+import com.telcobright.seed.prepaid.api.Prepaid;
 import com.telcobright.seed.sessionflow.api.RerouteAction;
 import com.telcobright.seed.sessionflow.api.RoutePlan;
 import com.telcobright.seed.sessionflow.api.RoutesphereApp;
@@ -68,6 +69,11 @@ public final class CallLane {
      * the digit filter, delivered, the ported number at the answer).
      */
     public static RoutesphereFlow<CallContext> onPrepaid(RoutesphereKit kit, CallRates rates, Map<String, String> mnp) {
+        return onPrepaid(kit, rates, mnp, CallPrepaid.of(kit, rates));
+    }
+
+    /** S5 · The same lane on a Prepaid of the test's own (the call's Prepaid with a lane narrowing). */
+    public static RoutesphereFlow<CallContext> onPrepaid(RoutesphereKit kit, CallRates rates, Map<String, String> mnp, Prepaid<CallContext> prepaid) {
         return RoutesphereApp.<CallContext>builder("CallSupervisor")
             .serviceGroup(0)
             .identifyRootLevelTenant((facts, find) -> find.byIngress(facts.ingress()))
@@ -78,7 +84,7 @@ public final class CallLane {
             .rerouteActionFor(cause -> RerouteAction.FAIL_TERMINAL)
             .delivered((call, outcome) -> call.answered())
             .onAnswered((call, answer) -> call.terminatingCalledNumber = mnp.get(call.originatingCalledNumber))
-            .prepaid(CallPrepaid.of(kit, rates))
+            .prepaid(prepaid)
             .build(kit);
     }
 

@@ -24,6 +24,15 @@ public final class CallPrepaid {
     private CallPrepaid() {}
 
     public static Prepaid<CallContext> of(RoutesphereKit kit, CallRates rates) {
+        return builder(kit, rates).build(kit);
+    }
+
+    /** S5 · The same Prepaid with a lane narrowing of the test's own (the WiFi's shape — the account of THIS purchase — on the call's rows). */
+    public static Prepaid<CallContext> of(RoutesphereKit kit, CallRates rates, Prepaid.PayableAccounts<CallContext> narrowing) {
+        return builder(kit, rates).payableAccounts(narrowing).build(kit);
+    }
+
+    private static Prepaid.Builder<CallContext> builder(RoutesphereKit kit, CallRates rates) {
         return Prepaid.<CallContext>builder("call")
             .admission(Admission.HOLD_WINDOW)
             .window(Duration.ofSeconds(kit.settings().reservePeriodSec()))
@@ -31,8 +40,7 @@ public final class CallPrepaid {
             .rate((call, tier, account) -> rates.ratePerMinute(call, tier.tier(), tier.partner(), account))
             .units(call -> CallRates.isIntlOut(call) ? Set.of() : PackageMatch.CALL_AND_SMS_UNITS)   // C3: abroad, no package pays — cash only
             .noBalanceCause((call, tier) -> CallRates.isIntlOut(call) ? CallLane.NO_BALANCE_INT_OUT : SessionCause.INSUFFICIENT_BALANCE)
-            .actualCharge((call, tier) -> costAtTheEnd(rates, call, tier))          // answered: holds back, the actual charge taken; else every hold back
-            .build(kit);
+            .actualCharge((call, tier) -> costAtTheEnd(rates, call, tier));         // answered: holds back, the actual charge taken; else every hold back
     }
 
     /** {@code BalanceBillingService.finalizeBalance} 127–148: the rate re-looked-up on the terminating number, then the talk time's cost. */

@@ -72,6 +72,17 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
     @FunctionalInterface
     public interface ItemRate<C> { BigDecimal units(C ctx, PayingTier tier, PackageItemMatch match); }
 
+    /**
+     * S5 (A-0230 R1; the WiFi architect's GO, ARCH-A-0090, 2026-11-24) · (ctx, tier, fundable) → the accounts THIS request may pay, best
+     * first. {@code fundable} is the rule's list (the accounts the rule lets pay, unexpired, in its order); the lane NARROWS it — the WiFi:
+     * the account of the purchase the device tapped. It can never widen it: an account it names that the list does not hold is dropped
+     * (said once per lane). Empty or null = none pays: the lane's no-balance cause, no other account tried. It is asked once per PAYING
+     * TIER of the chain (a reseller's tier, then the partner's): a lane narrows the tier that owns the purchase and returns the list as it
+     * came for the others.
+     */
+    @FunctionalInterface
+    public interface PayableAccounts<C> { List<PackageAccount> narrow(C ctx, PayingTier tier, List<PackageAccount> fundable); }
+
     private final RoutesphereKit kit;
     private final PrepaidRules<C> rules;
 
@@ -132,6 +143,7 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
         private Function<C, List<String>> productKeys;
         private ItemRate<C> itemRate;
         private Function<C, Integer> serviceGroup;
+        private PayableAccounts<C> payableAccounts;
         private boolean sealed;
 
         private Builder(String name) {
@@ -199,6 +211,12 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
          * item, is not held to it. The matched product's group becomes the charge record's. Null = no such check. Needs {@link #productKeys}.
          */
         public Builder<C> serviceGroup(Function<C, Integer> v) { open(); this.serviceGroup = v; return this; }
+        /**
+         * S5 · Which of the accounts the rule lets pay THIS request may pay ({@link PayableAccounts}): narrow only, never widen; empty = none
+         * pays (the no-balance cause, no other account tried). The renewals of a window keep the account held at admission. Not given: no
+         * narrowing, the walk of every lane before S5.
+         */
+        public Builder<C> payableAccounts(PayableAccounts<C> v) { open(); this.payableAccounts = Objects.requireNonNull(v, "payableAccounts"); return this; }
 
         /** The lane's Prepaid on this kit — refused in words when a required part is missing or disagrees with the kit's cadence. */
         public Prepaid<C> build(RoutesphereKit kit) {
@@ -207,7 +225,8 @@ public final class Prepaid<C extends RoutesphereContext> implements MoneyRules<C
             refuseADisagreeingCadence(kit);
             sealed = true;
             Function<C, Final> end = finalize != null ? finalize : ctx -> Final.nothing();     // a charge-now lane: the charge stands
-            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup));
+            return new Prepaid<>(kit, new PrepaidRules<>(name, admission, window, firstRenewal, rate, end, accounts, noBalanceCause, reference, units, productKeys, itemRate, serviceGroup,
+                payableAccounts));
         }
 
         private void refuseAMissingPart() {

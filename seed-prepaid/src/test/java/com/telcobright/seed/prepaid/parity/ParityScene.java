@@ -131,6 +131,12 @@ public final class ParityScene implements AutoCloseable {
         return new ParityScene(balances, expiries, handlerSettings(), false, kit -> laneOf(lane, kit));
     }
 
+    /** S5 · The same scene on a lane of the test's own (the call's Prepaid with a lane narrowing). */
+    public static ParityScene openOnTheLedgersPurchases(Map<String, String> balances, Map<Long, String> expiries,
+                                                        Function<RoutesphereKit, RoutesphereFlow<CallContext>> lane) {
+        return new ParityScene(balances, expiries, handlerSettings(), false, lane);
+    }
+
     /**
      * §15 · The per-event scene (the ad) whose ledger caches the purchases AND the catalog with its products: {@code catalog} lays down the
      * packages, items, products and the accounts' items on the lab before the start (every purchase is of package 1 until it moves one).
