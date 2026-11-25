@@ -58,6 +58,9 @@ public final class InMemoryLedger implements LedgerPort {
 
     private InMemoryLedger(boolean accountKeyed) { this.accountKeyed = accountKeyed; }
 
+    /** I266 · This ledger holds every row it will ever see (no other client writes it): nothing to merge, decided — said nowhere. */
+    @Override public NewRows mergeIfUnknown(com.telcobright.rtc.domainmodel.LevelAdmission tier, long accountId) { return NewRows.NOTHING_NEW; }
+
     /**
      * The SWITCH's own ledger in memory (seed-switch-ledger's shape): a tier pays from the ACCOUNT its rating step named
      * ({@code level.getPackageAccountId()}) in its own tier — never from "the partner". A tier that names none is refused

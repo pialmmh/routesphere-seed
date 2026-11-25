@@ -153,10 +153,12 @@ public interface LedgerPort {
      * since its last look, once (the same merge as a tree's reload, {@link #treeReloaded}), and answers whether it holds the account now. A
      * Prepaid walk asks it for an id the lane named that the rule's list lacks, OUTSIDE the walk's unit: the merge holds the ledger's gate
      * alone, so it is never asked under a unit. A store that cannot be read = {@link LedgerFault}. A ledger that wraps another passes it on.
-     * Default: {@link NewRows#NOTHING_NEW} — a ledger that holds every row it will ever see (the embedded store, the testkit's, orchestrix's
-     * roads) has nothing to merge.
+     * Default: {@link NewRows#NOTHING_NEW}, said ONCE per class at WARN ("I266 is OFF on it") — a forgotten wrapper shows in the first
+     * journey's log. A ledger that holds every row it will ever see (the testkit's, orchestrix's roads) overrides it with nothing new.
      */
-    default NewRows mergeIfUnknown(LevelAdmission tier, long accountId) { return NewRows.NOTHING_NEW; }
+    default NewRows mergeIfUnknown(LevelAdmission tier, long accountId) {
+        return com.telcobright.seed.sessionflow.internal.LedgersThatMergeNothing.nothingNew(getClass());
+    }
 
     /**
      * I266 · What {@link #mergeIfUnknown} saw. {@code held}: the account is in the ledger's cache NOW. {@code merged}: THIS ask merged the

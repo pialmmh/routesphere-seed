@@ -75,6 +75,12 @@ public final class OrchestrixLedger implements LedgerPort {
         this(settings, environment, owed, ReturnPace.standard());
     }
 
+    /**
+     * I266 · orchestrix's roads cache no purchases (a walk's list on them is the tenant tree's, which its own reloads keep): nothing to
+     * merge here, decided — said nowhere.
+     */
+    @Override public NewRows mergeIfUnknown(com.telcobright.rtc.domainmodel.LevelAdmission tier, long accountId) { return NewRows.NOTHING_NEW; }
+
     public OrchestrixLedger(LedgerSettings settings, Function<String, String> environment, OwedJournal owed, ReturnPace pace) {
         this.settings = settings;
         this.bearer = settings.bearer(environment);
